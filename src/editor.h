@@ -40,8 +40,10 @@ typedef struct {
 
   // Original backup
   Image *original;
-} Editor;
-
+} Editor; // Editor operations
+void editor_rotate_left(Editor *editor);
+void editor_rotate_right(Editor *editor);
+void editor_crop(Editor *ed);
 void editor_init(Editor *ed);
 void editor_cleanup(Editor *ed);
 void editor_start_crop(Editor *ed);

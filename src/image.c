@@ -124,20 +124,16 @@ Image *image_load(const char *filename, SDL_Renderer *renderer) {
     return image_from_svg(filename, renderer);
   }
 
+  // Load image data
   int w, h, channels;
-  unsigned char *data = NULL;
-
-  // Try stb_image first
-  if (format != IMG_FORMAT_HEIC && format != IMG_FORMAT_AVIF &&
-      format != IMG_FORMAT_WEBP && format != IMG_FORMAT_TIFF &&
-      format != IMG_FORMAT_RAW) {
-    data = stbi_load(filename, &w, &h, &channels, 4);
-  }
-
+  Uint32 start_ticks = SDL_GetTicks();
+  unsigned char *data =
+      stbi_load(filename, &w, &h, &channels, 4); // Force 4 channels (RGBA)
   if (!data) {
-    fprintf(stderr, "Failed to load image: %s\n", filename);
+    log_info("Failed to load image: %s", stbi_failure_reason());
     return NULL;
   }
+  Uint32 end_ticks = SDL_GetTicks();
 
   SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(
       data, w, h, 32, w * 4, SDL_PIXELFORMAT_RGBA32);
@@ -160,18 +156,42 @@ Image *image_load(const char *filename, SDL_Renderer *renderer) {
   img->channels = channels;
   img->format = format;
   img->filename = strdup(filename);
-  img->raw_data = data;
-  img->raw_size = (size_t)w * h * 4;
-  log_info("Image loaded successfully: %s (%dx%d)", filename, w, h);
+  img->raw_data = NULL; // Optimized: Don't keep raw data in RAM unless editing
+  img->raw_size = 0;
+
+  // Free raw data immediately to save RAM
+  stbi_image_free(data);
 
   SDL_FreeSurface(surface);
 
-  if (!img->texture) {
-    image_free(img);
-    return NULL;
+  log_info("Image loaded successfully: %s (%dx%d) in %ums", filename, w, h,
+           end_ticks - start_ticks);
+  return img;
+}
+
+// Reloads raw data from disk for editing
+bool image_reload_raw(Image *img) {
+  if (img->raw_data)
+    return true; // Already loaded
+
+  int w, h, channels;
+  unsigned char *data = stbi_load(img->filename, &w, &h, &channels, 4);
+  if (!data) {
+    log_info("Failed to reload raw data for: %s", img->filename);
+    return false;
   }
 
-  return img;
+  img->raw_data = data;
+  img->raw_size = (size_t)w * h * 4;
+  return true;
+}
+
+if (!img->texture) {
+  image_free(img);
+  return NULL;
+}
+
+return img;
 }
 
 void image_free(Image *img) {

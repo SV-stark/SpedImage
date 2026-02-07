@@ -29,21 +29,50 @@ static void write_to_mem(void *context, void *data, int size) {
   ctx->size += size;
 }
 
-void editor_init(Editor *ed) {
-  ed->mode = EDIT_MODE_NONE;
-  ed->active = false;
-  ed->crop_rect = (SDL_Rect){0, 0, 0, 0};
-  ed->crop_dragging = false;
-  ed->crop_drag_corner = -1;
-  ed->rotation_angle = 0.0f;
-  ed->brightness = 0.0f;
-  ed->contrast = 1.0f;
-  ed->original = NULL;
-  ed->target_width = 0;
-  ed->target_height = 0;
-  ed->maintain_aspect = true;
-  ed->target_size_kb = 0;
-  ed->calculated_quality = 90;
+// Helper for rotation
+static SDL_Surface *surface_rotate_90(SDL_Surface *src, bool clockwise) {
+  int w = src->w;
+  int h = src->h;
+  SDL_Surface *dst =
+      SDL_CreateRGBSurfaceWithFormat(0, h, w, 32, src->format->format);
+  if (!dst)
+    return NULL;
+
+  Uint32 *src_pixels = (Uint32 *)src->pixels;
+  Uint32 *dst_pixels = (Uint32 *)dst->pixels;
+
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      int src_idx = y * w + x;
+      int dst_idx;
+      if (clockwise) {
+        dst_idx = x * h + (h - y - 1);
+      } else {
+        dst_idx = (w - x - 1) * h + y;
+      }
+      dst_pixels[dst_idx] = src_pixels[src_idx];
+    }
+  }
+  return dst;
+}
+
+void editor_init(Editor *editor) {
+  editor->mode = EDIT_MODE_NONE;
+  editor->active = false;
+  editor->crop_rect = (SDL_Rect){0, 0, 0, 0};
+  editor->crop_dragging = false;
+  editor->crop_drag_corner = -1;
+  editor->rotation_angle = 0.0f;
+  editor->brightness = 0.0f;
+  editor->contrast = 1.0f;
+  editor->original = NULL;
+  editor->target_width = 0;
+  editor->target_height = 0;
+  editor->maintain_aspect = true;
+  editor->target_size_kb = 0;
+  editor->calculated_quality = 90;
+  editor->temp_surface = NULL;
+  editor->renderer = NULL;
 }
 
 void editor_cleanup(Editor *ed) { editor_cancel(ed); }
@@ -153,6 +182,11 @@ void editor_cancel(Editor *ed) {
   ed->target_height = 0;
   ed->target_size_kb = 0;
   ed->calculated_quality = 90;
+  if (ed->temp_surface) {
+    SDL_FreeSurface(ed->temp_surface);
+    ed->temp_surface = NULL;
+  }
+  ed->renderer = NULL;
 }
 
 void editor_handle_event(Editor *ed, SDL_Event *event) {
@@ -188,6 +222,100 @@ void editor_render_ui(Editor *ed, SDL_Renderer *renderer) {
       SDL_RenderFillRect(renderer, &handle);
     }
   }
+}
+
+void editor_update_texture(Editor *editor, SDL_Renderer *renderer) {
+  if (!editor->temp_surface || !renderer)
+    return;
+
+  if (editor->image->texture) {
+    SDL_DestroyTexture(editor->image->texture);
+    editor->image->texture = NULL;
+  }
+  editor->image->texture =
+      SDL_CreateTextureFromSurface(renderer, editor->temp_surface);
+  editor->image->width = editor->temp_surface->w;
+  editor->image->height = editor->temp_surface->h;
+  editor->renderer = renderer; // Store renderer for future use
+}
+
+void editor_rotate_left(Editor *editor) {
+  if (!editor->active || !editor->temp_surface)
+    return;
+
+  SDL_Surface *rotated = surface_rotate_90(
+      editor->temp_surface, false); // false = counter-clockwise (left)
+  if (rotated) {
+    SDL_FreeSurface(editor->temp_surface);
+    editor->temp_surface = rotated;
+    editor_update_texture(editor, editor->renderer);
+  }
+}
+
+void editor_rotate_right(Editor *editor) {
+  if (!editor->active || !editor->temp_surface)
+    return;
+
+  SDL_Surface *rotated =
+      surface_rotate_90(editor->temp_surface, true); // true = clockwise (right)
+  if (rotated) {
+    SDL_FreeSurface(editor->temp_surface);
+    editor->temp_surface = rotated;
+    editor_update_texture(editor, editor->renderer);
+  }
+}
+
+void editor_apply_changes(Editor *editor) {
+  editor->mode = EDIT_MODE_NONE;
+  editor->active = false;
+  editor->crop_rect = (SDL_Rect){0, 0, 0, 0};
+  editor->crop_dragging = false;
+  editor->rotation_angle = 0.0f;
+  editor->brightness = 0.0f;
+  editor->contrast = 1.0f;
+  editor->target_width = 0;
+  editor->target_height = 0;
+  editor->target_size_kb = 0;
+  editor->calculated_quality = 90;
+  if (editor->temp_surface) {
+    // Apply changes from temp_surface to the actual image
+    if (editor->image->raw_data) {
+      if (editor->image->format == IMG_FORMAT_SVG) {
+        free(editor->image->raw_data);
+      } else {
+        stbi_image_free(editor->image->raw_data);
+      }
+    }
+    // Allocate new raw_data from temp_surface
+    size_t new_raw_size = editor->temp_surface->w * editor->temp_surface->h * 4;
+    uint8_t *new_raw_data = (uint8_t *)malloc(new_raw_size);
+    if (new_raw_data) {
+      SDL_Surface *temp_surface_rgba = SDL_ConvertSurfaceFormat(
+          editor->temp_surface, SDL_PIXELFORMAT_RGBA32, 0);
+      if (temp_surface_rgba) {
+        memcpy(new_raw_data, temp_surface_rgba->pixels, new_raw_size);
+        SDL_FreeSurface(temp_surface_rgba);
+      } else {
+        free(new_raw_data);
+        new_raw_data = NULL;
+      }
+    }
+    editor->image->raw_data = new_raw_data;
+    editor->image->raw_size = new_raw_size;
+    editor->image->width = editor->temp_surface->w;
+    editor->image->height = editor->temp_surface->h;
+
+    // Update texture
+    if (editor->image->texture) {
+      SDL_DestroyTexture(editor->image->texture);
+    }
+    editor->image->texture =
+        SDL_CreateTextureFromSurface(editor->renderer, editor->temp_surface);
+
+    SDL_FreeSurface(editor->temp_surface);
+    editor->temp_surface = NULL;
+  }
+  editor->renderer = NULL;
 }
 
 Image *image_crop(Image *src, SDL_Rect *rect, SDL_Renderer *renderer) {

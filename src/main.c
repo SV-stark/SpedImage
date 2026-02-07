@@ -9,10 +9,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define APP_NAME "SpedImage"
 #define CACHE_SIZE_MB 50
 #define KB 1024
 #define MB (1024 * 1024)
+
+// External button labels from ui.c
+extern const char *BUTTON_LABELS[];
 
 #ifdef _WIN32
 #define PATH_SEP '\\'
@@ -28,6 +35,7 @@ typedef struct {
   Toolbar toolbar;
   Sidebar sidebar;
   Toast toast;
+  Tooltip tooltip;
   bool slideshow;
   Uint32 slideshow_timer;
   int slideshow_delay;
@@ -297,6 +305,15 @@ static void handle_mousewheel(AppState *app, SDL_MouseWheelEvent *wheel) {
 }
 
 int main(int argc, char *argv[]) {
+#ifdef _WIN32
+  // If we are a GUI app, we don't have a console.
+  // Try to attach to the parent process console to see stdout/stderr
+  if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+    freopen("CONOUT$", "w", stdout);
+    freopen("CONOUT$", "w", stderr);
+  }
+#endif
+
   char *initial_path = NULL;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
@@ -321,6 +338,7 @@ int main(int argc, char *argv[]) {
   editor_init(&app.editor);
   file_list_init(&app.file_list);
   ui_init(&app.toolbar, &app.sidebar);
+  memset(&app.tooltip, 0, sizeof(Tooltip));
 
   // Load initial image if provided
   if (initial_path) {
@@ -361,6 +379,27 @@ int main(int argc, char *argv[]) {
 
       // Handle UI events
       UITool tool = ui_handle_event(&app.toolbar, &app.sidebar, &event);
+
+      // Handle tooltip visibility based on hover
+      if (app.toolbar.hovered_button >= 0 &&
+          app.toolbar.hovered_button != app.tooltip.target_button) {
+        static Uint32 hover_start = 0;
+        if (hover_start == 0)
+          hover_start = SDL_GetTicks();
+        if (SDL_GetTicks() - hover_start > 500) {
+          strncpy(app.tooltip.label, BUTTON_LABELS[app.toolbar.hovered_button],
+                  sizeof(app.tooltip.label) - 1);
+          app.tooltip.label[sizeof(app.tooltip.label) - 1] = '\0';
+          app.tooltip.target_button = app.toolbar.hovered_button;
+          app.tooltip.visible = true;
+          app.tooltip.show_time = SDL_GetTicks();
+          hover_start = 0;
+        }
+      } else if (app.toolbar.hovered_button < 0) {
+        app.tooltip.visible = false;
+        app.tooltip.target_button = -1;
+      }
+
       switch (tool) {
       case UI_TOOL_OPEN:
         // Open file dialog would go here
@@ -435,6 +474,9 @@ int main(int argc, char *argv[]) {
       }
     }
 
+    // Update UI animations
+    ui_update(&app.toolbar, &app.tooltip);
+
     // Render
     SDL_SetRenderDrawColor(app.window.renderer, 20, 20, 20, 255);
     SDL_RenderClear(app.window.renderer);
@@ -454,7 +496,7 @@ int main(int argc, char *argv[]) {
 
     // Render UI
     editor_render_ui(&app.editor, app.window.renderer);
-    ui_render(&app.toolbar, &app.sidebar, app.window.renderer);
+    ui_render(&app.toolbar, &app.sidebar, app.window.renderer, &app.editor);
     ui_render_toast(&app.toast, app.window.renderer);
 
     SDL_RenderPresent(app.window.renderer);
