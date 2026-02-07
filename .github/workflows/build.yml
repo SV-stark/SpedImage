@@ -35,9 +35,9 @@ jobs:
         gcc -std=c99 -Wall -Wextra -DSDL_MAIN_HANDLED src/*.c -o src/SpedImage.exe -Iinclude -Llib -lmingw32 -lSDL2main -lSDL2 -lm
 
     - name: Compile Installer
-      uses: ayushef/iscc-action@v2
-      with:
-        iss_file: build/installer.iss
+      shell: pwsh
+      run: |
+        & "iscc" build/installer.iss
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
