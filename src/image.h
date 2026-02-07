@@ -14,6 +14,10 @@ public:
   void Bind();
   void Unbind();
 
+  // Memory Management
+  void FreeSystemMemory();
+  bool EnsureSystemMemory();
+
   // Modifiers
   void SetData(const std::vector<uint8_t> &data, int width, int height,
                int channels);

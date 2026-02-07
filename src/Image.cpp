@@ -24,6 +24,7 @@ std::shared_ptr<Image> Image::LoadFromMemory(const uint8_t *data, size_t size) {
 
   img->SetData(std::vector<uint8_t>(pixels, pixels + (w * h * 4)), w, h, 4);
   stbi_image_free(pixels);
+  img->FreeSystemMemory();
   return img;
 }
 
@@ -71,6 +72,7 @@ bool Image::Load() {
           height, 4);
 
   stbi_image_free(data);
+  FreeSystemMemory();
   return true;
 }
 
@@ -80,3 +82,24 @@ void Image::Bind() {
 }
 
 void Image::Unbind() { glBindTexture(GL_TEXTURE_2D, 0); }
+
+void Image::FreeSystemMemory() {
+  m_Data.clear();
+  m_Data.shrink_to_fit();
+}
+
+bool Image::EnsureSystemMemory() {
+  if (!m_Data.empty())
+    return true;
+
+  if (m_RendererID == 0)
+    return false;
+
+  // Assuming 4 channels as per Load/SetData usage
+  size_t size = (size_t)m_Width * (size_t)m_Height * 4;
+  m_Data.resize(size);
+
+  glBindTexture(GL_TEXTURE_2D, m_RendererID);
+  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, m_Data.data());
+  return true;
+}

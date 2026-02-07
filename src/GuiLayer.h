@@ -1,6 +1,9 @@
 #pragma once
 
+#include <memory>
+
 class App;
+class Image;
 
 class GuiLayer {
 public:
@@ -11,4 +14,9 @@ public:
   // Layout settings
   static bool ShowSidebar;
   static float SidebarWidth;
+
+private:
+  static void RenderStatusBar(App* app, std::shared_ptr<class Image> img, 
+                              float sidebarWidth, float menuHeight, 
+                              float viewportW, float viewportH);
 };

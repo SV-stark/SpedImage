@@ -7,6 +7,9 @@ void Editor::Crop(Image *img, int x, int y, int w, int h) {
   if (!img)
     return;
 
+  if (!img->EnsureSystemMemory())
+    return;
+
   int srcW = img->GetWidth();
   int srcH = img->GetHeight();
   const auto &srcData = img->GetData();
@@ -32,11 +35,15 @@ void Editor::Crop(Image *img, int x, int y, int w, int h) {
   }
 
   img->SetData(newData, w, h, 4);
+  img->FreeSystemMemory();
 }
 
 void Editor::Rotate(Image *img) {
   // Rotate 90 degrees clockwise
   if (!img)
+    return;
+
+  if (!img->EnsureSystemMemory())
     return;
 
   int w = img->GetWidth();
@@ -71,4 +78,5 @@ void Editor::Rotate(Image *img) {
   }
 
   img->SetData(newData, newW, newH, 4);
+  img->FreeSystemMemory();
 }
