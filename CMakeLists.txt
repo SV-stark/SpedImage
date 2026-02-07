@@ -53,6 +53,13 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/strukturag/libde265.git
     GIT_TAG        v1.0.15
 )
+# Disable strict warnings for dependencies that are noisy (especially libde265 on MSVC)
+if(MSVC)
+    add_compile_options(/wd4309) # argument: truncation of constant value
+    add_compile_options(/wd4244) # conversion: possible loss of data
+    add_compile_options(/wd4267) # conversion: size_t to int
+endif()
+set(WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE) # For libde265/libheif if used
 
 # 5. libheif
 FetchContent_Declare(
