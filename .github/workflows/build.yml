@@ -13,26 +13,27 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up MinGW
-      uses: egor-tensin/setup-mingw@v2
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
       with:
-        platform: x64
-
-    - name: Install SDL2
-      shell: pwsh
-      run: |
-        curl -L https://github.com/libsdl-org/SDL/releases/download/release-2.30.0/SDL2-devel-2.30.0-mingw.zip -o sdl2.zip
-        Expand-Archive sdl2.zip -DestinationPath .
-        mv SDL2-2.30.0-mingw/x86_64-w64-mingw32/include/SDL2 include/
-        mkdir -p bin
-        mv SDL2-2.30.0-mingw/x86_64-w64-mingw32/bin/SDL2.dll bin/
-        mv SDL2-2.30.0-mingw/x86_64-w64-mingw32/lib/libSDL2.a lib/
-        mv SDL2-2.30.0-mingw/x86_64-w64-mingw32/lib/libSDL2main.a lib/
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-sdl2
 
     - name: Build SpedImage
-      shell: pwsh
+      shell: msys2 {0}
       run: |
-        gcc -std=c99 -Wall -Wextra -DSDL_MAIN_HANDLED src/*.c -o src/SpedImage.exe -Iinclude -Llib -lmingw32 -lSDL2main -lSDL2 -lm
+        gcc -std=c99 -Wall -Wextra -DSDL_MAIN_HANDLED src/*.c -o src/SpedImage.exe -Iinclude -lmingw32 -lSDL2main -lSDL2 -lm
+
+    - name: Prepare Artifacts
+      shell: msys2 {0}
+      run: |
+        mkdir -p bin
+        cp /mingw64/bin/SDL2.dll bin/
+        # Add any other DLLs if needed (e.g. libwinpthread-1.dll)
+        cp /mingw64/bin/libwinpthread-1.dll bin/
 
     - name: Compile Installer
       shell: pwsh
