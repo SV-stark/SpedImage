@@ -1,0 +1,46 @@
+name: Build and Package
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up MinGW
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
+
+    - name: Install SDL2
+      shell: pwsh
+      run: |
+        curl -L https://github.com/libsdl-org/SDL/releases/download/release-2.30.0/SDL2-devel-2.30.0-mingw.zip -o sdl2.zip
+        Expand-Archive sdl2.zip -DestinationPath .
+        mv SDL2-2.30.0-mingw/x86_64-w64-mingw32/include/SDL2 include/
+        mkdir -p bin
+        mv SDL2-2.30.0-mingw/x86_64-w64-mingw32/bin/SDL2.dll bin/
+        mv SDL2-2.30.0-mingw/x86_64-w64-mingw32/lib/libSDL2.a lib/
+        mv SDL2-2.30.0-mingw/x86_64-w64-mingw32/lib/libSDL2main.a lib/
+
+    - name: Build SpedImage
+      shell: pwsh
+      run: |
+        gcc -std=c99 -Wall -Wextra -DSDL_MAIN_HANDLED src/*.c -o src/SpedImage.exe -Iinclude -Llib -lmingw32 -lSDL2main -lSDL2 -lm
+
+    - name: Compile Installer
+      uses: ayushef/iscc-action@v2
+      with:
+        iss_file: build/installer.iss
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: SpedImage-Installer
+        path: build/Output/SpedImage_Setup.exe

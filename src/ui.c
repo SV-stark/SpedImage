@@ -217,18 +217,24 @@ static void draw_icon(SDL_Renderer *renderer, int type, int x, int y,
     draw_icon_sun(renderer, x, y, size);
     break;
   case 7:
-    draw_icon_plus(renderer, x, y, size);
+    draw_icon_resize(renderer, x, y, size);
     break;
   case 8:
-    draw_icon_minus(renderer, x, y, size);
+    draw_icon_compress(renderer, x, y, size);
     break;
   case 9:
-    draw_icon_fit(renderer, x, y, size);
+    draw_icon_plus(renderer, x, y, size);
     break;
   case 10:
-    draw_icon_fullscreen(renderer, x, y, size);
+    draw_icon_minus(renderer, x, y, size);
     break;
   case 11:
+    draw_icon_fit(renderer, x, y, size);
+    break;
+  case 12:
+    draw_icon_fullscreen(renderer, x, y, size);
+    break;
+  case 13:
     draw_icon_quit(renderer, x, y, size);
     break;
   }
@@ -238,8 +244,9 @@ static void draw_icon(SDL_Renderer *renderer, int type, int x, int y,
 
 void ui_init(Toolbar *toolbar, Sidebar *sidebar) {
   toolbar->visible = true;
+  toolbar->visible = true;
   toolbar->height = TOOLBAR_HEIGHT;
-  toolbar->button_count = 12;
+  toolbar->button_count = 14;
   toolbar->hovered_button = -1;
   toolbar->auto_hide = true;
   toolbar->last_activity = SDL_GetTicks();
@@ -310,18 +317,24 @@ UITool ui_handle_event(Toolbar *toolbar, Sidebar *sidebar, SDL_Event *event) {
         result = UI_TOOL_BRIGHTNESS;
         break;
       case 7:
-        result = UI_TOOL_ZOOM_IN;
+        result = UI_TOOL_RESIZE;
         break;
       case 8:
-        result = UI_TOOL_ZOOM_OUT;
+        result = UI_TOOL_COMPRESS;
         break;
       case 9:
-        result = UI_TOOL_FIT;
+        result = UI_TOOL_ZOOM_IN;
         break;
       case 10:
-        result = UI_TOOL_FULLSCREEN;
+        result = UI_TOOL_ZOOM_OUT;
         break;
       case 11:
+        result = UI_TOOL_FIT;
+        break;
+      case 12:
+        result = UI_TOOL_FULLSCREEN;
+        break;
+      case 13:
         result = UI_TOOL_QUIT;
         break;
       }
@@ -331,12 +344,16 @@ UITool ui_handle_event(Toolbar *toolbar, Sidebar *sidebar, SDL_Event *event) {
   if (toolbar->auto_hide && toolbar->visible) {
     Uint32 elapsed = SDL_GetTicks() - toolbar->last_activity;
     if (elapsed > AUTO_HIDE_DELAY) {
+      // Toolbar buttons
+      const char *labels[] = {"Open", "Save", "<", ">", "Crop", "Rot", "Brt",
+                              "Sz",   "Cmp",  "+", "-", "Fit",  "FS",  "Quit"};
+      int x = BUTTON_PADDING;
       int mx, my;
       SDL_GetMouseState(&mx, &my);
 
       // Check if mouse is hovering over any toolbar button
       bool hovering = false;
-      for (int i = 0; i < toolbar->button_count; i++) {
+      for (int i = 0; i < toolbar->button_count && i < 14; i++) {
         if (mx >= toolbar->buttons[i].x &&
             mx < toolbar->buttons[i].x + toolbar->buttons[i].w &&
             my >= toolbar->buttons[i].y &&

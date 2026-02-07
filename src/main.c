@@ -11,6 +11,8 @@
 
 #define APP_NAME "SpedImage"
 #define CACHE_SIZE_MB 50
+#define KB 1024
+#define MB (1024 * 1024)
 
 typedef struct {
   AppWindow window;
@@ -41,6 +43,7 @@ static void show_help(void) {
   printf("  Delete        Delete current image\n");
   printf("  Space         Start/stop slideshow\n");
   printf("  F1            Toggle sidebar\n");
+  printf("  Enter         Apply Edit / Save\n");
   printf("  Esc           Exit tool/Close app\n");
   printf("\n");
 }
@@ -152,14 +155,66 @@ static void handle_keydown(AppState *app, SDL_Keycode key) {
   case SDLK_PLUS:
   case SDLK_KP_PLUS:
   case SDLK_EQUALS:
-    viewport_zoom(&app->viewport, 1.25f, app->window.width / 2,
-                  app->window.height / 2);
+    if (app->editor.active) {
+      if (app->editor.mode == EDIT_MODE_RESIZE) {
+        app->editor.target_width += 50;
+        // Calculate height to maintain aspect
+        if (app->editor.maintain_aspect && current) {
+          float ratio = (float)current->height / current->width;
+          app->editor.target_height = (int)(app->editor.target_width * ratio);
+        }
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Resize: %d x %d", app->editor.target_width,
+                 app->editor.target_height);
+        ui_show_toast(&app->toast, msg, 2000);
+      } else if (app->editor.mode == EDIT_MODE_COMPRESS) {
+        app->editor.target_size_kb += 50;
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Compress Limit: %d KB",
+                 app->editor.target_size_kb);
+        ui_show_toast(&app->toast, msg, 2000);
+      } else if (app->editor.mode == EDIT_MODE_BRIGHTNESS) {
+        app->editor.brightness += 10.0f;
+        if (current)
+          editor_apply(current, &app->editor,
+                       app->window.renderer); // Live preview?
+        ui_show_toast(&app->toast, "Brightness +", 1000);
+      }
+    } else {
+      viewport_zoom(&app->viewport, 1.25f, app->window.width / 2,
+                    app->window.height / 2);
+    }
     break;
 
   case SDLK_MINUS:
   case SDLK_KP_MINUS:
-    viewport_zoom(&app->viewport, 0.8f, app->window.width / 2,
-                  app->window.height / 2);
+    if (app->editor.active) {
+      if (app->editor.mode == EDIT_MODE_RESIZE) {
+        app->editor.target_width -= 50;
+        if (app->editor.target_width < 50)
+          app->editor.target_width = 50;
+        // Calculate height to maintain aspect
+        if (app->editor.maintain_aspect && current) {
+          float ratio = (float)current->height / current->width;
+          app->editor.target_height = (int)(app->editor.target_width * ratio);
+        }
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Resize: %d x %d", app->editor.target_width,
+                 app->editor.target_height);
+        ui_show_toast(&app->toast, msg, 2000);
+      } else if (app->editor.mode == EDIT_MODE_COMPRESS) {
+        app->editor.target_size_kb -= 50;
+        if (app->editor.target_size_kb < 10)
+          app->editor.target_size_kb = 10;
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Compress Limit: %d KB",
+                 app->editor.target_size_kb);
+        ui_show_toast(&app->toast, msg, 2000);
+      }
+    } else {
+      viewport_zoom(&app->viewport, 0.8f, app->window.width / 2,
+                    app->window.height / 2);
+    }
     break;
 
   case SDLK_0:
@@ -204,6 +259,19 @@ static void handle_keydown(AppState *app, SDL_Keycode key) {
     ui_show_toast(&app->toast,
                   app->slideshow ? "Slideshow started" : "Slideshow stopped",
                   2000);
+    break;
+
+  case SDLK_RETURN:
+  case SDLK_KP_ENTER:
+    if (app->editor.active && current) {
+      editor_apply(current, &app->editor, app->window.renderer);
+      // Reset viewport to fit new image dimensions
+      if (app->viewport.fit_to_window) {
+        viewport_fit_image(&app->viewport, current->width, current->height,
+                           app->window.width, app->window.height);
+      }
+      ui_show_toast(&app->toast, "Applied", 2000);
+    }
     break;
 
   case SDLK_F1:
@@ -308,6 +376,21 @@ int main(int argc, char *argv[]) {
         break;
       case UI_TOOL_BRIGHTNESS:
         editor_start_brightness(&app.editor);
+        break;
+      case UI_TOOL_RESIZE:
+        if (current) {
+          editor_start_resize(&app->editor, current->width, current->height);
+          ui_show_toast(&app->toast, "Resize: Use +/- to change width", 3000);
+        }
+        break;
+      case UI_TOOL_COMPRESS:
+        if (current) {
+          editor_start_compress(&app->editor, current->raw_size);
+          char msg[64];
+          snprintf(msg, sizeof(msg), "Compress: Limit %d KB (Use +/-)",
+                   app->editor.target_size_kb);
+          ui_show_toast(&app->toast, msg, 3000);
+        }
         break;
       case UI_TOOL_ZOOM_IN:
         handle_keydown(&app, SDLK_PLUS);
