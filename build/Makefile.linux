@@ -1,0 +1,53 @@
+# Makefile for SpedImage - Linux (32/64 bit)
+# Usage: make -f Makefile.linux
+#        make -f Makefile.linux ARCH=32
+
+CC = gcc
+CFLAGS = -O3 -s -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L
+LDFLAGS = -lm
+
+# Detect architecture
+ifeq ($(ARCH),32)
+    CFLAGS += -m32
+    LDFLAGS += -m32
+endif
+
+# SDL2 flags (from pkg-config)
+SDL_CFLAGS := $(shell pkg-config --cflags sdl2)
+SDL_LIBS := $(shell pkg-config --libs sdl2)
+
+# Include paths
+INCLUDES = -I../include
+
+# Source files
+SRCDIR = ../src
+SOURCES = $(wildcard $(SRCDIR)/*.c)
+OBJECTS = $(patsubst $(SRCDIR)/%.c,%.o,$(SOURCES))
+
+# Target
+TARGET = spedimage
+
+.PHONY: all clean install
+
+all: $(TARGET)
+
+$(TARGET): $(OBJECTS)
+	$(CC) $(OBJECTS) -o $@ $(LDFLAGS) $(SDL_LIBS)
+	@echo "Built: $@"
+
+%.o: $(SRCDIR)/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) $(SDL_CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJECTS) $(TARGET)
+
+install: $(TARGET)
+	install -m 755 $(TARGET) /usr/local/bin/
+	@echo "Installed to /usr/local/bin/$(TARGET)"
+
+# Release build with maximum optimization
+release: CFLAGS += -ffast-math -fomit-frame-pointer -fno-stack-protector
+release: LDFLAGS += -Wl,-z,relro,-z,now
+release: clean all
+	strip --strip-all $(TARGET)
+	@echo "Release build complete"
