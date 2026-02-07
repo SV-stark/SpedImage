@@ -7,6 +7,8 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <filesystem>
 #include <imgui.h>
+#include <iostream>
+#include <stb_image_write.h>
 #include <stdio.h>
 
 static void glfw_error_callback(int error, const char *description) {
@@ -17,6 +19,11 @@ App::App(const std::string &title, int width, int height)
     : m_Title(title), m_Width(width), m_Height(height) {
   InitWindow();
   InitImGui();
+
+  // Initialize GPU Editor
+  m_Editor = std::make_shared<Editor>();
+  m_Editor->Init();
+
   GuiLayer::Init();
 
   // Default scan current directory
@@ -84,7 +91,11 @@ void App::Run() {
 }
 
 void App::OnUpdate() {
-  // Update logic
+  // Shortcuts
+  ImGuiIO &io = ImGui::GetIO();
+  if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+    SaveImage();
+  }
 }
 
 void App::OnRender() {
@@ -92,6 +103,12 @@ void App::OnRender() {
   ImGui_ImplGlfw_NewFrame();
   ImGui::NewFrame();
 
+  // 1. Render Image to FBO using Shader (GPU Adjustment)
+  if (m_CurrentImage) {
+    m_Editor->Render(m_CurrentImage);
+  }
+
+  // 2. Render UI
   GuiLayer::Render(this);
 
   // -------------------------------------------------------------------------
@@ -167,14 +184,76 @@ void App::PrevImage() {
 }
 
 void App::SaveImage() {
-  // TODO: Implement save
+  if (!m_CurrentImage || !m_Editor)
+    return;
+
+  // 1. Get Pixels from GPU
+  std::vector<uint8_t> pixels = m_Editor->GetPixels();
+  int w = m_Editor->GetWidth(); // Use Editor's dimensions (might differ from
+                                // original if resized/cropped)
+  int h = m_Editor->GetHeight();
+
+  if (pixels.empty() || w <= 0 || h <= 0)
+    return;
+
+  // 2. Generate Filename (e.g. image_edited.png)
+  std::filesystem::path srcPath(m_CurrentPath);
+  std::string stem = srcPath.stem().string();
+  std::string ext = ".png"; // Force PNG for now for lossless save
+  std::filesystem::path destPath =
+      srcPath.parent_path() / (stem + "_edited" + ext);
+
+  // 3. Save
+  // Flip vertically because GL is bottom-left
+  stbi_flip_vertically_on_write(1);
+  if (stbi_write_png(destPath.string().c_str(), w, h, 4, pixels.data(),
+                     w * 4)) {
+    std::cout << "Saved to " << destPath << std::endl;
+
+    // Optional: Load the new image?
+    // LoadImage(destPath.string());
+  } else {
+    std::cerr << "Failed to save to " << destPath << std::endl;
+  }
 }
 
 void App::RotateImage() {
-  if (m_CurrentImage)
-    Editor::Rotate(m_CurrentImage.get());
+  if (m_Editor) {
+    // Rotate 90 degrees (PI/2)
+    m_Editor->Rotation += 1.57079632679f; // 90 deg in radians
+    // Keep it normalized if needed, or shader handles it
+  }
 }
 
+void App::ApplyCrop() {
+  if (m_Editor) {
+    for (int i = 0; i < 4; i++)
+      m_Editor->CropRect[i] = m_ProposedCrop[i];
+  }
+  m_IsCropping = false;
+}
+
+void App::ResetCrop() {
+  if (m_Editor) {
+    m_Editor->CropRect[0] = 0.0f;
+    m_Editor->CropRect[1] = 0.0f;
+    m_Editor->CropRect[2] = 1.0f;
+    m_Editor->CropRect[3] = 1.0f;
+  }
+  m_IsCropping = false;
+  m_ProposedCrop[0] = 0.0f;
+  m_ProposedCrop[1] = 0.0f;
+  m_ProposedCrop[2] = 1.0f;
+  m_ProposedCrop[3] = 1.0f;
+}
+
+void App::CancelCrop() { m_IsCropping = false; }
+
 void App::CropImage() {
-  // TODO: Implement crop
+  m_IsCropping = !m_IsCropping;
+  if (m_IsCropping && m_Editor) {
+    // Initialize proposed with current
+    for (int i = 0; i < 4; i++)
+      m_ProposedCrop[i] = m_Editor->CropRect[i];
+  }
 }

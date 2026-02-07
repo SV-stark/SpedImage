@@ -15,6 +15,10 @@ set(SOURCES
     src/stb_impl.cpp
 )
 
+if(WIN32)
+    list(APPEND SOURCES src/ImageBackend_Win32.cpp)
+endif()
+
 # Headers
 include_directories(include)
 
@@ -38,6 +42,40 @@ FetchContent_Declare(
     GIT_TAG        docking
 )
 FetchContent_MakeAvailable(imgui)
+
+# 3. libde265 (HEIC Decoder)
+FetchContent_Declare(
+    libde265
+    GIT_REPOSITORY https://github.com/strukturag/libde265.git
+    GIT_TAG        v1.0.15
+)
+# Disable tools/examples to speed up build
+set(ENABLE_DE265_ENCODER OFF CACHE BOOL "" FORCE)
+set(ENABLE_DE265_SHERLOCK265 OFF CACHE BOOL "" FORCE)
+set(ENABLE_DE265_DEC265 OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(libde265)
+
+# 4. libheif
+FetchContent_Declare(
+    libheif
+    GIT_REPOSITORY https://github.com/strukturag/libheif.git
+    GIT_TAG        v1.17.6
+)
+set(WITH_LIBDE265 ON CACHE BOOL "" FORCE)
+set(WITH_X265 OFF CACHE BOOL "" FORCE)     # Encoder
+set(WITH_AOM_DECODER OFF CACHE BOOL "" FORCE) # AVIF (for now)
+set(WITH_AOM_ENCODER OFF CACHE BOOL "" FORCE)
+set(WITH_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(libheif)
+
+# 5. libspng (Linux PNG)
+FetchContent_Declare(
+    libspng
+    GIT_REPOSITORY https://github.com/randy408/libspng.git
+    GIT_TAG        v0.7.4
+)
+# We can fetch it on all platforms, but only link on Linux
+FetchContent_MakeAvailable(libspng)
 
 # ------------------------------------------------------------------------------
 # Executable
@@ -64,13 +102,17 @@ target_include_directories(SpedImage PRIVATE
 # Link libraries
 target_link_libraries(SpedImage PRIVATE
     glfw
+    libheif
 )
 
 # Platform specific linking
 if(WIN32)
-    target_link_libraries(SpedImage PRIVATE opengl32)
+    target_link_libraries(SpedImage PRIVATE opengl32 windowscodecs shlwapi)
 elseif(UNIX AND NOT APPLE)
-    target_link_libraries(SpedImage PRIVATE GL)
+    find_package(JPEG REQUIRED)
+    # find_package(PNG) # Replaced by libspng
+    target_link_libraries(SpedImage PRIVATE GL JPEG::JPEG spng_static)
+    target_sources(SpedImage PRIVATE src/ImageBackend_Linux.cpp)
 endif()
 
 # Copy assets to build directory (if assets exist)
