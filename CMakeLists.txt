@@ -67,14 +67,22 @@ FetchContent_MakeAvailable(glfw imgui zlib libde265)
 # Configure libheif to find our fetched libde265
 set(LIBDE265_FOUND ON CACHE BOOL "" FORCE)
 set(LIBDE265_INCLUDE_DIRS "${libde265_SOURCE_DIR}" CACHE PATH "" FORCE)
-# On Windows, MSVC might name the output lib differently, but it's usually de265 or libde265 target
 set(LIBDE265_LIBRARIES libde265 CACHE STRING "" FORCE) 
+
+# Disable heavy dependencies and documentation for subprojects
+set(BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ENABLE_DOCUMENTATION OFF CACHE BOOL "" FORCE)
 
 set(WITH_LIBDE265 ON CACHE BOOL "" FORCE)
 set(WITH_X265 OFF CACHE BOOL "" FORCE)     
 set(WITH_AOM_DECODER OFF CACHE BOOL "" FORCE) 
 set(WITH_AOM_ENCODER OFF CACHE BOOL "" FORCE)
 set(WITH_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(WITH_RAV1E OFF CACHE BOOL "" FORCE)
+set(WITH_DAV1D OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(libheif)
 
 # 6. libspng (Linux PNG)
