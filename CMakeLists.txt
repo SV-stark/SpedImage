@@ -33,7 +33,6 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.4
 )
-FetchContent_MakeAvailable(glfw)
 
 # 2. Dear ImGui
 FetchContent_Declare(
@@ -41,41 +40,52 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
     GIT_TAG        docking
 )
-FetchContent_MakeAvailable(imgui)
 
-# 3. libde265 (HEIC Decoder)
+# 3. ZLIB (Common dependency)
+FetchContent_Declare(
+    zlib
+    URL https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz
+)
+
+# 4. libde265 (HEIC Decoder)
 FetchContent_Declare(
     libde265
     GIT_REPOSITORY https://github.com/strukturag/libde265.git
     GIT_TAG        v1.0.15
 )
-# Disable tools/examples to speed up build
-set(ENABLE_DE265_ENCODER OFF CACHE BOOL "" FORCE)
-set(ENABLE_DE265_SHERLOCK265 OFF CACHE BOOL "" FORCE)
-set(ENABLE_DE265_DEC265 OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(libde265)
 
-# 4. libheif
+# 5. libheif
 FetchContent_Declare(
     libheif
     GIT_REPOSITORY https://github.com/strukturag/libheif.git
     GIT_TAG        v1.17.6
 )
+
+# Populate dependencies to set up paths
+FetchContent_MakeAvailable(glfw imgui zlib libde265)
+
+# Configure libheif to find our fetched libde265
+set(LIBDE265_FOUND ON CACHE BOOL "" FORCE)
+set(LIBDE265_INCLUDE_DIRS "${libde265_SOURCE_DIR}" CACHE PATH "" FORCE)
+# On Windows, MSVC might name the output lib differently, but it's usually de265 or libde265 target
+set(LIBDE265_LIBRARIES libde265 CACHE STRING "" FORCE) 
+
 set(WITH_LIBDE265 ON CACHE BOOL "" FORCE)
-set(WITH_X265 OFF CACHE BOOL "" FORCE)     # Encoder
-set(WITH_AOM_DECODER OFF CACHE BOOL "" FORCE) # AVIF (for now)
+set(WITH_X265 OFF CACHE BOOL "" FORCE)     
+set(WITH_AOM_DECODER OFF CACHE BOOL "" FORCE) 
 set(WITH_AOM_ENCODER OFF CACHE BOOL "" FORCE)
 set(WITH_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(libheif)
 
-# 5. libspng (Linux PNG)
-FetchContent_Declare(
-    libspng
-    GIT_REPOSITORY https://github.com/randy408/libspng.git
-    GIT_TAG        v0.7.4
-)
-# We can fetch it on all platforms, but only link on Linux
-FetchContent_MakeAvailable(libspng)
+# 6. libspng (Linux PNG)
+if(UNIX AND NOT APPLE)
+    FetchContent_Declare(
+        libspng
+        GIT_REPOSITORY https://github.com/randy408/libspng.git
+        GIT_TAG        v0.7.4
+    )
+    FetchContent_MakeAvailable(libspng)
+endif()
 
 # ------------------------------------------------------------------------------
 # Executable
