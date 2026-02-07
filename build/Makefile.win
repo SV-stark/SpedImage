@@ -1,0 +1,58 @@
+# Makefile for SpedImage - Windows (32/64 bit)
+# Cross-compilation from Linux using MinGW
+# Usage: make -f Makefile.win ARCH=64
+#        make -f Makefile.win ARCH=32
+
+ARCH ?= 64
+
+ifeq ($(ARCH),64)
+    CC = x86_64-w64-mingw32-gcc
+    TARGET = spedimage64.exe
+else
+    CC = i686-w64-mingw32-gcc
+    TARGET = spedimage32.exe
+endif
+
+CFLAGS = -O3 -s -Wall -Wextra -std=c99 -DSDL_MAIN_HANDLED
+LDFLAGS = -static -static-libgcc -lm
+
+# SDL2 paths (adjust these to your SDL2 installation)
+# For cross-compilation from Linux with mingw-w64-sdl2:
+SDL_CFLAGS = $(shell $(CC) -c -xc -E /dev/null -lSDL2 2>/dev/null && echo "-lmingw32 -lSDL2main -lSDL2" || echo "")
+
+# Static linking for portable executable
+LDFLAGS += -lmingw32 -lSDL2main -lSDL2 -lwinmm -limm32 -lole32 -loleaut32 -lversion -luuid -ldinput8 -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -lkernel32
+
+# Include paths
+INCLUDES = -I../include
+
+# Source files
+SRCDIR = ../src
+SOURCES = $(wildcard $(SRCDIR)/*.c)
+OBJECTS = $(patsubst $(SRCDIR)/%.c,%.o,$(SOURCES))
+
+.PHONY: all clean
+
+all: $(TARGET)
+
+$(TARGET): $(OBJECTS)
+	$(CC) $(OBJECTS) -o $@ $(LDFLAGS)
+	@echo "Built: $@"
+
+%.o: $(SRCDIR)/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+clean:
+	rm -f $(OBJECTS) $(TARGET)
+
+# For native Windows build with MinGW/MSYS2:
+# 1. Install MSYS2
+# 2. pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2
+# 3. Use this Makefile from MSYS2 MinGW shell
+
+# Native Windows build instructions:
+native-win:
+	@echo "For native Windows build:"
+	@echo "1. Install MSYS2 from https://www.msys2.org/"
+	@echo "2. In MSYS2 terminal: pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2"
+	@echo "3. Run: make -f Makefile.win from MSYS2 MinGW shell"
