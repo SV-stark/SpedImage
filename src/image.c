@@ -1,4 +1,5 @@
 #include "image.h"
+#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,46 +24,47 @@ static const char *get_extension(const char *filename) {
 }
 
 ImageFormat image_detect_format(const char *filename) {
+  ImageFormat format = IMG_FORMAT_UNKNOWN;
   const char *ext = get_extension(filename);
 
   if (strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0)
-    return IMG_FORMAT_JPEG;
-  if (strcasecmp(ext, "png") == 0)
-    return IMG_FORMAT_PNG;
-  if (strcasecmp(ext, "bmp") == 0)
-    return IMG_FORMAT_BMP;
-  if (strcasecmp(ext, "gif") == 0)
-    return IMG_FORMAT_GIF;
-  if (strcasecmp(ext, "tga") == 0)
-    return IMG_FORMAT_TGA;
-  if (strcasecmp(ext, "hdr") == 0)
-    return IMG_FORMAT_HDR;
-  if (strcasecmp(ext, "psd") == 0)
-    return IMG_FORMAT_PSD;
-  if (strcasecmp(ext, "pic") == 0)
-    return IMG_FORMAT_PIC;
-  if (strcasecmp(ext, "ppm") == 0 || strcasecmp(ext, "pgm") == 0 ||
-      strcasecmp(ext, "pbm") == 0)
-    return IMG_FORMAT_PNM;
-  if (strcasecmp(ext, "svg") == 0)
-    return IMG_FORMAT_SVG;
-  if (strcasecmp(ext, "heic") == 0 || strcasecmp(ext, "heif") == 0)
-    return IMG_FORMAT_HEIC;
-  if (strcasecmp(ext, "avif") == 0)
-    return IMG_FORMAT_AVIF;
-  if (strcasecmp(ext, "webp") == 0)
-    return IMG_FORMAT_WEBP;
-  if (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0)
-    return IMG_FORMAT_TIFF;
-  if (strcasecmp(ext, "raw") == 0 || strcasecmp(ext, "cr2") == 0 ||
-      strcasecmp(ext, "nef") == 0 || strcasecmp(ext, "arw") == 0 ||
-      strcasecmp(ext, "dng") == 0 || strcasecmp(ext, "orf") == 0 ||
-      strcasecmp(ext, "raf") == 0 || strcasecmp(ext, "pef") == 0 ||
-      strcasecmp(ext, "x3f") == 0) {
-    return IMG_FORMAT_RAW;
+    format = IMG_FORMAT_JPEG;
+  else if (strcasecmp(ext, "png") == 0)
+    format = IMG_FORMAT_PNG;
+  else if (strcasecmp(ext, "bmp") == 0)
+    format = IMG_FORMAT_BMP;
+  else if (strcasecmp(ext, "gif") == 0)
+    format = IMG_FORMAT_GIF;
+  else if (strcasecmp(ext, "tga") == 0)
+    format = IMG_FORMAT_TGA;
+  else if (strcasecmp(ext, "hdr") == 0)
+    format = IMG_FORMAT_HDR;
+  else if (strcasecmp(ext, "psd") == 0)
+    format = IMG_FORMAT_PSD;
+  else if (strcasecmp(ext, "pic") == 0)
+    format = IMG_FORMAT_PIC;
+  else if (strcasecmp(ext, "ppm") == 0 || strcasecmp(ext, "pgm") == 0 ||
+           strcasecmp(ext, "pbm") == 0)
+    format = IMG_FORMAT_PNM;
+  else if (strcasecmp(ext, "svg") == 0)
+    format = IMG_FORMAT_SVG;
+  else if (strcasecmp(ext, "heic") == 0 || strcasecmp(ext, "heif") == 0)
+    format = IMG_FORMAT_HEIC;
+  else if (strcasecmp(ext, "avif") == 0)
+    format = IMG_FORMAT_AVIF;
+  else if (strcasecmp(ext, "webp") == 0)
+    format = IMG_FORMAT_WEBP;
+  else if (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0)
+    format = IMG_FORMAT_TIFF;
+  else if (strcasecmp(ext, "raw") == 0 || strcasecmp(ext, "cr2") == 0 ||
+           strcasecmp(ext, "nef") == 0 || strcasecmp(ext, "arw") == 0 ||
+           strcasecmp(ext, "dng") == 0 || strcasecmp(ext, "orf") == 0 ||
+           strcasecmp(ext, "raf") == 0 || strcasecmp(ext, "pef") == 0 ||
+           strcasecmp(ext, "x3f") == 0) {
+    format = IMG_FORMAT_RAW;
   }
 
-  log_info("Detected format for %s: %d", filename, format);
+  log_info("Detected format for %s: %d", filename, (int)format);
   return format;
 }
 

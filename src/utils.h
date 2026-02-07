@@ -2,8 +2,8 @@
 #define UTILS_H
 
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stddef.h>
-
 
 extern bool g_verbose;
 

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+
 bool g_verbose = false;
 
 void log_info(const char *fmt, ...) {

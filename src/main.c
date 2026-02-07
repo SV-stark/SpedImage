@@ -55,7 +55,7 @@ static void show_help(void) {
 }
 
 static void load_image_from_index(AppState *app, int index) {
-  if (index < 0 || index >= app->file_list.count)
+  if (index < 0 || (size_t)index >= app->file_list.count)
     return;
 
   char path[2048];
@@ -149,7 +149,7 @@ static void handle_keydown(AppState *app, SDL_Keycode key) {
       int current_idx = file_list_find_index(
           &app->file_list, get_filename_from_path(img->filename));
 
-      if (current_idx < app->file_list.count - 1) {
+      if ((size_t)current_idx < app->file_list.count - 1) {
         load_image_from_index(app, current_idx + 1);
       } else {
         // Wrap around
