@@ -33,6 +33,7 @@ typedef struct {
   int slideshow_delay;
   FileList file_list;
   char *current_directory;
+  int current_file_index; // Index in the file list
 } AppState;
 
 static void show_help(void) {
@@ -58,6 +59,8 @@ static void load_image_from_index(AppState *app, int index) {
   if (index < 0 || (size_t)index >= app->file_list.count)
     return;
 
+  app->current_file_index = index;
+
   char path[2048];
   snprintf(path, sizeof(path), "%s%c%s", app->current_directory, PATH_SEP,
            app->file_list.files[index]);
@@ -68,6 +71,7 @@ static void load_image_from_index(AppState *app, int index) {
     // For now, simple LRU handles it, but we could be smarter
 
     cache_add(&app->cache, img);
+    app->cache.current_index = app->cache.count - 1;
 
     // Update current index in cache to match file list index conceptually
     // (Note: cache index != file listing index. Cache is what's loaded in RAM.)
@@ -104,13 +108,10 @@ static void load_directory(AppState *app, const char *path) {
   // Find index of the requested image
   int index = file_list_find_index(&app->file_list, filename);
   if (index >= 0) {
-    // We found the file in the list, verify logic matches
-    app->cache.current_index =
-        index; // Reuse cache index variable for file list index for now?
-               // WAIT: Cache index is for the cache array. We need a separate
-    // file_list_index. Let's rely on finding it in the file list.
+    app->current_file_index = index;
   } else {
     index = 0; // Default to first if not found
+    app->current_file_index = 0;
   }
 
   // Actually load the image
@@ -127,13 +128,8 @@ static void handle_keydown(AppState *app, SDL_Keycode key) {
 
   switch (key) {
   case SDLK_LEFT: {
-    int current_idx = file_list_find_index(
-        &app->file_list,
-        get_filename_from_path(
-            cache_get(&app->cache, app->cache.current_index)->filename));
-
-    if (current_idx > 0) {
-      load_image_from_index(app, current_idx - 1);
+    if (app->current_file_index > 0) {
+      load_image_from_index(app, app->current_file_index - 1);
     } else {
       // Wrap around
       load_image_from_index(app, app->file_list.count - 1);
@@ -141,20 +137,11 @@ static void handle_keydown(AppState *app, SDL_Keycode key) {
   } break;
 
   case SDLK_RIGHT: {
-    // Find current image name in the file list
-    // Note: This search every time is inefficient, better to store
-    // current_file_index in AppState But efficient enough for UI (< 10k files)
-    Image *img = cache_get(&app->cache, app->cache.current_index);
-    if (img) {
-      int current_idx = file_list_find_index(
-          &app->file_list, get_filename_from_path(img->filename));
-
-      if ((size_t)current_idx < app->file_list.count - 1) {
-        load_image_from_index(app, current_idx + 1);
-      } else {
-        // Wrap around
-        load_image_from_index(app, 0);
-      }
+    if (app->current_file_index < (int)app->file_list.count - 1) {
+      load_image_from_index(app, app->current_file_index + 1);
+    } else {
+      // Wrap around
+      load_image_from_index(app, 0);
     }
   } break;
 
