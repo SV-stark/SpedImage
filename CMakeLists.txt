@@ -11,6 +11,8 @@ set(SOURCES
     src/GuiLayer.cpp
     src/Image.cpp
     src/Editor.cpp
+    src/DirList.cpp
+    src/stb_impl.cpp
 )
 
 # Headers
@@ -41,15 +43,19 @@ FetchContent_MakeAvailable(imgui)
 # Executable
 # ------------------------------------------------------------------------------
 
-# Add backend sources
+# Add ImGui core and backend sources
 set(IMGUI_SOURCES
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
 
 add_executable(SpedImage ${SOURCES} ${IMGUI_SOURCES})
 
-# Include directories for ImGui backends
+# Include directories for ImGui
 target_include_directories(SpedImage PRIVATE
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
@@ -58,7 +64,6 @@ target_include_directories(SpedImage PRIVATE
 # Link libraries
 target_link_libraries(SpedImage PRIVATE
     glfw
-    imgui
 )
 
 # Platform specific linking
