@@ -9,6 +9,7 @@
 #define BUTTON_PADDING 6
 #define ICON_PADDING 10
 #define AUTO_HIDE_DELAY 3000
+#define SIDEBAR_WIDTH 200
 
 // Helper to draw rounded rect
 static void draw_rounded_rect(SDL_Renderer *renderer, SDL_Rect *rect,
@@ -24,14 +25,7 @@ static void draw_rounded_rect(SDL_Renderer *renderer, SDL_Rect *rect,
 
   // Corners (simple approximation)
   // Top-left
-  SDL_Rect tl = {rect->x, rect->y, radius, radius};
-  // Top-right
-  SDL_Rect tr = {rect->x + rect->w - radius, rect->y, radius, radius};
-  // Bottom-left
-  SDL_Rect bl = {rect->x, rect->y + rect->h - radius, radius, radius};
-  // Bottom-right
-  SDL_Rect br = {rect->x + rect->w - radius, rect->y + rect->h - radius, radius,
-                 radius};
+  // (Removed unused rects bl, br, tr, tl)
 
   // Fill corners (for now just squares, fully rounded needs circle algo, but
   // this is fast) Let's do a better job - using points for corners? For
@@ -40,7 +34,6 @@ static void draw_rounded_rect(SDL_Renderer *renderer, SDL_Rect *rect,
   // look if radius is small.
 
   // Improved corner drawing
-  int cx, cy;
   for (int w = 0; w < radius; w++) {
     for (int h = 0; h < radius; h++) {
       if ((radius - w) * (radius - w) + (radius - h) * (radius - h) <=
@@ -133,11 +126,27 @@ static void draw_icon_sun(SDL_Renderer *renderer, int x, int y, int size) {
   draw_rounded_rect(renderer, &circ, r, (SDL_Color){255, 255, 255, 255});
 
   // Rays
-  int l = size / 2 - 2;
   SDL_RenderDrawLine(renderer, cx, y + 2, cx, y + 4);               // N
   SDL_RenderDrawLine(renderer, cx, y + size - 2, cx, y + size - 4); // S
   SDL_RenderDrawLine(renderer, x + 2, cy, x + 4, cy);               // W
   SDL_RenderDrawLine(renderer, x + size - 2, cy, x + size - 4, cy); // E
+}
+
+static void draw_icon_resize(SDL_Renderer *renderer, int x, int y, int size) {
+  int m = 8;
+  SDL_Rect r = {x + m, y + m, size - 2 * m, size - 2 * m};
+  SDL_RenderDrawRect(renderer, &r);
+  // Cross arrows
+  SDL_RenderDrawLine(renderer, r.x, r.y, r.x + r.w, r.y + r.h);
+  SDL_RenderDrawLine(renderer, r.x + r.w, r.y, r.x, r.y + r.h);
+}
+
+static void draw_icon_compress(SDL_Renderer *renderer, int x, int y, int size) {
+  int m = 10;
+  SDL_Rect r = {x + m, y + size / 2, size - 2 * m, size / 3};
+  SDL_RenderDrawRect(renderer, &r);
+  // Weight top
+  SDL_RenderDrawLine(renderer, x + size / 2, y + m, x + size / 2, y + size / 2);
 }
 
 static void draw_icon_plus(SDL_Renderer *renderer, int x, int y, int size) {
@@ -344,16 +353,11 @@ UITool ui_handle_event(Toolbar *toolbar, Sidebar *sidebar, SDL_Event *event) {
   if (toolbar->auto_hide && toolbar->visible) {
     Uint32 elapsed = SDL_GetTicks() - toolbar->last_activity;
     if (elapsed > AUTO_HIDE_DELAY) {
-      // Toolbar buttons
-      const char *labels[] = {"Open", "Save", "<", ">", "Crop", "Rot", "Brt",
-                              "Sz",   "Cmp",  "+", "-", "Fit",  "FS",  "Quit"};
-      int x = BUTTON_PADDING;
       int mx, my;
       SDL_GetMouseState(&mx, &my);
 
-      // Check if mouse is hovering over any toolbar button
       bool hovering = false;
-      for (int i = 0; i < toolbar->button_count && i < 14; i++) {
+      for (int i = 0; i < toolbar->button_count; i++) {
         if (mx >= toolbar->buttons[i].x &&
             mx < toolbar->buttons[i].x + toolbar->buttons[i].w &&
             my >= toolbar->buttons[i].y &&

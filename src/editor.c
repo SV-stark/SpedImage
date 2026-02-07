@@ -1,4 +1,6 @@
 #include "editor.h"
+#include "stb_image.h"
+#include "stb_image_write.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +16,7 @@ struct mem_ctx {
 static void write_to_mem(void *context, void *data, int size) {
   struct mem_ctx *ctx = (struct mem_ctx *)context;
   if (ctx->size + size > ctx->capacity) {
-    size_t new_cap = ctx->capacity == 0 ? size * 2 : ctx->capacity * 2;
+    size_t new_cap = ctx->capacity == 0 ? (size_t)size * 2 : ctx->capacity * 2;
     if (new_cap < ctx->size + size)
       new_cap = ctx->size + size + 1024;
     unsigned char *new_buf = realloc(ctx->buffer, new_cap);

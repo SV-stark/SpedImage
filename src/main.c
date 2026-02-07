@@ -14,6 +14,12 @@
 #define KB 1024
 #define MB (1024 * 1024)
 
+#ifdef _WIN32
+#define PATH_SEP '\\'
+#else
+#define PATH_SEP '/'
+#endif
+
 typedef struct {
   AppWindow window;
   ImageCache cache;
@@ -355,18 +361,18 @@ int main(int argc, char *argv[]) {
       case UI_TOOL_OPEN:
         // Open file dialog would go here
         break;
-      case UI_TOOL_SAVE:
-        if (app.cache.current_index >= 0) {
-          Image *current = app.cache.images[app.cache.current_index];
+      case UI_TOOL_SAVE: {
+        Image *current = cache_get(&app.cache, app.cache.current_index);
+        if (app.cache.current_index >= 0 && current) {
           // Save current image
           ui_show_toast(&app.toast, "Image saved", 2000);
         }
-        break;
+      } break;
       case UI_TOOL_PREV:
-        handle_keydown(app, SDLK_LEFT);
+        handle_keydown(&app, SDLK_LEFT);
         break;
       case UI_TOOL_NEXT:
-        handle_keydown(app, SDLK_RIGHT);
+        handle_keydown(&app, SDLK_RIGHT);
         break;
       case UI_TOOL_CROP:
         editor_start_crop(&app.editor);
@@ -377,21 +383,23 @@ int main(int argc, char *argv[]) {
       case UI_TOOL_BRIGHTNESS:
         editor_start_brightness(&app.editor);
         break;
-      case UI_TOOL_RESIZE:
+      case UI_TOOL_RESIZE: {
+        Image *current = cache_get(&app.cache, app.cache.current_index);
         if (current) {
-          editor_start_resize(&app->editor, current->width, current->height);
-          ui_show_toast(&app->toast, "Resize: Use +/- to change width", 3000);
+          editor_start_resize(&app.editor, current->width, current->height);
+          ui_show_toast(&app.toast, "Resize: Use +/- to change width", 3000);
         }
-        break;
-      case UI_TOOL_COMPRESS:
+      } break;
+      case UI_TOOL_COMPRESS: {
+        Image *current = cache_get(&app.cache, app.cache.current_index);
         if (current) {
-          editor_start_compress(&app->editor, current->raw_size);
+          editor_start_compress(&app.editor, current->raw_size);
           char msg[64];
           snprintf(msg, sizeof(msg), "Compress: Limit %d KB (Use +/-)",
-                   app->editor.target_size_kb);
-          ui_show_toast(&app->toast, msg, 3000);
+                   app.editor.target_size_kb);
+          ui_show_toast(&app.toast, msg, 3000);
         }
-        break;
+      } break;
       case UI_TOOL_ZOOM_IN:
         handle_keydown(&app, SDLK_PLUS);
         break;
