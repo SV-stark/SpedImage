@@ -4,13 +4,7 @@
 #include <stb_image.h>
 #include <stb_image_write.h>
 
-#ifdef _WIN32
-#include <GL/gl.h>
-#include <windows.h>
-
-#else
-#include <GL/gl.h>
-#endif
+#include <GLFW/glfw3.h>
 
 Image::Image(const std::string &path) : m_Path(path) {}
 

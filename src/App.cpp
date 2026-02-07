@@ -136,8 +136,8 @@ void App::NextImage() {
   auto it = std::find(files.begin(), files.end(), currentFile);
   int index = 0;
   if (it != files.end()) {
-    index = (int)std::distance(files.begin(), it);
-    index = (index + 1) % files.size();
+    index = static_cast<int>(std::distance(files.begin(), it));
+    index = (index + 1) % static_cast<int>(files.size());
   }
   std::string parent =
       std::filesystem::path(m_CurrentPath).parent_path().string();
@@ -155,8 +155,9 @@ void App::PrevImage() {
   auto it = std::find(files.begin(), files.end(), currentFile);
   int index = 0;
   if (it != files.end()) {
-    index = (int)std::distance(files.begin(), it);
-    index = (index - 1 + files.size()) % files.size();
+    index = static_cast<int>(std::distance(files.begin(), it));
+    index = (index - 1 + static_cast<int>(files.size())) %
+            static_cast<int>(files.size());
   }
   std::string parent =
       std::filesystem::path(m_CurrentPath).parent_path().string();
