@@ -73,9 +73,11 @@ elseif(UNIX AND NOT APPLE)
     target_link_libraries(SpedImage PRIVATE GL)
 endif()
 
-# Copy assets to build directory
-add_custom_command(TARGET SpedImage POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_SOURCE_DIR}/assets ${CMAKE_BINARY_DIR}/assets
-    COMMENT "Copying assets..."
-)
+# Copy assets to build directory (if assets exist)
+if(EXISTS ${CMAKE_SOURCE_DIR}/assets)
+    add_custom_command(TARGET SpedImage POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/assets ${CMAKE_BINARY_DIR}/assets
+        COMMENT "Copying assets..."
+    )
+endif()
