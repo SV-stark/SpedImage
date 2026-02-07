@@ -133,7 +133,7 @@ SpedImage is built for longevity and portability:
 
 ## 📜 License & Credits
 
-Distributed under the **MIT License**.
+SpedImage is distributed under the **MIT License**. See the [LICENSE](LICENSE) file for the full license text.
 
 **Special Thanks to:**
 - **Sean Barrett** for `stb_image`.
