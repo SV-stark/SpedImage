@@ -475,7 +475,35 @@ void ui_render_toast(Toast *toast, SDL_Renderer *renderer) {
   // So distinct toast messages were invisible except for the box size.
 
   // HACK: Draw "Toast" icon or dots to indicate message present.
+  // Placeholder Icon / Dots logic already there
   SDL_SetRenderDrawColor(renderer, 255, 255, 255, alpha);
   SDL_Rect r = {toast_rect.x + 10, toast_rect.y + 16, toast_rect.w - 20, 2};
   SDL_RenderFillRect(renderer, &r);
+}
+
+void ui_render_placeholder(SDL_Renderer *renderer, int win_w, int win_h) {
+  // Draw "Drop Image Here" placeholder
+  SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
+
+  // Simple box
+  int box_w = 300;
+  int box_h = 200;
+  SDL_Rect box = {(win_w - box_w) / 2, (win_h - box_h) / 2, box_w, box_h};
+  draw_rounded_rect(renderer, &box, 20, (SDL_Color){40, 40, 40, 255});
+
+  // Border
+  SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
+  SDL_RenderDrawRect(renderer, &box);
+
+  // "Icon" representation
+  SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
+  int icon_size = 60;
+  draw_icon_folder(renderer, (win_w - icon_size) / 2,
+                   (win_h - icon_size) / 2 - 20, icon_size);
+
+  // Text bars representation
+  SDL_Rect bar1 = {box.x + 50, box.y + box_h - 60, box_w - 100, 4};
+  SDL_Rect bar2 = {box.x + 80, box.y + box_h - 45, box_w - 160, 4};
+  SDL_RenderFillRect(renderer, &bar1);
+  SDL_RenderFillRect(renderer, &bar2);
 }

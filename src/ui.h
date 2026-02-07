@@ -56,5 +56,6 @@ UITool ui_handle_event(Toolbar *toolbar, Sidebar *sidebar, SDL_Event *event);
 void ui_render(Toolbar *toolbar, Sidebar *sidebar, SDL_Renderer *renderer);
 void ui_show_toast(Toast *toast, const char *message, Uint32 duration);
 void ui_render_toast(Toast *toast, SDL_Renderer *renderer);
+void ui_render_placeholder(SDL_Renderer *renderer, int win_w, int win_h);
 
 #endif

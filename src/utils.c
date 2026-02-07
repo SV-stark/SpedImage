@@ -1,9 +1,22 @@
 #include "utils.h"
 #include <ctype.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+bool g_verbose = false;
+
+void log_info(const char *fmt, ...) {
+  if (!g_verbose)
+    return;
+  va_list args;
+  va_start(args, fmt);
+  vprintf(fmt, args);
+  va_end(args);
+  printf("\n");
+}
 
 #ifdef _WIN32
 #include <windows.h>
@@ -80,6 +93,7 @@ static bool is_image_ext(const char *filename) {
 }
 
 bool file_list_scan_directory(FileList *list, const char *directory_path) {
+  log_info("Scanning directory: %s", directory_path);
   file_list_free(list);
 
 #ifdef _WIN32
@@ -126,6 +140,7 @@ bool file_list_scan_directory(FileList *list, const char *directory_path) {
 #endif
 
   // Sort files
+  log_info("Found %d images", (int)list->count);
   qsort(list->files, list->count, sizeof(char *), compare_files);
   return true;
 }

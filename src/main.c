@@ -310,11 +310,16 @@ static void handle_mousewheel(AppState *app, SDL_MouseWheelEvent *wheel) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 2) {
-    show_help();
-    printf("Error: No image file specified\n");
-    return 1;
+  char *initial_path = NULL;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
+      g_verbose = true;
+    } else if (initial_path == NULL) {
+      initial_path = argv[i];
+    }
   }
+
+  log_info("Starting %s in verbose mode", APP_NAME);
 
   AppState app = {0};
   app.slideshow_delay = 3000; // 3 seconds
@@ -330,8 +335,13 @@ int main(int argc, char *argv[]) {
   file_list_init(&app.file_list);
   ui_init(&app.toolbar, &app.sidebar);
 
-  // Load initial image
-  load_directory(&app, argv[1]);
+  // Load initial image if provided
+  if (initial_path) {
+    log_info("Loading initial path: %s", initial_path);
+    load_directory(&app, initial_path);
+  } else {
+    log_info("No initial path provided, starting with empty GUI");
+  }
 
   // Main loop
   SDL_Event event;
@@ -353,6 +363,13 @@ int main(int argc, char *argv[]) {
                                app.window.width, app.window.height);
           }
         }
+      } else if (event.type == SDL_DROPFILE) {
+        char *dropped_file = event.drop.file;
+        log_info("File dropped: %s", dropped_file);
+        load_directory(&app, dropped_file);
+        // If we dropped a file, ensure we are NOT in fitting mode if we want to
+        // zoom? Actually load_directory handles fitting.
+        SDL_free(dropped_file);
       }
 
       // Handle UI events
@@ -444,8 +461,8 @@ int main(int argc, char *argv[]) {
       }
       viewport_render(&app.viewport, app.window.renderer, current);
     } else {
-      // Show placeholder text
-      // In real app, render text with SDL_ttf
+      ui_render_placeholder(app.window.renderer, app.window.width,
+                            app.window.height);
     }
 
     // Render UI
