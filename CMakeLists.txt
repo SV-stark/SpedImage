@@ -70,8 +70,13 @@ if(MSVC)
     add_compile_options(/wd4309) # argument: truncation of constant value
     add_compile_options(/wd4244) # conversion: possible loss of data
     add_compile_options(/wd4267) # conversion: size_t to int
+    add_compile_options(/wd4101) # unreferenced local variable
 endif()
 set(WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE) # For libde265/libheif if used
+
+# Force disable Doxygen to prevent build failures (missing dot.exe)
+set(DOXYGEN_EXECUTABLE "" CACHE FILEPATH "" FORCE)
+set(DOXYGEN_FOUND FALSE CACHE BOOL "" FORCE)
 
 # 5. libheif
 FetchContent_Declare(
@@ -84,6 +89,14 @@ FetchContent_Declare(
 # Populate dependencies to set up paths
 FetchContent_MakeAvailable(glfw imgui zlib libde265)
 
+# Ensure libde265 does NOT treat warnings as errors (it might override global settings)
+if(TARGET libde265)
+    target_compile_options(libde265 PRIVATE /WX-) 
+endif()
+if(TARGET encoder)
+    target_compile_options(encoder PRIVATE /WX-)
+endif()
+
 # Configure libheif to find our fetched libde265
 set(LIBDE265_FOUND ON CACHE BOOL "" FORCE)
 set(LIBDE265_INCLUDE_DIRS "${libde265_SOURCE_DIR}" CACHE PATH "" FORCE)
@@ -95,6 +108,7 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(ENABLE_DOCUMENTATION OFF CACHE BOOL "" FORCE)
+set(WITH_DOXYGEN OFF CACHE BOOL "" FORCE)
 
 set(WITH_LIBDE265 ON CACHE BOOL "" FORCE)
 set(WITH_X265 OFF CACHE BOOL "" FORCE)     
