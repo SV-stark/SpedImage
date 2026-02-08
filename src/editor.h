@@ -3,11 +3,9 @@
 #include <memory>
 #include <vector>
 
-// Use ImGui's built-in loader for convenience.
-// If this fails, we might need adjustments based on include paths.
-// But CMake adds backends/ to path, so <imgui_impl_opengl3_loader.h> should
-// work.
-#include <imgui_impl_opengl3_loader.h>
+// Use ImGui's built-in loader for convenience (in implementation)
+// Forward declare if needed, but we use void* for texture IDs here.
+// #include <imgui_impl_opengl3_loader.h> // Move to cpp
 
 class Image;
 

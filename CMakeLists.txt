@@ -150,10 +150,13 @@ set(IMGUI_SOURCES
 
 add_executable(SpedImage ${SOURCES} ${IMGUI_SOURCES})
 
-# Include directories for ImGui
+# Include directories for ImGui and libraries
 target_include_directories(SpedImage PRIVATE
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
+    ${libheif_SOURCE_DIR} # Fix for libheif/heif.h
+    ${libde265_SOURCE_DIR}
+    ${libde265_BINARY_DIR}
 )
 
 # Link libraries
