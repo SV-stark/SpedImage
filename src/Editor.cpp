@@ -1,14 +1,16 @@
 #include "Editor.h"
 #include "Image.h"
-#include <GLFW/glfw3.h>
 #include <cmath>
 #include <iostream>
 #include <vector>
 
 
-// Using ImGui's loader, so we don't need GLAD
-// Ensure imgui_impl_opengl3_loader.h is included in header or here
-// It is in header, so we are good.
+// Include GLFW first for GL types if needed, though loader handles most.
+#include <GLFW/glfw3.h>
+
+// We use ImGui's embedded loader for GL3 functions (like framebuffers)
+// This must be included in the .cpp to avoid polluting the header
+#include <imgui_impl_opengl3_loader.h>
 
 // Vertex Shader with Rotation and Crop/Zoom
 const char *vertexShaderSource = R"(
