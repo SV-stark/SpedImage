@@ -1,13 +1,16 @@
 # Build artifacts
+build/
+bin/
+obj/
 *.o
 *.exe
 spedimage
-build/bin/
-build/obj/
 
 # IDE files
 .vscode/
 .idea/
+.vs/
+*.user
 *.swp
 .opencode/
 

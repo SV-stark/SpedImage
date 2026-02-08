@@ -4,6 +4,14 @@ project(SpedImage LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Fix for libde265 using old CMake policies (< 3.5)
+if(POLICY CMP0048)
+    cmake_policy(SET CMP0048 NEW)
+endif()
+# Ensure newer policies are used
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
+
 # Define sources
 set(SOURCES
     src/main.cpp
@@ -32,6 +40,7 @@ FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.4
+    DOWNLOAD_EXTRACT_TIMESTAMP true
 )
 
 # 2. Dear ImGui
@@ -39,12 +48,14 @@ FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
     GIT_TAG        docking
+    DOWNLOAD_EXTRACT_TIMESTAMP true
 )
 
 # 3. ZLIB (Common dependency)
 FetchContent_Declare(
     zlib
     URL https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP true
 )
 
 # 4. libde265 (HEIC Decoder)
@@ -52,6 +63,7 @@ FetchContent_Declare(
     libde265
     GIT_REPOSITORY https://github.com/strukturag/libde265.git
     GIT_TAG        v1.0.15
+    DOWNLOAD_EXTRACT_TIMESTAMP true
 )
 # Disable strict warnings for dependencies that are noisy (especially libde265 on MSVC)
 if(MSVC)
@@ -66,6 +78,7 @@ FetchContent_Declare(
     libheif
     GIT_REPOSITORY https://github.com/strukturag/libheif.git
     GIT_TAG        v1.17.6
+    DOWNLOAD_EXTRACT_TIMESTAMP true
 )
 
 # Populate dependencies to set up paths
@@ -98,6 +111,7 @@ if(UNIX AND NOT APPLE)
         libspng
         GIT_REPOSITORY https://github.com/randy408/libspng.git
         GIT_TAG        v0.7.4
+        DOWNLOAD_EXTRACT_TIMESTAMP true
     )
     FetchContent_MakeAvailable(libspng)
 endif()
