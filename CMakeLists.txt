@@ -67,12 +67,14 @@ FetchContent_Declare(
 )
 # Disable strict warnings for dependencies that are noisy (especially libde265 on MSVC)
 if(MSVC)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS) # Fix C4996 "unsafe" functions
     add_compile_options(/wd4309) # argument: truncation of constant value
     add_compile_options(/wd4244) # conversion: possible loss of data
     add_compile_options(/wd4267) # conversion: size_t to int
     add_compile_options(/wd4101) # unreferenced local variable
+    add_compile_options(/wd4996) # deprecated functions (redundant with define but safe)
 endif()
-set(WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE) # For libde265/libheif if used
+set(WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 
 # Force disable Doxygen to prevent build failures (missing dot.exe)
 set(DOXYGEN_EXECUTABLE "" CACHE FILEPATH "" FORCE)
@@ -99,7 +101,8 @@ endif()
 
 # Configure libheif to find our fetched libde265
 set(LIBDE265_FOUND ON CACHE BOOL "" FORCE)
-set(LIBDE265_INCLUDE_DIRS "${libde265_SOURCE_DIR}" CACHE PATH "" FORCE)
+# Include both Source (for headers) and Binary (for generated de265-version.h)
+set(LIBDE265_INCLUDE_DIRS "${libde265_SOURCE_DIR}" "${libde265_BINARY_DIR}" CACHE PATH "" FORCE)
 set(LIBDE265_LIBRARIES libde265 CACHE STRING "" FORCE) 
 
 # Disable heavy dependencies and documentation for subprojects
