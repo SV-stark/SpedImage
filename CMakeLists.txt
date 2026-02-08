@@ -54,7 +54,8 @@ FetchContent_Declare(
 # 3. ZLIB (Common dependency)
 FetchContent_Declare(
     zlib
-    URL https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz
+    GIT_REPOSITORY https://github.com/madler/zlib.git
+    GIT_TAG        v1.3.1
     DOWNLOAD_EXTRACT_TIMESTAMP true
 )
 
