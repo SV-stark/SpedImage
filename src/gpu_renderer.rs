@@ -131,8 +131,10 @@ pub struct Renderer {
     sampler: Sampler,
     image_texture: Option<Texture>,
     image_bind_group: Option<BindGroup>,
+    gif_textures: Vec<(Texture, BindGroup)>,  // cached GPU textures for GIF frames
     config: SurfaceConfiguration,
     image_size: Option<(u32, u32)>,
+    pub scale_factor: f64,  // DPI scale (12: DPI-aware rendering)
 }
 
 impl Renderer {
@@ -255,7 +257,7 @@ impl Renderer {
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader_module,
-                entry_point: "vertex_main",
+                entry_point: Some("vertex_main"),
                 buffers: &[VertexBufferLayout {
                     array_stride: 16,
                     step_mode: VertexStepMode::Vertex,
@@ -275,7 +277,7 @@ impl Renderer {
             },
             fragment: Some(FragmentState {
                 module: &shader_module,
-                entry_point: "fragment_main",
+                entry_point: Some("fragment_main"),
                 targets: &[Some(ColorTargetState {
                     format,
                     blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
@@ -293,7 +295,7 @@ impl Renderer {
         });
 
         Ok(Self {
-            _window: window,
+            _window: window.clone(),
             device,
             queue,
             surface,
@@ -303,8 +305,10 @@ impl Renderer {
             sampler,
             image_texture: None,
             image_bind_group: None,
+            gif_textures: Vec::new(),
             config,
             image_size: None,
+            scale_factor: window.scale_factor(),
         })
     }
 
@@ -491,5 +495,101 @@ impl Renderer {
 
     pub fn has_image(&self) -> bool {
         self.image_texture.is_some()
+    }
+
+    pub fn gif_frame_count(&self) -> usize {
+        self.gif_textures.len()
+    }
+
+    /// Upload all GIF frames to GPU once. During playback, swap_gif_frame is
+    /// called with an index — zero CPU→GPU copies per frame after initial upload.
+    pub fn preload_gif_textures(&mut self, frames: &[ImageData]) -> Result<()> {
+        self.gif_textures.clear();
+        let bind_group_layout = self.pipeline.get_bind_group_layout(0);
+
+        for frame in frames {
+            let (width, height) = (frame.width, frame.height);
+            let texture = self.device.create_texture(&TextureDescriptor {
+                label: Some("GIF Frame Texture"),
+                size: Extent3d { width, height, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            self.queue.write_texture(
+                ImageCopyTexture {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                frame.as_rgba(),
+                ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width * 4),
+                    rows_per_image: Some(height),
+                },
+                Extent3d { width, height, depth_or_array_layers: 1 },
+            );
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("GIF Frame Bind Group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::Buffer(self.uniform_buffer.as_entire_buffer_binding()),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::Sampler(&self.sampler),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&view),
+                    },
+                ],
+            });
+            self.gif_textures.push((texture, bind_group));
+        }
+        tracing::debug!("Preloaded {} GIF frames to GPU", self.gif_textures.len());
+        Ok(())
+    }
+
+    /// Swap the active bind group to a cached GIF frame (no GPU transfer).
+    pub fn swap_gif_frame(&mut self, idx: usize) {
+        if let Some((tex, bg)) = self.gif_textures.get(idx) {
+            self.image_size = Some((tex.width(), tex.height()));
+            // We reuse the already-created bind group by pointing image_bind_group at it.
+            // Since we can't store a reference, we rebuild cheaply using the same view.
+            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group_layout = self.pipeline.get_bind_group_layout(0);
+            self.image_bind_group = Some(self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("Active GIF Bind Group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::Buffer(self.uniform_buffer.as_entire_buffer_binding()),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::Sampler(&self.sampler),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&view),
+                    },
+                ],
+            }));
+            let _ = bg; // keep gif_textures alive
+        }
+    }
+
+    pub fn update_scale_factor(&mut self, scale: f64) {
+        self.scale_factor = scale;
     }
 }

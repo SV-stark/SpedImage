@@ -12,7 +12,7 @@ rust-version = "1.75"
 winit = { version = "0.30", features = ["rwh_06"] }
 
 # GPU Rendering
-wgpu = "0.19"
+wgpu = "0.20"
 
 # Image decoding (pure Rust)
 image = { version = "0.24", default-features = false, features = ["jpeg", "png", "gif", "bmp", "tga", "tiff", "webp"] }
@@ -43,12 +43,8 @@ fast_image_resize = "3"
 # For GPU data types
 bytemuck = { version = "1", features = ["derive"] }
 
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
-    "Win32_Foundation",
-    "Win32_Graphics_Gdi",
-    "Win32_UI_WindowsAndMessaging"
-]}
+# Clipboard support
+arboard = "0.6"
 
 [features]
 default = []

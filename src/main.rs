@@ -1,6 +1,4 @@
 //! SpedImage - Main Entry Point
-//!
-//! Entry point for the GPU-accelerated image viewer application.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -21,8 +19,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::error!("Application panicked: {}", panic_info);
     }));
 
+    // (5) CLI argument: accept a file path to open on startup
+    // Usage: spedimage.exe [image_path]
+    let initial_path = std::env::args().nth(1).map(std::path::PathBuf::from);
+    if let Some(ref p) = initial_path {
+        tracing::info!("Opening from CLI: {:?}", p);
+    }
+
     // Run the application
-    SpedImageApp::run()?;
+    SpedImageApp::run(initial_path)?;
 
     tracing::info!("Application exited cleanly");
     Ok(())
