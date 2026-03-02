@@ -110,7 +110,7 @@ impl ImageBackend {
                         if !frames.is_empty() {
                             let mut results = Vec::new();
                             for frame in frames {
-                                let delay = frame.delay().numer_denominator_ms().0 as u32;
+                                let delay = frame.delay().numer_denom_ms().0;
                                 let img = frame.into_buffer();
                                 let (width, height) = img.dimensions();
                                 results.push(ImageData {
@@ -149,7 +149,7 @@ impl ImageBackend {
     /// Load an image and optionally downsample it if it exceeds maximum dimensions
     pub fn load_and_downsample(path: &Path, max_w: u32, max_h: u32) -> Result<Vec<ImageData>> {
         let mut frames = Self::load(path)?;
-        
+
         // Fast path: if the first frame is already small enough, just return
         if let Some(first) = frames.first() {
             if first.width <= max_w && first.height <= max_h {
@@ -164,7 +164,10 @@ impl ImageBackend {
 
         for data in frames.iter_mut() {
             let src = fir::Image::from_vec_u8(
-                data.width, data.height, std::mem::take(&mut data.rgba_data), fir::PixelType::U8x4
+                std::num::NonZeroU32::new(data.width).unwrap(),
+                std::num::NonZeroU32::new(data.height).unwrap(),
+                std::mem::take(&mut data.rgba_data),
+                fir::PixelType::U8x4,
             )?;
 
             let scale_w = max_w as f32 / data.width as f32;
@@ -174,7 +177,11 @@ impl ImageBackend {
             let dst_w = (data.width as f32 * scale).round() as u32;
             let dst_h = (data.height as f32 * scale).round() as u32;
 
-            let mut dst = fir::Image::new(dst_w, dst_h, fir::PixelType::U8x4);
+            let mut dst = fir::Image::new(
+                std::num::NonZeroU32::new(dst_w).unwrap(),
+                std::num::NonZeroU32::new(dst_h).unwrap(),
+                fir::PixelType::U8x4,
+            );
             resizer.resize(&src.view(), &mut dst.view_mut())?;
 
             data.rgba_data = dst.into_vec();

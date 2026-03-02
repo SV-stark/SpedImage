@@ -1,6 +1,7 @@
 //! GPU Renderer - WGPU-based image processing pipeline
 
 use anyhow::{Context, Result};
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindingResource, BindingType, BlendState,
@@ -15,7 +16,6 @@ use wgpu::{
 };
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
-use std::sync::Arc;
 
 use crate::image_backend::ImageData;
 
@@ -131,10 +131,10 @@ pub struct Renderer {
     sampler: Sampler,
     image_texture: Option<Texture>,
     image_bind_group: Option<BindGroup>,
-    gif_textures: Vec<(Texture, BindGroup)>,  // cached GPU textures for GIF frames
+    pub gif_textures: Vec<(Texture, BindGroup)>, // cached GPU textures for GIF frames
     config: SurfaceConfiguration,
     image_size: Option<(u32, u32)>,
-    pub scale_factor: f64,  // DPI scale (12: DPI-aware rendering)
+    pub scale_factor: f64, // DPI scale (12: DPI-aware rendering)
 }
 
 impl Renderer {
@@ -257,7 +257,8 @@ impl Renderer {
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader_module,
-                entry_point: Some("vertex_main"),
+                entry_point: "vertex_main",
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[VertexBufferLayout {
                     array_stride: 16,
                     step_mode: VertexStepMode::Vertex,
@@ -277,7 +278,8 @@ impl Renderer {
             },
             fragment: Some(FragmentState {
                 module: &shader_module,
-                entry_point: Some("fragment_main"),
+                entry_point: "fragment_main",
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
                     format,
                     blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
@@ -417,7 +419,8 @@ impl Renderer {
             saturation: adjustments.saturation,
         };
 
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
         let mut encoder = self
             .device
@@ -478,7 +481,12 @@ impl Renderer {
                     resolve_target: None,
                     ops: Operations {
                         // Dark gray color for loading screen
-                        load: LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 }),
+                        load: LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.1,
+                            b: 0.1,
+                            a: 1.0,
+                        }),
                         store: StoreOp::Store,
                     },
                 })],
@@ -511,7 +519,11 @@ impl Renderer {
             let (width, height) = (frame.width, frame.height);
             let texture = self.device.create_texture(&TextureDescriptor {
                 label: Some("GIF Frame Texture"),
-                size: Extent3d { width, height, depth_or_array_layers: 1 },
+                size: Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
@@ -532,7 +544,11 @@ impl Renderer {
                     bytes_per_row: Some(width * 4),
                     rows_per_image: Some(height),
                 },
-                Extent3d { width, height, depth_or_array_layers: 1 },
+                Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
             );
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
             let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -541,7 +557,9 @@ impl Renderer {
                 entries: &[
                     BindGroupEntry {
                         binding: 0,
-                        resource: BindingResource::Buffer(self.uniform_buffer.as_entire_buffer_binding()),
+                        resource: BindingResource::Buffer(
+                            self.uniform_buffer.as_entire_buffer_binding(),
+                        ),
                     },
                     BindGroupEntry {
                         binding: 1,
@@ -573,7 +591,9 @@ impl Renderer {
                 entries: &[
                     BindGroupEntry {
                         binding: 0,
-                        resource: BindingResource::Buffer(self.uniform_buffer.as_entire_buffer_binding()),
+                        resource: BindingResource::Buffer(
+                            self.uniform_buffer.as_entire_buffer_binding(),
+                        ),
                     },
                     BindGroupEntry {
                         binding: 1,

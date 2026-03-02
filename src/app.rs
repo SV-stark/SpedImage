@@ -11,11 +11,11 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
+    dpi::PhysicalPosition,
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{Key, NamedKey},
-    window::{Window, WindowId, Fullscreen},
-    dpi::PhysicalPosition,
+    window::{Fullscreen, Window, WindowId},
 };
 
 pub enum AppEvent {
@@ -101,7 +101,11 @@ impl SpedImageApp {
             }
             Key::Named(NamedKey::F11) => {
                 if let Some(ref w) = self.window {
-                    let mode = if w.fullscreen().is_some() { None } else { Some(Fullscreen::Borderless(None)) };
+                    let mode = if w.fullscreen().is_some() {
+                        None
+                    } else {
+                        Some(Fullscreen::Borderless(None))
+                    };
                     w.set_fullscreen(mode);
                 }
                 return;
@@ -139,12 +143,18 @@ impl SpedImageApp {
     fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, cursor_pos: PhysicalPosition<f64>) {
         match delta {
             MouseScrollDelta::LineDelta(_, y) => {
-                if y > 0.0 { self.zoom_in(Some(cursor_pos)); }
-                else if y < 0.0 { self.zoom_out(Some(cursor_pos)); }
+                if y > 0.0 {
+                    self.zoom_in(Some(cursor_pos));
+                } else if y < 0.0 {
+                    self.zoom_out(Some(cursor_pos));
+                }
             }
             MouseScrollDelta::PixelDelta(pos) => {
-                if pos.y > 0.0 { self.zoom_in(Some(cursor_pos)); }
-                else if pos.y < 0.0 { self.zoom_out(Some(cursor_pos)); }
+                if pos.y > 0.0 {
+                    self.zoom_in(Some(cursor_pos));
+                } else if pos.y < 0.0 {
+                    self.zoom_out(Some(cursor_pos));
+                }
             }
         }
     }
@@ -166,7 +176,10 @@ impl SpedImageApp {
 
         // Update window title
         if let Some(ref w) = self.window {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("SpedImage");
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("SpedImage");
             w.set_title(&format!("SpedImage — {}", name));
         }
 
@@ -174,8 +187,8 @@ impl SpedImageApp {
             Some(w) => {
                 let size = w.inner_size();
                 (size.width, size.height)
-            },
-            None => (3840, 2160)
+            }
+            None => (3840, 2160),
         };
 
         let tx = self.event_tx.clone();
@@ -193,8 +206,11 @@ impl SpedImageApp {
     /// (6) Prefetch the images neighboring the current one in the folder.
     fn prefetch_adjacent(&mut self, current: &Path) {
         let (max_w, max_h) = match &self.window {
-            Some(w) => { let s = w.inner_size(); (s.width, s.height) }
-            None => (3840, 2160)
+            Some(w) => {
+                let s = w.inner_size();
+                (s.width, s.height)
+            }
+            None => (3840, 2160),
         };
 
         let neighbors: Vec<PathBuf> = {
@@ -202,14 +218,20 @@ impl SpedImageApp {
             let idx = files.iter().position(|f| f.path == current);
             let mut v = Vec::new();
             if let Some(i) = idx {
-                if i + 1 < files.len() { v.push(files[i + 1].path.clone()); }
-                if i > 0 { v.push(files[i - 1].path.clone()); }
+                if i + 1 < files.len() {
+                    v.push(files[i + 1].path.clone());
+                }
+                if i > 0 {
+                    v.push(files[i - 1].path.clone());
+                }
             }
             v
         };
 
         for path in neighbors {
-            if self.prefetch_cache.contains_key(&path) { continue; }
+            if self.prefetch_cache.contains_key(&path) {
+                continue;
+            }
             let tx = self.event_tx.clone();
             let p = path.clone();
             std::thread::spawn(move || {
@@ -226,21 +248,28 @@ impl SpedImageApp {
             let path = PathBuf::from(&image.path);
             let confirmed = rfd::MessageDialog::new()
                 .set_title("Delete Image")
-                .set_description(format!("Delete {}?", path.file_name().unwrap_or_default().to_string_lossy()))
+                .set_description(format!(
+                    "Delete {}?",
+                    path.file_name().unwrap_or_default().to_string_lossy()
+                ))
                 .set_buttons(rfd::MessageButtons::YesNo)
-                .show() == rfd::MessageDialogResult::Yes;
-            if confirmed {
-                if std::fs::remove_file(&path).is_ok() {
-                    self.ui_state.set_status(format!("Deleted: {}", path.file_name().unwrap_or_default().to_string_lossy()));
-                    self.current_image = None;
-                    self.current_frames.clear();
-                    self.ui_state.load_directory(path.parent().unwrap_or(&path).to_path_buf());
-                    self.dirty = true;
-                }
+                .show()
+                == rfd::MessageDialogResult::Yes;
+            if confirmed && std::fs::remove_file(&path).is_ok() {
+                self.ui_state.set_status(format!(
+                    "Deleted: {}",
+                    path.file_name().unwrap_or_default().to_string_lossy()
+                ));
+                self.current_image = None;
+                self.current_frames.clear();
+                self.ui_state
+                    .load_directory(path.parent().unwrap_or(&path).to_path_buf());
+                self.dirty = true;
             }
         }
     }
 
+    #[allow(dead_code)]
     fn save_image(&mut self) {
         if let Some(ref image) = self.current_image {
             let path = PathBuf::from(&image.path);
@@ -282,7 +311,7 @@ impl SpedImageApp {
         self.ui_state.rotate_90();
         self.dirty = true;
     }
-    
+
     fn toggle_crop(&mut self) {
         self.ui_state.is_cropping = !self.ui_state.is_cropping;
         if !self.ui_state.is_cropping {
@@ -290,19 +319,19 @@ impl SpedImageApp {
         }
         self.dirty = true;
     }
-    
+
     fn cancel_crop(&mut self) {
         self.ui_state.is_cropping = false;
         self.ui_state.crop_rect = [0.0, 0.0, 1.0, 1.0];
         self.dirty = true;
     }
-    
+
     fn reset_adjustments(&mut self) {
         self.ui_state.reset_adjustments();
         self.ui_state.set_status("Adjustments reset");
         self.dirty = true;
     }
-    
+
     fn toggle_sidebar(&mut self) {
         self.ui_state.show_sidebar = !self.ui_state.show_sidebar;
         self.dirty = true;
@@ -312,7 +341,12 @@ impl SpedImageApp {
         let tx = self.event_tx.clone();
         std::thread::spawn(move || {
             if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Images", &["jpg","jpeg","png","gif","bmp","tiff","webp","heic","avif"])
+                .add_filter(
+                    "Images",
+                    &[
+                        "jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "heic", "avif",
+                    ],
+                )
                 .pick_file()
             {
                 tx.send(AppEvent::OpenPath(path)).ok();
@@ -343,8 +377,10 @@ impl SpedImageApp {
                     .mul_add(old_w, self.ui_state.adjustments.crop_rect[0]);
                 let cy = (pos.y as f32 / win_size.height as f32)
                     .mul_add(old_h, self.ui_state.adjustments.crop_rect[1]);
-                self.ui_state.adjustments.crop_rect[0] = (cx - new_w * (pos.x as f32 / win_size.width as f32)).max(0.0);
-                self.ui_state.adjustments.crop_rect[1] = (cy - new_h * (pos.y as f32 / win_size.height as f32)).max(0.0);
+                self.ui_state.adjustments.crop_rect[0] =
+                    (cx - new_w * (pos.x as f32 / win_size.width as f32)).max(0.0);
+                self.ui_state.adjustments.crop_rect[1] =
+                    (cy - new_h * (pos.y as f32 / win_size.height as f32)).max(0.0);
             }
         }
 
@@ -372,7 +408,9 @@ impl SpedImageApp {
                 }
                 AppEvent::ImageLoaded(mut frames) => {
                     self.dirty = true;
-                    if frames.is_empty() { continue; }
+                    if frames.is_empty() {
+                        continue;
+                    }
                     let mut first_frame = frames.remove(0);
                     let path = PathBuf::from(&first_frame.path);
 
@@ -413,17 +451,27 @@ impl SpedImageApp {
                             f.rgba_data.shrink_to_fit();
                         }
                         if first_frame.frame_delay_ms > 0 {
-                            self.next_frame_time = Some(std::time::Instant::now()
-                                + std::time::Duration::from_millis(first_frame.frame_delay_ms as u64));
+                            self.next_frame_time = Some(
+                                std::time::Instant::now()
+                                    + std::time::Duration::from_millis(
+                                        first_frame.frame_delay_ms as u64,
+                                    ),
+                            );
                         }
                     }
 
                     let size_mb = first_frame.file_size_bytes as f64 / 1_048_576.0;
-                    let frame_info = if frames.is_empty() { String::new() } else { format!("  |  {} frames", frames.len() + 1) };
+                    let frame_info = if frames.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  |  {} frames", frames.len() + 1)
+                    };
                     self.ui_state.set_status(format!(
                         "{}  |  {}×{}  |  {size_mb:.1} MB{}",
                         path.file_name().unwrap_or_default().to_string_lossy(),
-                        first_frame.width, first_frame.height, frame_info
+                        first_frame.width,
+                        first_frame.height,
+                        frame_info
                     ));
 
                     self.current_image = Some(first_frame);
@@ -458,7 +506,7 @@ impl ApplicationHandler for SpedImageApp {
             let window = match event_loop.create_window(
                 Window::default_attributes()
                     .with_title("SpedImage")
-                    .with_decorations(true)
+                    .with_decorations(true),
             ) {
                 Ok(w) => Arc::new(w),
                 Err(e) => {
@@ -477,7 +525,10 @@ impl ApplicationHandler for SpedImageApp {
                     tracing::error!("Failed to initialize GPU renderer: {}", e);
                     let _ = rfd::MessageDialog::new()
                         .set_title("GPU Error")
-                        .set_description(format!("Failed to initialize GPU: {}\n\nThe app will exit.", e))
+                        .set_description(format!(
+                            "Failed to initialize GPU: {}\n\nThe app will exit.",
+                            e
+                        ))
                         .show();
                     event_loop.exit();
                     return;
@@ -540,19 +591,17 @@ impl ApplicationHandler for SpedImageApp {
                 }
                 self.last_cursor_pos = position;
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                match (button, state) {
-                    (MouseButton::Left, ElementState::Pressed) => {
-                        if !self.ui_state.is_cropping {
-                            self.mouse_drag_start = Some(self.last_cursor_pos);
-                        }
+            WindowEvent::MouseInput { state, button, .. } => match (button, state) {
+                (MouseButton::Left, ElementState::Pressed) => {
+                    if !self.ui_state.is_cropping {
+                        self.mouse_drag_start = Some(self.last_cursor_pos);
                     }
-                    (MouseButton::Left, ElementState::Released) => {
-                        self.mouse_drag_start = None;
-                    }
-                    _ => {}
                 }
-            }
+                (MouseButton::Left, ElementState::Released) => {
+                    self.mouse_drag_start = None;
+                }
+                _ => {}
+            },
             WindowEvent::RedrawRequested => {
                 self.process_events();
                 if self.dirty {
@@ -572,7 +621,7 @@ impl ApplicationHandler for SpedImageApp {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         self.process_events();
-        
+
         if let Some(next_time) = self.next_frame_time {
             let now = std::time::Instant::now();
             if now >= next_time && !self.current_frames.is_empty() {
@@ -584,20 +633,28 @@ impl ApplicationHandler for SpedImageApp {
                     if let Some(ref mut renderer) = self.renderer {
                         renderer.swap_gif_frame(0);
                     }
-                    self.current_image.as_ref().map(|f| f.frame_delay_ms).unwrap_or(100)
+                    self.current_image
+                        .as_ref()
+                        .map(|f| f.frame_delay_ms)
+                        .unwrap_or(100)
                 } else {
                     let idx = self.current_frame_idx; // avoid borrow tension
                     if let Some(ref mut renderer) = self.renderer {
                         renderer.swap_gif_frame(idx); // frames[idx-1] stored at gif_textures[idx]
                     }
-                    self.current_frames.get(self.current_frame_idx - 1)
-                        .map(|f| f.frame_delay_ms).unwrap_or(100)
+                    self.current_frames
+                        .get(self.current_frame_idx - 1)
+                        .map(|f| f.frame_delay_ms)
+                        .unwrap_or(100)
                 };
 
-                self.next_frame_time = Some(now + std::time::Duration::from_millis(delay.max(10) as u64));
+                self.next_frame_time =
+                    Some(now + std::time::Duration::from_millis(delay.max(10) as u64));
                 self.dirty = true;
             }
-            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(self.next_frame_time.unwrap()));
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                self.next_frame_time.unwrap(),
+            ));
         } else {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         }
