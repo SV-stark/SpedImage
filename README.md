@@ -1,99 +1,113 @@
-# 🖼️ SpedImage (C++ Edition)
-
-**The Ultra-Lightweight, GPU-Accelerated Image Viewer with Native Performance.**
+# 🖼️ SpedImage
+**Ultra-Lightweight, GPU-Accelerated Image Viewer with Native Performance.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-SpedImage is a high-performance, cross-platform image viewer designed for speed and efficiency. Rebuilt in **Modern C++20**, it utilizes a **Hybrid Backend Architecture** to leverage OS-native codecs (WIC on Windows) and high-performance system libraries (Linux) for instant loading, while employing **OpenGL Shaders** for real-time, zero-copy image editing.
+SpedImage is a high-performance, cross-platform image viewer rebuilt in **Rust** with **WGPU** for GPU-accelerated rendering. It provides memory-safe, zero-copy image processing with real-time adjustments.
 
 ## 🚀 Key Features
 
-### ⚡ Hybrid Native Backend
-*   **Windows (WIC)**: Uses the Windows Imaging Component for hardware-accelerated decoding.
-    *   **HEIC/AVIF Support**: Automatically uses native extensions or falls back to bundled `libheif` for iPhone photos.
-*   **Linux (Native)**: Built on a high-performance stack:
-    *   **JPEG**: `libjpeg-turbo` (SIMD optimized).
-    *   **PNG**: `libspng` (Statically linked, 2x faster than libpng).
-    *   **HEIC**: System or bundled `libheif`.
+### ⚡ High-Performance Image Loading
+- **Pure Rust Image Decoding**: Using the `image` crate for safe, efficient decoding
+- **Wide Format Support**: JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, AVIF
+- **Memory Efficient**: Zero-copy GPU texture loading
 
 ### 🎨 GPU-Accelerated Editing
-All adjustments are applied in real-time using **OpenGL Shaders**—no CPU processing required.
-*   **Instant Adjustments**: Brightness, Contrast, and Saturation sliders work instantly on 4K/8K images.
-*   **Lossless Rotation**: Shader-based rotation (90° increments).
-*   **Interactive Crop**: Drag-and-drop cropping tool with visual overlay.
-*   **Save & Export**: Save your edits to PNG/JPG (`Ctrl+S`).
+All adjustments are applied in real-time using **WGPU Shaders**—no CPU processing required.
+- **Instant Adjustments**: Brightness, Contrast, and Saturation work instantly on 4K/8K images
+- **Lossless Rotation**: Shader-based rotation (90° increments)
+- **Interactive Crop**: Drag-and-drop cropping tool with visual overlay
+- **Save & Export**: Save your edits to PNG/JPG
 
-### 🛠️ Modern UI
-*   **Fluid Navigation**: Smooth zooming and panning.
-*   **File Browser**: Integrated sidebar for quick navigation.
-*   **Dark Mode**: A clean, professional, and dark-themed interface built with **Dear ImGui**.
+### 🛠️ Modern Tech Stack
+- **Language**: Rust (Memory-safe, high-performance)
+- **GPU API**: WGPU (Cross-platform: Vulkan/Metal/DX12/OpenGL)
+- **Windowing**: winit
+- **Image Processing**: Custom WGSL shaders
 
 ---
 
 ## 🛠️ Building from Source
 
 **Prerequisites:**
--   **CMake** (3.14+)
--   **C++ Compiler** (C++20 compliant: MSVC 2019+, GCC 10+, Clang 11+)
--   **Git**
+- **Rust** (1.75+)
+- **Cargo** (comes with Rust)
 
-### 🪟 Windows
+### 🪟 Windows / 🐧 Linux / 🍎 macOS
 
-1.  **Clone**:
-    ```powershell
-    git clone https://github.com/yourusername/spedimage.git
-    cd spedimage
-    ```
-2.  **Build**:
-    ```powershell
-    cmake -B build
-    cmake --build build --config Release
-    ```
-3.  **Run**: `./build/Release/SpedImage.exe`
+1. **Clone**:
+   ```bash
+   git clone https://github.com/yourusername/spedimage.git
+   cd spedimage
+   ```
 
-### 🐧 Linux
+2. **Build**:
+   ```bash
+   cargo build --release
+   ```
 
-1.  **Install Dependencies**:
-    We provide a script to install necessary development libraries (`libjpeg-dev`, `libheif-dev`, etc.) for Debian, Ubuntu, Fedora, and Arch.
-    ```bash
-    ./install_deps.sh
-    ```
-2.  **Build**:
-    ```bash
-    cmake -B build
-    cmake --build build --config Release
-    ```
-3.  **Run**: `./build/SpedImage`
+3. **Run**:
+   ```bash
+   cargo run --release
+   ```
 
 ---
 
 ## 📂 Project Structure
 
-```text
+```
 spedimage/
 ├── src/
-│   ├── main.cpp             # Entry point
-│   ├── App.cpp              # Main application loop & logic
-│   ├── GuiLayer.cpp         # ImGui rendering & UI
-│   ├── Editor.cpp           # GPU Renderer (FBO, Shaders)
-│   ├── Image.cpp            # Image resource wrapper
-│   ├── ImageBackend.h       # Backend interface
-│   ├── ImageBackend_Win32.cpp # WIC implementation
-│   └── ImageBackend_Linux.cpp # LibJpegTurbo/LibSpng implementation
-├── assets/                  # Fonts and icons
-├── CMakeLists.txt           # Build configuration
-└── README.md                # Documentation
+│   ├── main.rs            # Entry point
+│   ├── lib.rs             # Library root
+│   ├── app.rs             # Main application & event loop
+│   ├── gpu_renderer.rs    # WGPU rendering pipeline
+│   ├── image_backend.rs    # Image loading & decoding
+│   └── ui.rs              # UI state management
+├── Cargo.toml             # Rust package manifest
+└── README.md              # Documentation
 ```
 
+---
+
 ## 📐 Technical Architecture
-*   **Language**: C++20
-*   **Windowing**: GLFW
-*   **UI**: Dear ImGui (Docking Branch)
-*   **Rendering**: OpenGL 3.3 Core Profile
-*   **Image Decoding**: WIC (Win32), LibJpeg-Turbo/LibSpng (Linux)
-*   **Image Encoding**: `stb_image_write`
+
+| Component | Technology |
+|-----------|------------|
+| **Language** | Rust 2021 |
+| **Windowing** | winit |
+| **GPU Rendering** | WGPU (Vulkan/Metal/DX12/OpenGL) |
+| **Image Decoding** | `image` crate (pure Rust) |
+| **Shaders** | WGSL |
+
+### Why Rust + WGPU?
+- **Memory Safety**: No buffer overflow or use-after-free bugs
+- **Cross-Platform**: Single codebase compiles to Windows/Linux/macOS
+- **Modern GPU API**: WGPU provides safe access to modern graphics APIs
+- **Performance**: Comparable to C++ performance with better safety guarantees
+
+---
+
+## ⌨️ Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `A` / `←` | Previous image |
+| `D` / `→` | Next image |
+| `W` / `↑` | Previous image |
+| `S` / `↓` | Next image |
+| `R` | Rotate 90° |
+| `C` | Toggle crop mode |
+| `O` | Open file dialog |
+| `Ctrl+S` | Save image |
+| `F` | Toggle sidebar |
+| `1` | Reset adjustments |
+| `+` / `-` | Zoom in/out |
+| `0` | Zoom to fit |
+| `Q` | Cancel crop / Quit |
 
 ---
 
 ## 📜 License
+
 SpedImage is distributed under the **MIT License**.

@@ -1,0 +1,68 @@
+[package]
+name = "spedimage"
+version = "2.0.0"
+edition = "2021"
+description = "Ultra-Lightweight GPU-Accelerated Image Viewer"
+authors = ["SpedImage Team"]
+license = "MIT"
+rust-version = "1.75"
+
+[dependencies]
+# Windowing
+winit = "0.30"
+
+# GPU Rendering
+wgpu = "0.19"
+
+# Image decoding (pure Rust)
+image = { version = "0.24", default-features = false, features = ["jpeg", "png", "gif", "bmp", "tga", "tiff", "webp"] }
+
+# File system
+walkdir = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async runtime (for file operations)
+tokio = { version = "1", features = ["fs", "rt-multi-thread"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Keyboard shortcuts (using winit's built-in handling)
+# keyboard-types removed - not needed
+
+# Directory paths
+dirs = "5"
+
+# For image manipulation
+fast_image_resize = "3"
+
+# For GPU data types
+bytemuck = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging"
+]}
+
+[features]
+default = []
+
+[lib]
+name = "spedimage_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "spedimage"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
