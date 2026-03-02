@@ -320,17 +320,19 @@ impl SpedImageApp {
                     }
 
                     // Brightness & Contrast
-                    if (adjustments.brightness - 1.0).abs() > 0.01 || (adjustments.contrast - 1.0).abs() > 0.01 {
+                    if (adjustments.brightness - 1.0).abs() > 0.01
+                        || (adjustments.contrast - 1.0).abs() > 0.01
+                    {
                         let b = (adjustments.brightness - 1.0) * 255.0;
                         let c = adjustments.contrast;
                         img = img.adjust_contrast(c);
                         if b != 0.0 {
                             // The `img.brighten` method takes an i32 value.
-                            img = img.brighten(b as i32); 
+                            img = img.brighten(b as i32);
                         }
                     }
 
-                    // Saturation (image crate doesn't have a direct saturation method, 
+                    // Saturation (image crate doesn't have a direct saturation method,
                     // we could do a custom pixel map, but for now we skip or approximate)
 
                     ImageBackend::save(&save_path_clone, &img, 90)?;
@@ -438,10 +440,14 @@ impl SpedImageApp {
                     .mul_add(old_w, self.ui_state.adjustments.crop_rect[0]);
                 let cy = (pos.y as f32 / win_size.height as f32)
                     .mul_add(old_h, self.ui_state.adjustments.crop_rect[1]);
-                self.ui_state.adjustments.crop_rect[0] =
-                    (cx - new_w * (pos.x as f32 / win_size.width as f32)).max(0.0).min(1.0 - new_w);
-                self.ui_state.adjustments.crop_rect[1] =
-                    (cy - new_h * (pos.y as f32 / win_size.height as f32)).max(0.0).min(1.0 - new_h);
+                self.ui_state.adjustments.crop_rect[0] = (cx
+                    - new_w * (pos.x as f32 / win_size.width as f32))
+                    .max(0.0)
+                    .min(1.0 - new_w);
+                self.ui_state.adjustments.crop_rect[1] = (cy
+                    - new_h * (pos.y as f32 / win_size.height as f32))
+                    .max(0.0)
+                    .min(1.0 - new_h);
             }
         }
 

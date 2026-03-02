@@ -172,7 +172,7 @@ pub struct Renderer {
     config: SurfaceConfiguration,
     image_size: Option<(u32, u32)>,
     pub scale_factor: f64, // DPI scale (12: DPI-aware rendering)
-    
+
     // Text rendering
     text_brush: wgpu_text::TextBrush<wgpu_text::font::FontArc>,
 }
@@ -387,13 +387,18 @@ impl Renderer {
         // Let's use `std::fs::read` on a known Windows font for demonstration (e.g. Segoe UI)
         let font_bytes = std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf")
             .unwrap_or_else(|_| include_bytes!("../Cargo.toml").to_vec()); // this is a terrible fallback but prevents crash if missing
-        
-        let font = wgpu_text::font::FontArc::try_from_vec(font_bytes)
-            .unwrap_or_else(|_| wgpu_text::font::FontArc::try_from_slice(include_bytes!("../Cargo.toml"))
-            .expect("Failed to load font fallback"));
 
-        let text_brush = wgpu_text::BrushBuilder::using_font(font)
-            .build(&device, config.width, config.height, format);
+        let font = wgpu_text::font::FontArc::try_from_vec(font_bytes).unwrap_or_else(|_| {
+            wgpu_text::font::FontArc::try_from_slice(include_bytes!("../Cargo.toml"))
+                .expect("Failed to load font fallback")
+        });
+
+        let text_brush = wgpu_text::BrushBuilder::using_font(font).build(
+            &device,
+            config.width,
+            config.height,
+            format,
+        );
 
         Ok(Self {
             _window: window.clone(),
@@ -558,7 +563,13 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn render_ui_overlay(&mut self, is_cropping: bool, crop_rect: [f32; 4], status_text: Option<&str>, show_help: bool) -> Result<()> {
+    pub fn render_ui_overlay(
+        &mut self,
+        is_cropping: bool,
+        crop_rect: [f32; 4],
+        status_text: Option<&str>,
+        show_help: bool,
+    ) -> Result<()> {
         let frame = self
             .surface
             .get_current_texture()
@@ -603,7 +614,9 @@ impl Renderer {
 
         if !text_sections.is_empty() {
             // Queue text
-            self.text_brush.queue(&self.device, &self.queue, text_sections).unwrap();
+            self.text_brush
+                .queue(&self.device, &self.queue, text_sections)
+                .unwrap();
         }
 
         {
@@ -629,7 +642,7 @@ impl Renderer {
             if is_cropping {
                 // ... logic to draw crop overlay ...
                 render_pass.set_pipeline(&self.crop_pipeline);
-                
+
                 let win_w = self.config.width;
                 let win_h = self.config.height;
 
@@ -642,7 +655,7 @@ impl Renderer {
                 let cy = cy.min(win_h.saturating_sub(1));
                 let cw = cw.min(win_w - cx);
                 let ch = ch.min(win_h - cy);
-                
+
                 // Top rect
                 if cy > 0 {
                     render_pass.set_scissor_rect(0, 0, win_w, cy);
@@ -665,13 +678,11 @@ impl Renderer {
                 }
             }
         } // drop render_pass
-        
+
         self.queue.submit([encoder.finish()]);
         frame.present();
         Ok(())
     }
-
-
 
     pub fn render_loading(&self) -> Result<()> {
         let frame = self

@@ -6,8 +6,6 @@
 use crate::gpu_renderer::ImageAdjustments;
 use std::path::PathBuf;
 
-
-
 /// File entry for the sidebar
 #[derive(Debug, Clone)]
 pub struct FileEntry {

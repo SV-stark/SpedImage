@@ -218,16 +218,19 @@ impl ImageBackend {
         // Fallback to Windows Imaging Component (WIC)
         use windows::core::HSTRING;
         use windows::Win32::Graphics::Imaging::*;
-        use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, COINIT_MULTITHREADED, CLSCTX_INPROC_SERVER};
         use windows::Win32::Storage::FileSystem::GENERIC_READ;
-        
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+        };
+
         // Initialize COM (it might already be initialized by winit, but safe to re-call)
         let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
 
         let result = (|| -> windows::core::Result<(Vec<u8>, u32, u32)> {
             unsafe {
-                let factory: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
-                
+                let factory: IWICImagingFactory =
+                    CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
+
                 let path_hstring = HSTRING::from(path.as_os_str());
                 let decoder = factory.CreateDecoderFromFilename(
                     &path_hstring,
@@ -237,7 +240,7 @@ impl ImageBackend {
                 )?;
 
                 let frame = decoder.GetFrame(0)?;
-                
+
                 let mut width = 0;
                 let mut height = 0;
                 frame.GetSize(&mut width, &mut height)?;
@@ -256,11 +259,7 @@ impl ImageBackend {
                 let size = stride * height;
                 let mut buffer: Vec<u8> = vec![0; size as usize];
 
-                converter.CopyPixels(
-                    None,
-                    stride,
-                    &mut buffer,
-                )?;
+                converter.CopyPixels(None, stride, &mut buffer)?;
 
                 Ok((buffer, width, height))
             }
@@ -270,7 +269,7 @@ impl ImageBackend {
             Ok(data) => {
                 tracing::debug!("Loaded HEIC via WIC: {}x{}", data.1, data.2);
                 Ok(data)
-            },
+            }
             Err(e) => {
                 let msg = format!(
                     "Failed to decode HEIC using Windows WIC: {}. You may need to install the 'HEVC Video Extensions' and 'HEIF Image Extensions' from the Microsoft Store.", 
@@ -373,7 +372,7 @@ mod tests {
         // Downsample to 400x300 (should keep aspect ratio -> 300x300)
         let result = ImageBackend::load_and_downsample(&test_img_path, 400, 300).unwrap();
         let data = &result[0];
-        
+
         // 1000x1000 mapped to fit within 400x300 -> 300x300
         assert_eq!(data.width, 300);
         assert_eq!(data.height, 300);
