@@ -1,6 +1,6 @@
 ; Inno Setup Script for SpedImage
 #define MyAppName "SpedImage"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "2.0.0"
 #define MyAppPublisher "SpedImage Team"
 #define MyAppURL "https://github.com/user/SpedImage"
 #define MyAppExeName "SpedImage.exe"
@@ -28,7 +28,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\build\Release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\target\release\SpedImage.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Any extra DLLs generated would be linked statically or copied here if needed
 

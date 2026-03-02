@@ -17,11 +17,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+    - name: Install Rust
+      uses: dtolnay/rust-action@stable
+      with:
+        toolchain: stable
 
     - name: Build SpedImage
-      run: cmake --build build --config Release
+      run: cargo build --release
 
     - name: Run Inno Setup Compiler
       run: |
