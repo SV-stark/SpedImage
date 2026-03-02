@@ -16,8 +16,8 @@ SpedImage is a high-performance, cross-platform image viewer rebuilt in **Rust**
 All adjustments are applied in real-time using **WGPU Shaders**—no CPU processing required.
 - **Instant Adjustments**: Brightness, Contrast, and Saturation work instantly on 4K/8K images
 - **Lossless Rotation**: Shader-based rotation (90° increments)
-- **Interactive Crop**: Drag-and-drop cropping tool with visual overlay
-- **Save & Export**: Save your edits to PNG/JPG
+- **Crop**: Crop regions using zoom and pan
+- **Save & Export**: Save your edits (Ctrl+S)
 
 ### 🛠️ Modern Tech Stack
 - **Language**: Rust (Memory-safe, high-performance)
@@ -92,19 +92,18 @@ spedimage/
 
 | Key | Action |
 |-----|--------|
-| `A` / `←` | Previous image |
-| `D` / `→` | Next image |
-| `W` / `↑` | Previous image |
-| `S` / `↓` | Next image |
+| `A` / `W` | Previous image |
+| `D` / `S` | Next image |
 | `R` | Rotate 90° |
 | `C` | Toggle crop mode |
 | `O` | Open file dialog |
 | `Ctrl+S` | Save image |
 | `F` | Toggle sidebar |
 | `1` | Reset adjustments |
-| `+` / `-` | Zoom in/out |
+| `+` / `=` | Zoom in |
+| `-` | Zoom out |
 | `0` | Zoom to fit |
-| `Q` | Cancel crop / Quit |
+| `Esc` | Cancel crop / Quit |
 
 ---
 

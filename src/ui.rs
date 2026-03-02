@@ -6,25 +6,7 @@
 use crate::gpu_renderer::ImageAdjustments;
 use std::path::PathBuf;
 
-/// UI message types
-#[derive(Debug, Clone)]
-pub enum UiMessage {
-    OpenFile,
-    SaveFile,
-    NextImage,
-    PreviousImage,
-    Rotate90,
-    ResetAdjustments,
-    Crop,
-    ApplyCrop,
-    CancelCrop,
-    ZoomIn,
-    ZoomOut,
-    ZoomFit,
-    ToggleSidebar,
-    SelectFile(usize),
-    Quit,
-}
+
 
 /// File entry for the sidebar
 #[derive(Debug, Clone)]
@@ -55,32 +37,26 @@ impl FileEntry {
 /// Application state for UI
 #[derive(Debug, Clone)]
 pub struct UiState {
-    pub show_sidebar: bool,
-    pub sidebar_width: f32,
     pub files: Vec<FileEntry>,
     pub current_file_index: Option<usize>,
     pub adjustments: ImageAdjustments,
     pub is_cropping: bool,
     pub crop_rect: [f32; 4],
-    pub zoom_level: f32,
-    pub pan_offset: [f32; 2],
     pub show_file_dialog: bool,
+    pub show_help: bool,
     pub status_message: Option<String>,
 }
 
 impl Default for UiState {
     fn default() -> Self {
         Self {
-            show_sidebar: true,
-            sidebar_width: 250.0,
             files: Vec::new(),
             current_file_index: None,
             adjustments: ImageAdjustments::default(),
             is_cropping: false,
             crop_rect: [0.0, 0.0, 1.0, 1.0],
-            zoom_level: 1.0,
-            pan_offset: [0.0, 0.0],
             show_file_dialog: false,
+            show_help: false,
             status_message: None,
         }
     }
@@ -189,6 +165,16 @@ impl UiState {
     /// Clear status message
     pub fn clear_status(&mut self) {
         self.status_message = None;
+    }
+
+    /// Get current status message as str (empty if none)
+    pub fn get_status(&self) -> &str {
+        self.status_message.as_deref().unwrap_or("")
+    }
+
+    /// Toggle help overlay
+    pub fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
     }
 }
 

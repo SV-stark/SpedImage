@@ -205,70 +205,90 @@ impl ImageBackend {
         Ok((rgba_data, width, height))
     }
 
-    /// Load HEIC/AVIF images using libheif-rs
+    /// Load HEIC/AVIF images using built-in OS codecs (WIC on Windows)
+    #[cfg(windows)]
     fn load_heif(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
-        // Try using image crate first (newer versions have HEIF support)
+        // First try the image crate in case it handles it
         if let Ok(img) = image::open(path) {
             let (width, height) = img.dimensions();
             let rgba = img.to_rgba8();
             return Ok((rgba.into_raw(), width, height));
         }
 
-        // Fallback to libheif-rs for HEIC
-        #[cfg(feature = "heif")]
-        {
-            use libheif_rs::{Decoder, ImageInput};
+        // Fallback to Windows Imaging Component (WIC)
+        use windows::core::HSTRING;
+        use windows::Win32::Graphics::Imaging::*;
+        use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, COINIT_MULTITHREADED, CLSCTX_INPROC_SERVER};
+        use windows::Win32::Storage::FileSystem::GENERIC_READ;
+        
+        // Initialize COM (it might already be initialized by winit, but safe to re-call)
+        let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
 
-            let file_data = std::fs::read(path)?;
-            let mut input = ImageInput::from_slice(&file_data)
-                .map_err(|e| anyhow::anyhow!("HEIF decode error: {}", e))?;
+        let result = (|| -> windows::core::Result<(Vec<u8>, u32, u32)> {
+            unsafe {
+                let factory: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
+                
+                let path_hstring = HSTRING::from(path.as_os_str());
+                let decoder = factory.CreateDecoderFromFilename(
+                    &path_hstring,
+                    None,
+                    GENERIC_READ.0,
+                    WICDecodeMetadataCacheOnDemand,
+                )?;
 
-            let num_images = input
-                .number_of_images()
-                .map_err(|e| anyhow::anyhow!("HEIF error: {}", e))?;
+                let frame = decoder.GetFrame(0)?;
+                
+                let mut width = 0;
+                let mut height = 0;
+                frame.GetSize(&mut width, &mut height)?;
 
-            if num_images == 0 {
-                return Err(anyhow::anyhow!("No images in HEIC file"));
+                let converter = factory.CreateFormatConverter()?;
+                converter.Initialize(
+                    &frame,
+                    &GUID_WICPixelFormat32bppRGBA,
+                    WICBitmapDitherTypeNone,
+                    None,
+                    0.0,
+                    WICBitmapPaletteTypeCustom,
+                )?;
+
+                let stride = width * 4;
+                let size = stride * height;
+                let mut buffer: Vec<u8> = vec![0; size as usize];
+
+                converter.CopyPixels(
+                    None,
+                    stride,
+                    &mut buffer,
+                )?;
+
+                Ok((buffer, width, height))
             }
+        })();
 
-            let mut decoder = Decoder::new();
-            decoder.set_image_index(0);
-
-            let image = input
-                .decode(&decoder, 0)
-                .map_err(|e| anyhow::anyhow!("HEIF decode error: {}", e))?;
-
-            let width = image.width() as u32;
-            let height = image.height() as u32;
-
-            // Convert to RGBA
-            let mut rgba_data = vec![0u8; (width * height * 4) as usize];
-
-            // Get plane data - simplified for demonstration
-            // In production, you'd properly convert chroma planes
-            for y in 0..height {
-                for x in 0..width {
-                    let idx = ((y * width + x) * 4) as usize;
-                    if idx + 3 < rgba_data.len() {
-                        rgba_data[idx] = 255; // R
-                        rgba_data[idx + 1] = 255; // G
-                        rgba_data[idx + 2] = 255; // B
-                        rgba_data[idx + 3] = 255; // A
-                    }
-                }
+        match result {
+            Ok(data) => {
+                tracing::debug!("Loaded HEIC via WIC: {}x{}", data.1, data.2);
+                Ok(data)
+            },
+            Err(e) => {
+                let msg = format!(
+                    "Failed to decode HEIC using Windows WIC: {}. You may need to install the 'HEVC Video Extensions' and 'HEIF Image Extensions' from the Microsoft Store.", 
+                    e
+                );
+                tracing::error!("{}", msg);
+                Err(anyhow::anyhow!(msg))
             }
-
-            Ok((rgba_data, width, height))
         }
+    }
 
-        #[cfg(not(feature = "heif"))]
-        {
-            // Fallback: try image crate
-            let img = image::open(path)?;
-            let (width, height) = img.dimensions();
-            let rgba = img.to_rgba8();
-            Ok((rgba.into_raw(), width, height))
-        }
+    #[cfg(not(windows))]
+    fn load_heif(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
+        // Fallback: try image crate
+        let img = image::open(path)?;
+        let (width, height) = img.dimensions();
+        let rgba = img.to_rgba8();
+        Ok((rgba.into_raw(), width, height))
     }
 
     /// Save image to file
@@ -330,5 +350,34 @@ mod tests {
             ImageFormatType::from_extension("unknown"),
             ImageFormatType::Unknown
         );
+    }
+
+    #[test]
+    fn test_load_and_downsample() {
+        let temp_dir = std::env::temp_dir();
+        let test_img_path = temp_dir.join("test_spedimage_downsample.png");
+
+        // Create a 1000x1000 test image
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::new(1000, 1000));
+        img.save(&test_img_path).unwrap();
+
+        // Downsample to 500x500
+        let result = ImageBackend::load_and_downsample(&test_img_path, 500, 500).unwrap();
+        assert_eq!(result.len(), 1);
+        let data = &result[0];
+
+        assert_eq!(data.width, 500);
+        assert_eq!(data.height, 500);
+        assert_eq!(data.rgba_data.len(), 500 * 500 * 4);
+
+        // Downsample to 400x300 (should keep aspect ratio -> 300x300)
+        let result = ImageBackend::load_and_downsample(&test_img_path, 400, 300).unwrap();
+        let data = &result[0];
+        
+        // 1000x1000 mapped to fit within 400x300 -> 300x300
+        assert_eq!(data.width, 300);
+        assert_eq!(data.height, 300);
+
+        std::fs::remove_file(&test_img_path).unwrap();
     }
 }

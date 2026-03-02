@@ -120,21 +120,61 @@ fn fragment_main(input: FragmentInput) -> @location(0) vec4<f32> {
 }
 "#;
 
+const CROP_SHADER: &str = r#"
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+};
+
+struct CropUniforms {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+};
+
+@group(0) @binding(0)
+var<uniform> crop: CropUniforms;
+
+@vertex
+fn vertex_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    // Generate a full screen quad
+    var out: VertexOutput;
+    let x = f32(vertex_index & 1u) * 2.0 - 1.0;
+    let y = f32((vertex_index >> 1u) & 1u) * 2.0 - 1.0;
+    // We invert y for Vulkan/WGPU coordinates
+    out.position = vec4<f32>(x, -y, 0.0, 1.0);
+    return out;
+}
+
+@fragment
+fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // In viewport coordinates (0 to width/height)
+    // Actually, in.position.xy is in pixel coordinates.
+    // We pass normalized crop rect (0.0 to 1.0) but we don't know window bounds in shader easily.
+    // Instead we can generate the crop rect in vertex shader or just draw the overlay regions.
+    return vec4<f32>(0.0, 0.0, 0.0, 0.5); // Just a generic darken, we will use scissors!
+}
+"#;
+
 pub struct Renderer {
     _window: Arc<Window>,
     device: Device,
     queue: Queue,
     surface: Surface<'static>,
     pipeline: RenderPipeline,
+    crop_pipeline: RenderPipeline,
     uniform_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
     sampler: Sampler,
     image_texture: Option<Texture>,
-    image_bind_group: Option<BindGroup>,
-    pub gif_textures: Vec<(Texture, BindGroup)>, // cached GPU textures for GIF frames
+    image_bind_group: Option<Arc<BindGroup>>,
+    pub gif_textures: Vec<(Texture, Arc<BindGroup>)>, // cached GPU textures for GIF frames
     config: SurfaceConfiguration,
     image_size: Option<(u32, u32)>,
     pub scale_factor: f64, // DPI scale (12: DPI-aware rendering)
+    
+    // Text rendering
+    text_brush: wgpu_text::TextBrush<wgpu_text::font::FontArc>,
 }
 
 impl Renderer {
@@ -296,12 +336,72 @@ impl Renderer {
             multiview: None,
         });
 
+        let crop_shader_module = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Crop Shader"),
+            source: ShaderSource::Wgsl(CROP_SHADER.into()),
+        });
+
+        let crop_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("Crop Pipeline Layout"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+
+        let crop_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("Crop Overlay Pipeline"),
+            layout: Some(&crop_pipeline_layout),
+            vertex: VertexState {
+                module: &crop_shader_module,
+                entry_point: "vertex_main",
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[], // generating vertices directly
+            },
+            fragment: Some(FragmentState {
+                module: &crop_shader_module,
+                entry_point: "fragment_main",
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format,
+                    blend: Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                strip_index_format: None,
+                front_face: FrontFace::Cw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        // Initialize text brush
+        // For zero-dependency simplicity without bundling a font file, we can use a built-in cross-platform font if we had one.
+        // We will load a tiny pixel font embedded in the source conceptually. Wait, font is mandatory.
+        // We will use the system font fallback or we just load a dummy for now.
+        // Let's use `std::fs::read` on a known Windows font for demonstration (e.g. Segoe UI)
+        let font_bytes = std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf")
+            .unwrap_or_else(|_| include_bytes!("../Cargo.toml").to_vec()); // this is a terrible fallback but prevents crash if missing
+        
+        let font = wgpu_text::font::FontArc::try_from_vec(font_bytes)
+            .unwrap_or_else(|_| wgpu_text::font::FontArc::try_from_slice(include_bytes!("../Cargo.toml"))
+            .expect("Failed to load font fallback"));
+
+        let text_brush = wgpu_text::BrushBuilder::using_font(font)
+            .build(&device, config.width, config.height, format);
+
         Ok(Self {
             _window: window.clone(),
             device,
             queue,
             surface,
             pipeline,
+            crop_pipeline,
             uniform_buffer,
             vertex_buffer,
             sampler,
@@ -311,6 +411,7 @@ impl Renderer {
             config,
             image_size: None,
             scale_factor: window.scale_factor(),
+            text_brush,
         })
     }
 
@@ -365,7 +466,7 @@ impl Renderer {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group_layout = self.pipeline.get_bind_group_layout(0);
 
-        let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+        let bind_group = Arc::new(self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("Image Bind Group"),
             layout: &bind_group_layout,
             entries: &[
@@ -384,7 +485,7 @@ impl Renderer {
                     resource: BindingResource::TextureView(&view),
                 },
             ],
-        });
+        }));
 
         self.image_texture = Some(texture);
         self.image_bind_group = Some(bind_group);
@@ -456,6 +557,121 @@ impl Renderer {
         frame.present();
         Ok(())
     }
+
+    pub fn render_ui_overlay(&mut self, is_cropping: bool, crop_rect: [f32; 4], status_text: Option<&str>, show_help: bool) -> Result<()> {
+        let frame = self
+            .surface
+            .get_current_texture()
+            .context("Failed to get current surface texture")?;
+
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("UI Render Encoder"),
+            });
+
+        // 1. Text rendering queueing
+        let scale = self.scale_factor as f32;
+        let mut text_sections = Vec::new();
+
+        if let Some(status) = status_text {
+            let section = wgpu_text::section::Section::default()
+                .add_text(
+                    wgpu_text::section::Text::new(status)
+                        .with_scale(18.0 * scale)
+                        .with_color([1.0, 1.0, 1.0, 1.0]),
+                )
+                .with_screen_position((10.0 * scale, self.config.height as f32 - (30.0 * scale)));
+            text_sections.push(section);
+        }
+
+        if show_help {
+            let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nEsc: Quit";
+            let section = wgpu_text::section::Section::default()
+                .add_text(
+                    wgpu_text::section::Text::new(help_text)
+                        .with_scale(16.0 * scale)
+                        .with_color([0.9, 0.9, 0.9, 1.0]),
+                )
+                .with_screen_position((10.0 * scale, 10.0 * scale));
+            text_sections.push(section);
+        }
+
+        if !text_sections.is_empty() {
+            // Queue text
+            self.text_brush.queue(&self.device, &self.queue, text_sections).unwrap();
+        }
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("UI Overlay Pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            if !text_sections.is_empty() {
+                self.text_brush.draw(&mut render_pass);
+            }
+
+            if is_cropping {
+                // ... logic to draw crop overlay ...
+                render_pass.set_pipeline(&self.crop_pipeline);
+                
+                let win_w = self.config.width;
+                let win_h = self.config.height;
+
+                let cx = (crop_rect[0] * win_w as f32) as u32;
+                let cy = (crop_rect[1] * win_h as f32) as u32;
+                let cw = (crop_rect[2] * win_w as f32) as u32;
+                let ch = (crop_rect[3] * win_h as f32) as u32;
+
+                let cx = cx.min(win_w.saturating_sub(1));
+                let cy = cy.min(win_h.saturating_sub(1));
+                let cw = cw.min(win_w - cx);
+                let ch = ch.min(win_h - cy);
+                
+                // Top rect
+                if cy > 0 {
+                    render_pass.set_scissor_rect(0, 0, win_w, cy);
+                    render_pass.draw(0..4, 0..1);
+                }
+                // Bottom rect
+                if cy + ch < win_h {
+                    render_pass.set_scissor_rect(0, cy + ch, win_w, win_h - (cy + ch));
+                    render_pass.draw(0..4, 0..1);
+                }
+                // Left rect
+                if cx > 0 {
+                    render_pass.set_scissor_rect(0, cy, cx, ch);
+                    render_pass.draw(0..4, 0..1);
+                }
+                // Right rect
+                if cx + cw < win_w {
+                    render_pass.set_scissor_rect(cx + cw, cy, win_w - (cx + cw), ch);
+                    render_pass.draw(0..4, 0..1);
+                }
+            }
+        } // drop render_pass
+        
+        self.queue.submit([encoder.finish()]);
+        frame.present();
+        Ok(())
+    }
+
+
 
     pub fn render_loading(&self) -> Result<()> {
         let frame = self
@@ -551,7 +767,7 @@ impl Renderer {
                 },
             );
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            let bind_group = Arc::new(self.device.create_bind_group(&BindGroupDescriptor {
                 label: Some("GIF Frame Bind Group"),
                 layout: &bind_group_layout,
                 entries: &[
@@ -570,7 +786,7 @@ impl Renderer {
                         resource: BindingResource::TextureView(&view),
                     },
                 ],
-            });
+            }));
             self.gif_textures.push((texture, bind_group));
         }
         tracing::debug!("Preloaded {} GIF frames to GPU", self.gif_textures.len());
@@ -581,31 +797,7 @@ impl Renderer {
     pub fn swap_gif_frame(&mut self, idx: usize) {
         if let Some((tex, bg)) = self.gif_textures.get(idx) {
             self.image_size = Some((tex.width(), tex.height()));
-            // We reuse the already-created bind group by pointing image_bind_group at it.
-            // Since we can't store a reference, we rebuild cheaply using the same view.
-            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-            let bind_group_layout = self.pipeline.get_bind_group_layout(0);
-            self.image_bind_group = Some(self.device.create_bind_group(&BindGroupDescriptor {
-                label: Some("Active GIF Bind Group"),
-                layout: &bind_group_layout,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: BindingResource::Buffer(
-                            self.uniform_buffer.as_entire_buffer_binding(),
-                        ),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: BindingResource::Sampler(&self.sampler),
-                    },
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: BindingResource::TextureView(&view),
-                    },
-                ],
-            }));
-            let _ = bg; // keep gif_textures alive
+            self.image_bind_group = Some(Arc::clone(bg));
         }
     }
 

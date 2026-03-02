@@ -7,8 +7,14 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
+    let filter = if cfg!(debug_assertions) {
+        "spedimage=debug,winit=warn,wgpu=warn"
+    } else {
+        "spedimage=info,winit=warn,wgpu=warn"
+    };
+
     tracing_subscriber::registry()
-        .with(EnvFilter::new("spedimage=debug,winit=warn,wgpu=warn"))
+        .with(EnvFilter::new(filter))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
