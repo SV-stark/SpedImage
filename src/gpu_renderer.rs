@@ -1,20 +1,20 @@
 //! GPU Renderer - WGPU-based image processing pipeline
 
 use anyhow::{Context, Result};
+use wgpu::util::DeviceExt;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindingResource, BindingType, BlendState,
     ColorTargetState, ColorWrites, CommandEncoderDescriptor, Device, DeviceDescriptor, Extent3d,
     FragmentState, FrontFace, ImageCopyTexture, ImageDataLayout, Instance, LoadOp, Operations,
     PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPassColorAttachment,
-    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, Sampler, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, StoreOp, Surface, SurfaceConfiguration, Texture,
-    TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
-    TextureUsages, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, Sampler,
+    SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, StoreOp, Surface,
+    SurfaceConfiguration, Texture, TextureAspect, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureSampleType, TextureUsages, VertexBufferLayout, VertexFormat, VertexState,
+    VertexStepMode,
 };
-use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
-use bytemuck::bytes;
 
 use crate::image_backend::ImageData;
 
@@ -127,10 +127,10 @@ fn fragment_main(input: FragmentInput) -> @location(0) vec4<f32> {
 }
 "#;
 
-pub struct Renderer {
+pub struct Renderer<'a> {
     device: Device,
     queue: Queue,
-    _surface: Surface,
+    surface: Surface<'a>,
     pipeline: RenderPipeline,
     uniform_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
@@ -141,8 +141,8 @@ pub struct Renderer {
     image_size: Option<(u32, u32)>,
 }
 
-impl Renderer {
-    pub async fn new(window: &Window) -> Result<Self> {
+impl<'a> Renderer<'a> {
+    pub async fn new(window: &'a Window) -> Result<Self> {
         let instance = Instance::new(wgpu::InstanceDescriptor::default());
 
         let surface = instance
@@ -200,14 +200,11 @@ impl Renderer {
             1.0, 1.0, 1.0, 0.0, -1.0, 1.0, 0.0, 0.0,
         ];
 
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            size: (vertex_data.len() * 4) as u64,
+            contents: bytemuck::cast_slice(&vertex_data),
             usage: wgpu::BufferUsages::VERTEX,
-            mapped_at_creation: true,
         });
-        vertex_buffer.write_slice(&vertex_data, 0..);
-        vertex_buffer.unmap();
 
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Uniform Buffer"),
@@ -309,7 +306,7 @@ impl Renderer {
         Ok(Self {
             device,
             queue,
-            _surface: surface,
+            surface,
             pipeline,
             uniform_buffer,
             vertex_buffer,
@@ -327,7 +324,7 @@ impl Renderer {
         }
         self.config.width = size.width;
         self.config.height = size.height;
-        self._surface.configure(&self.device, &self.config);
+        self.surface.configure(&self.device, &self.config);
     }
 
     pub fn load_image(&mut self, image_data: &ImageData) -> Result<()> {
@@ -403,7 +400,7 @@ impl Renderer {
 
     pub fn render(&self, adjustments: &ImageAdjustments) -> Result<()> {
         let frame = self
-            ._surface
+            .surface
             .get_current_texture()
             .context("Failed to get current surface texture")?;
 

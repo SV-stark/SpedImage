@@ -9,7 +9,7 @@ rust-version = "1.75"
 
 [dependencies]
 # Windowing
-winit = "0.30"
+winit = "0.29"
 
 # GPU Rendering
 wgpu = "0.19"
