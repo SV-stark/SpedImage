@@ -15,6 +15,7 @@ use wgpu::{
 };
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+use std::sync::Arc;
 
 use crate::image_backend::ImageData;
 
@@ -40,7 +41,7 @@ impl Default for ImageAdjustments {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     rotation: f32,
     aspect_ratio: f32,
@@ -53,7 +54,7 @@ struct Uniforms {
     saturation: f32,
 }
 
-const VERTEX_SHADER: &str = r#"
+const SHADER: &str = r#"
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
@@ -66,6 +67,9 @@ struct Uniforms {
     crop_y: f32,
     crop_w: f32,
     crop_h: f32,
+    brightness: f32,
+    contrast: f32,
+    saturation: f32,
 };
 
 @group(0) @binding(0)
@@ -93,27 +97,16 @@ fn rotate(coord: vec2<f32>, angle: f32) -> vec2<f32> {
     let c = cos(angle);
     return vec2<f32>(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
 }
-"#;
 
-const FRAGMENT_SHADER: &str = r#"
 struct FragmentInput {
     @location(0) tex_coords: vec2<f32>,
 };
-
-struct Uniforms {
-    brightness: f32,
-    contrast: f32,
-    saturation: f32,
-};
-
-@group(0) @binding(0)
-var image_texture: texture_2d<f32>;
 
 @group(0) @binding(1)
 var image_sampler: sampler;
 
 @group(0) @binding(2)
-var<uniform> uniforms: Uniforms;
+var image_texture: texture_2d<f32>;
 
 @fragment
 fn fragment_main(input: FragmentInput) -> @location(0) vec4<f32> {
@@ -127,10 +120,11 @@ fn fragment_main(input: FragmentInput) -> @location(0) vec4<f32> {
 }
 "#;
 
-pub struct Renderer<'a> {
+pub struct Renderer {
+    _window: Arc<Window>,
     device: Device,
     queue: Queue,
-    surface: Surface<'a>,
+    surface: Surface<'static>,
     pipeline: RenderPipeline,
     uniform_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
@@ -141,17 +135,17 @@ pub struct Renderer<'a> {
     image_size: Option<(u32, u32)>,
 }
 
-impl<'a> Renderer<'a> {
-    pub async fn new(window: &'a Window) -> Result<Self> {
+impl Renderer {
+    pub async fn new(window: Arc<Window>) -> Result<Self> {
         let instance = Instance::new(wgpu::InstanceDescriptor::default());
 
         let surface = instance
-            .create_surface(window)
+            .create_surface(window.clone())
             .context("Failed to create WGPU surface")?;
 
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: wgpu::PowerPreference::LowPower,
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
@@ -178,21 +172,16 @@ impl<'a> Renderer<'a> {
             format,
             width: window.inner_size().width,
             height: window.inner_size().height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: capabilities.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
-        let vertex_module = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("Vertex Shader"),
-            source: ShaderSource::Wgsl(VERTEX_SHADER.into()),
-        });
-
-        let fragment_module = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("Fragment Shader"),
-            source: ShaderSource::Wgsl(FRAGMENT_SHADER.into()),
+        let shader_module = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Shader"),
+            source: ShaderSource::Wgsl(SHADER.into()),
         });
 
         let vertex_data: [f32; 24] = [
@@ -265,7 +254,7 @@ impl<'a> Renderer<'a> {
             label: Some("Image Render Pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
-                module: &vertex_module,
+                module: &shader_module,
                 entry_point: "vertex_main",
                 buffers: &[VertexBufferLayout {
                     array_stride: 16,
@@ -285,7 +274,7 @@ impl<'a> Renderer<'a> {
                 }],
             },
             fragment: Some(FragmentState {
-                module: &fragment_module,
+                module: &shader_module,
                 entry_point: "fragment_main",
                 targets: &[Some(ColorTargetState {
                     format,
@@ -304,6 +293,7 @@ impl<'a> Renderer<'a> {
         });
 
         Ok(Self {
+            _window: window,
             device,
             queue,
             surface,
@@ -423,12 +413,7 @@ impl<'a> Renderer<'a> {
             saturation: adjustments.saturation,
         };
 
-        self.queue.write_buffer(&self.uniform_buffer, 0, unsafe {
-            std::slice::from_raw_parts(
-                &uniforms as *const _ as *const u8,
-                std::mem::size_of::<Uniforms>(),
-            )
-        });
+        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
         let mut encoder = self
             .device
@@ -458,6 +443,45 @@ impl<'a> Renderer<'a> {
                 render_pass.set_bind_group(0, bind_group, &[]);
                 render_pass.draw(0..6, 0..1);
             }
+        }
+
+        self.queue.submit([encoder.finish()]);
+        frame.present();
+        Ok(())
+    }
+
+    pub fn render_loading(&self) -> Result<()> {
+        let frame = self
+            .surface
+            .get_current_texture()
+            .context("Failed to get current surface texture")?;
+
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("Loading Encoder"),
+            });
+
+        {
+            let _render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("Loading Pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: Operations {
+                        // Dark gray color for loading screen
+                        load: LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 }),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
         }
 
         self.queue.submit([encoder.finish()]);

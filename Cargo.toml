@@ -9,7 +9,7 @@ rust-version = "1.75"
 
 [dependencies]
 # Windowing
-winit = "0.29"
+winit = { version = "0.30", features = ["rwh_06"] }
 
 # GPU Rendering
 wgpu = "0.19"
@@ -17,19 +17,19 @@ wgpu = "0.19"
 # Image decoding (pure Rust)
 image = { version = "0.24", default-features = false, features = ["jpeg", "png", "gif", "bmp", "tga", "tiff", "webp"] }
 
-# File system
-walkdir = "2"
+# File dialog (native)
+rfd = "0.14"
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Async runtime (for file operations)
-tokio = { version = "1", features = ["fs", "rt-multi-thread"] }
-
 # Error handling
 thiserror = "1"
 anyhow = "1"
+
+# Async blocking
+pollster = "0.3"
 
 # Keyboard shortcuts (using winit's built-in handling)
 # keyboard-types removed - not needed
@@ -41,7 +41,7 @@ dirs = "5"
 fast_image_resize = "3"
 
 # For GPU data types
-bytemuck = "1"
+bytemuck = { version = "1", features = ["derive"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -66,3 +66,4 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
+panic = "abort"
