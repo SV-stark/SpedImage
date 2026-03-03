@@ -772,8 +772,11 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         if self.loading {
                             let _ = renderer.render_loading();
                         } else {
-                            let _ = renderer.render(&self.ui_state.adjustments);
-                            let _ = renderer.render_ui_overlay(
+                            // render_frame acquires the surface texture once, draws image then
+                            // UI overlay into it, and presents exactly once — fixing the
+                            // double-present black screen bug.
+                            let _ = renderer.render_frame(
+                                &self.ui_state.adjustments,
                                 is_cropping,
                                 crop_rect,
                                 status_opt.as_deref(),

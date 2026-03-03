@@ -499,16 +499,14 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn render(&self, adjustments: &ImageAdjustments) -> Result<()> {
-        let frame = self
-            .surface
-            .get_current_texture()
-            .context("Failed to get current surface texture")?;
-
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
+    /// Encode image draw commands into `encoder` targeting `view`.
+    /// Does NOT submit or present — caller owns the frame lifetime.
+    fn encode_image(
+        &self,
+        adjustments: &ImageAdjustments,
+        view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
         let uniforms = Uniforms {
             rotation: adjustments.rotation,
             aspect_ratio: self
@@ -527,64 +525,64 @@ impl Renderer {
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
+        let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(wgpu::Color::BLACK),
+                    store: StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        if let Some(bind_group) = &self.image_bind_group {
+            render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_bind_group(0, bind_group.as_ref(), &[]);
+            render_pass.draw(0..6, 0..1);
+        }
+    }
+
+    /// Kept for compatibility — renders image only (no UI) and presents.
+    /// Prefer `render_frame` which combines image + UI in one surface acquire.
+    pub fn render(&self, adjustments: &ImageAdjustments) -> Result<()> {
+        let frame = self
+            .surface
+            .get_current_texture()
+            .context("Failed to get current surface texture")?;
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(wgpu::Color::BLACK),
-                        store: StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            if let Some(bind_group) = &self.image_bind_group {
-                render_pass.set_pipeline(&self.pipeline);
-                render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                render_pass.set_bind_group(0, bind_group.as_ref(), &[]);
-                render_pass.draw(0..6, 0..1);
-            }
-        }
-
+        self.encode_image(adjustments, &view, &mut encoder);
         self.queue.submit([encoder.finish()]);
         frame.present();
         Ok(())
     }
 
-    pub fn render_ui_overlay(
+    /// Encode UI overlay commands into `encoder` targeting `view`.
+    /// Does NOT submit or present — caller owns the frame lifetime.
+    fn encode_ui_overlay(
         &mut self,
         is_cropping: bool,
         crop_rect: [f32; 4],
         status_text: Option<&str>,
         show_help: bool,
         sidebar_files: Option<&[String]>,
-    ) -> Result<()> {
-        let frame = self
-            .surface
-            .get_current_texture()
-            .context("Failed to get current surface texture")?;
-
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("UI Render Encoder"),
-            });
+        view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        // --- this is the body of the old render_ui_overlay, minus frame acquire/present ---
 
         // 1. Text rendering — queue all sections
         let scale = self.scale_factor as f32;
@@ -701,8 +699,8 @@ impl Renderer {
             if let Err(e) = self.text_brush.draw_queued(
                 &self.device,
                 &mut self.staging_belt,
-                &mut encoder,
-                &view,
+                encoder,
+                view,
                 self.config.width,
                 self.config.height,
             ) {
@@ -710,7 +708,81 @@ impl Renderer {
             }
             self.staging_belt.finish();
         }
+    }
 
+    /// Combined render: acquires surface texture once, draws image then UI, presents once.
+    /// This is the correct path for still images — avoids the double-present black screen bug.
+    pub fn render_frame(
+        &mut self,
+        adjustments: &ImageAdjustments,
+        is_cropping: bool,
+        crop_rect: [f32; 4],
+        status_text: Option<&str>,
+        show_help: bool,
+        sidebar_files: Option<&[String]>,
+    ) -> Result<()> {
+        let frame = self
+            .surface
+            .get_current_texture()
+            .context("Failed to get current surface texture")?;
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("Frame Encoder"),
+            });
+
+        // 1. Draw image (clears to black first)
+        self.encode_image(adjustments, &view, &mut encoder);
+
+        // 2. Draw UI overlay on top (LoadOp::Load to preserve image pixels)
+        self.encode_ui_overlay(
+            is_cropping,
+            crop_rect,
+            status_text,
+            show_help,
+            sidebar_files,
+            &view,
+            &mut encoder,
+        );
+
+        // 3. Single submit + present
+        self.queue.submit([encoder.finish()]);
+        frame.present();
+        Ok(())
+    }
+
+    pub fn render_ui_overlay(
+        &mut self,
+        is_cropping: bool,
+        crop_rect: [f32; 4],
+        status_text: Option<&str>,
+        show_help: bool,
+        sidebar_files: Option<&[String]>,
+    ) -> Result<()> {
+        let frame = self
+            .surface
+            .get_current_texture()
+            .context("Failed to get current surface texture")?;
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("UI Render Encoder"),
+            });
+        self.encode_ui_overlay(
+            is_cropping,
+            crop_rect,
+            status_text,
+            show_help,
+            sidebar_files,
+            &view,
+            &mut encoder,
+        );
         self.queue.submit([encoder.finish()]);
         frame.present();
         Ok(())
