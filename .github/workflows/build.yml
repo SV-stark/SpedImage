@@ -45,7 +45,7 @@ jobs:
 
     - name: Set up NSIS
       if: matrix.os == 'windows-latest'
-      uses: ryansroberts/actions-setup-nsis@v1
+      uses: negrutiu/nsis-install@v1
 
     - name: Generate Installer (Windows)
       if: matrix.os == 'windows-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
