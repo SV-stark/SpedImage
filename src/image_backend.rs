@@ -284,11 +284,19 @@ impl ImageBackend {
 
     #[cfg(not(windows))]
     fn load_heif(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
-        // Fallback: try image crate
-        let img = image::open(path)?;
-        let (width, height) = img.dimensions();
-        let rgba = img.to_rgba8();
-        Ok((rgba.into_raw(), width, height))
+        // Fallback: try image crate, but provide custom error if it fails
+        let res = image::open(path);
+        match res {
+            Ok(img) => {
+                let (width, height) = img.dimensions();
+                let rgba = img.to_rgba8();
+                Ok((rgba.into_raw(), width, height))
+            }
+            Err(_) => Err(anyhow::anyhow!(
+                "HEIC/AVIF support is currently only available natively on Windows. \
+                     Please use JPEG or PNG on this platform, or install an HEIF decoder."
+            )),
+        }
     }
 
     /// Save image to file

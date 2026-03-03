@@ -37,7 +37,7 @@ All adjustments are applied in real-time using **WGPU Shaders**—no CPU process
 
 1. **Clone**:
    ```bash
-   git clone https://github.com/yourusername/spedimage.git
+   git clone https://github.com/SV-stark/SpedImage.git
    cd spedimage
    ```
 

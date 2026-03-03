@@ -1,63 +1,44 @@
-name: Build and Release
+name: Rust Build & Test
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   build:
-    runs-on: windows-latest
-    permissions:
-      contents: write
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Rust
+    - name: Install dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libx11-dev libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev libwayland-dev libxkbcommon-dev libasound2-dev libfontconfig1-dev
+
+    - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: stable
+        components: clippy, rustfmt
 
-    - name: Build SpedImage
-      run: cargo build --release
+    - name: Cargo Format
+      run: cargo fmt -- --check
 
-    - name: Run Inno Setup Compiler
-      run: |
-        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build/installer.iss
-      shell: pwsh
+    - name: Cargo Clippy
+      run: cargo clippy -- -D warnings
 
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: SpedImage-Installer
-        path: build/SpedImage_Setup.exe
+    - name: Cargo Test
+      run: cargo test --verbose
 
-    - name: Delete old nightly release
-      uses: dev-drprasad/delete-older-releases@v0.2.0
-      with:
-        repo: ${{ github.repository }}
-        keep_latest: 1
-        delete_regex: 'Nightly.*'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      continue-on-error: true
-
-    - name: Create Nightly Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: Nightly-${{ github.sha }}
-        release_name: SpedImage Nightly
-        body: |
-          ## Nightly Build
-          - Commit: ${{ github.sha }}
-          - Date: ${{ github.event.head_commit.timestamp }}
-          
-          Built from main branch.
-        draft: false
-        prerelease: true
-        generate_release_notes: false
-        files: build/SpedImage_Setup.exe
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Cargo Build
+      run: cargo build --release --verbose
