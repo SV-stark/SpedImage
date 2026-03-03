@@ -445,6 +445,12 @@ impl Renderer {
     }
 
     pub fn load_image(&mut self, image_data: &ImageData) -> Result<()> {
+        // Explicitly destroy old GPU texture to free VRAM immediately
+        if let Some(old_tex) = self.image_texture.take() {
+            old_tex.destroy();
+        }
+        self.image_bind_group = None;
+
         let width = image_data.width;
         let height = image_data.height;
 
@@ -815,6 +821,7 @@ impl Renderer {
 
         // 3. Single submit + present
         self.queue.submit([encoder.finish()]);
+        self.staging_belt.recall();
         frame.present();
         Ok(())
     }
@@ -849,6 +856,7 @@ impl Renderer {
             &mut encoder,
         );
         self.queue.submit([encoder.finish()]);
+        self.staging_belt.recall();
         frame.present();
         Ok(())
     }
@@ -909,10 +917,34 @@ impl Renderer {
     /// Upload all GIF frames to GPU once. During playback, swap_gif_frame is
     /// called with an index — zero CPU→GPU copies per frame after initial upload.
     pub fn preload_gif_textures(&mut self, frames: &[ImageData]) -> Result<()> {
-        self.gif_textures.clear();
+        // Explicitly destroy old GIF textures to free VRAM
+        for (tex, _) in self.gif_textures.drain(..) {
+            tex.destroy();
+        }
+
+        // Cap VRAM usage for GIF frames (256 MB max)
+        const MAX_GIF_VRAM_BYTES: u64 = 256 * 1024 * 1024;
+        let total_vram: u64 = frames
+            .iter()
+            .map(|f| (f.width as u64) * (f.height as u64) * 4)
+            .sum();
+        let frames_to_load = if total_vram > MAX_GIF_VRAM_BYTES && !frames.is_empty() {
+            let per_frame = total_vram / frames.len() as u64;
+            let max_frames = (MAX_GIF_VRAM_BYTES / per_frame).max(1) as usize;
+            tracing::warn!(
+                "GIF VRAM budget exceeded ({:.1} MB), limiting to {} of {} frames",
+                total_vram as f64 / 1_048_576.0,
+                max_frames,
+                frames.len()
+            );
+            &frames[..max_frames]
+        } else {
+            frames
+        };
+
         let bind_group_layout = self.pipeline.get_bind_group_layout(0);
 
-        for frame in frames {
+        for frame in frames_to_load {
             let (width, height) = (frame.width, frame.height);
             let texture = self.device.create_texture(&TextureDescriptor {
                 label: Some("GIF Frame Texture"),

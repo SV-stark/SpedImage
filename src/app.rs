@@ -7,6 +7,7 @@ use crate::image_backend::{ImageBackend, ImageData};
 use crate::ui::UiState;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use winit::{
@@ -45,7 +46,7 @@ pub struct SpedImageApp {
     renderer: Option<Renderer>,
     ui_state: UiState,
     current_image: Option<ImageData>,
-    current_frames: Vec<ImageData>,
+    current_frame_delays: Vec<u32>,
     current_frame_idx: usize,
     next_frame_time: Option<std::time::Instant>,
     loading: bool,
@@ -62,6 +63,8 @@ pub struct SpedImageApp {
     show_sidebar: bool,
     // (6) Prefetch cache: (path → frames)
     prefetch_cache: std::collections::HashMap<PathBuf, Vec<ImageData>>,
+    prefetch_cache_bytes: usize,
+    prefetch_active: Arc<AtomicUsize>,
     // (5) CLI / open-with initial file
     initial_path: Option<PathBuf>,
     // Keyboard modifier state (tracked via ModifiersChanged)
@@ -76,7 +79,7 @@ impl SpedImageApp {
             renderer: None,
             ui_state: UiState::default(),
             current_image: None,
-            current_frames: Vec::new(),
+            current_frame_delays: Vec::new(),
             current_frame_idx: 0,
             next_frame_time: None,
             loading: false,
@@ -89,6 +92,8 @@ impl SpedImageApp {
             show_help: false,
             show_sidebar: false,
             prefetch_cache: std::collections::HashMap::new(),
+            prefetch_cache_bytes: 0,
+            prefetch_active: Arc::new(AtomicUsize::new(0)),
             initial_path: None,
             ctrl_pressed: false,
         }
@@ -193,6 +198,8 @@ impl SpedImageApp {
     fn load_image(&mut self, path: PathBuf) {
         // Check prefetch cache first
         if let Some(cached_frames) = self.prefetch_cache.remove(&path) {
+            let cached_bytes: usize = cached_frames.iter().map(|f| f.rgba_data.len()).sum();
+            self.prefetch_cache_bytes = self.prefetch_cache_bytes.saturating_sub(cached_bytes);
             tracing::info!("Cache hit for {:?}", path);
             // Deliver from cache directly – still go through channel so process_events
             // handles it uniformly, and the proxy wakes the event loop.
@@ -271,11 +278,20 @@ impl SpedImageApp {
             if self.prefetch_cache.contains_key(&path) {
                 continue;
             }
+            // Limit concurrent prefetch threads
+            const MAX_CONCURRENT_PREFETCH: usize = 2;
+            if self.prefetch_active.load(Ordering::Relaxed) >= MAX_CONCURRENT_PREFETCH {
+                continue;
+            }
+            self.prefetch_active.fetch_add(1, Ordering::Relaxed);
+            let active = self.prefetch_active.clone();
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
             let p = path.clone();
             std::thread::spawn(move || {
-                if let Ok(frames) = ImageBackend::load_and_downsample(&p, max_w, max_h) {
+                let result = ImageBackend::load_and_downsample(&p, max_w, max_h);
+                active.fetch_sub(1, Ordering::Relaxed);
+                if let Ok(frames) = result {
                     if let Some(ref proxy) = proxy {
                         send_event(&tx, proxy, AppEvent::Prefetched(p, frames));
                     }
@@ -303,7 +319,7 @@ impl SpedImageApp {
                     path.file_name().unwrap_or_default().to_string_lossy()
                 ));
                 self.current_image = None;
-                self.current_frames.clear();
+                self.current_frame_delays.clear();
                 self.ui_state
                     .load_directory(path.parent().unwrap_or(&path).to_path_buf());
                 self.dirty = true;
@@ -528,27 +544,35 @@ impl SpedImageApp {
                     self.ui_state.set_status(format!("Save failed: {}", e));
                 }
                 AppEvent::Prefetched(path, frames) => {
-                    // (6) Store in prefetch cache, capped at 4 entries
-                    if self.prefetch_cache.len() >= 4 {
+                    // Memory-budget-based prefetch cache eviction (100 MB limit)
+                    const MAX_PREFETCH_BYTES: usize = 100 * 1024 * 1024;
+                    let new_bytes: usize = frames.iter().map(|f| f.rgba_data.len()).sum();
+                    while self.prefetch_cache_bytes + new_bytes > MAX_PREFETCH_BYTES
+                        && !self.prefetch_cache.is_empty()
+                    {
                         if let Some(k) = self.prefetch_cache.keys().next().cloned() {
-                            self.prefetch_cache.remove(&k);
+                            if let Some(evicted) = self.prefetch_cache.remove(&k) {
+                                let evicted_bytes: usize =
+                                    evicted.iter().map(|f| f.rgba_data.len()).sum();
+                                self.prefetch_cache_bytes =
+                                    self.prefetch_cache_bytes.saturating_sub(evicted_bytes);
+                            }
                         }
                     }
+                    self.prefetch_cache_bytes += new_bytes;
                     self.prefetch_cache.insert(path, frames);
                 }
                 AppEvent::ImageLoaded(mut frames) => {
-                    self.ui_state.reset_adjustments(); // Reset crop and zoom for new image
-
                     self.ui_state.reset_adjustments();
                     self.dirty = true;
-                    self.ui_state.reset_adjustments(); // Reset crop and zoom for new image
-                    self.ui_state.reset_adjustments(); // Reset crop and zoom for new image
-                    self.ui_state.reset_adjustments(); // Reset crop and zoom for new image
                     if frames.is_empty() {
                         continue;
                     }
                     let mut first_frame = frames.remove(0);
                     let path = PathBuf::from(&first_frame.path);
+
+                    // Extract frame delays before consuming pixel data
+                    let frame_delays: Vec<u32> = frames.iter().map(|f| f.frame_delay_ms).collect();
 
                     if let Some(parent) = path.parent() {
                         self.ui_state.load_directory(parent.to_path_buf());
@@ -567,40 +591,39 @@ impl SpedImageApp {
                             self.loading = false;
                             return;
                         }
-                        // (7) Preload all GIF frames to GPU on load
-                        if !frames.is_empty() {
+                        if !frame_delays.is_empty() {
                             if let Err(e) = renderer.preload_gif_textures(&frames) {
                                 tracing::warn!("Failed to preload GIF textures: {}", e);
                             }
                         } else {
-                            renderer.gif_textures.clear();
+                            // Explicitly destroy old GIF textures
+                            for (tex, _) in renderer.gif_textures.drain(..) {
+                                tex.destroy();
+                            }
                         }
                     }
 
-                    if frames.is_empty() {
-                        first_frame.rgba_data.clear();
-                        first_frame.rgba_data.shrink_to_fit();
+                    // Free CPU-side pixel data; GPU owns the textures now
+                    first_frame.rgba_data.clear();
+                    first_frame.rgba_data.shrink_to_fit();
+                    drop(frames);
+
+                    if !frame_delays.is_empty() && first_frame.frame_delay_ms > 0 {
+                        self.next_frame_time = Some(
+                            std::time::Instant::now()
+                                + std::time::Duration::from_millis(
+                                    first_frame.frame_delay_ms as u64,
+                                ),
+                        );
+                    } else if frame_delays.is_empty() {
                         self.next_frame_time = None;
-                    } else {
-                        for f in frames.iter_mut() {
-                            f.rgba_data.clear();
-                            f.rgba_data.shrink_to_fit();
-                        }
-                        if first_frame.frame_delay_ms > 0 {
-                            self.next_frame_time = Some(
-                                std::time::Instant::now()
-                                    + std::time::Duration::from_millis(
-                                        first_frame.frame_delay_ms as u64,
-                                    ),
-                            );
-                        }
                     }
 
                     let size_mb = first_frame.file_size_bytes as f64 / 1_048_576.0;
-                    let frame_info = if frames.is_empty() {
+                    let frame_info = if frame_delays.is_empty() {
                         String::new()
                     } else {
-                        format!("  |  {} frames", frames.len() + 1)
+                        format!("  |  {} frames", frame_delays.len() + 1)
                     };
                     self.ui_state.set_status(format!(
                         "{}  |  {}×{}  |  {size_mb:.1} MB{}",
@@ -611,7 +634,7 @@ impl SpedImageApp {
                     ));
 
                     self.current_image = Some(first_frame);
-                    self.current_frames = frames;
+                    self.current_frame_delays = frame_delays;
                     self.current_frame_idx = 0;
                     self.loading = false;
                 }
@@ -824,8 +847,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
 
         if let Some(next_time) = self.next_frame_time {
             let now = std::time::Instant::now();
-            if now >= next_time && !self.current_frames.is_empty() {
-                let total = self.current_frames.len() + 1; // +1 for first frame
+            if now >= next_time && !self.current_frame_delays.is_empty() {
+                let total = self.current_frame_delays.len() + 1; // +1 for first frame
                 self.current_frame_idx = (self.current_frame_idx + 1) % total;
 
                 let delay = if self.current_frame_idx == 0 {
@@ -842,9 +865,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     if let Some(ref mut renderer) = self.renderer {
                         renderer.swap_gif_frame(idx); // frames[idx-1] stored at gif_textures[idx]
                     }
-                    self.current_frames
+                    self.current_frame_delays
                         .get(self.current_frame_idx - 1)
-                        .map(|f| f.frame_delay_ms)
+                        .copied()
                         .unwrap_or(100)
                 };
 
@@ -867,3 +890,12 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
     }
 }
 
+impl Drop for SpedImageApp {
+    fn drop(&mut self) {
+        // Eagerly release prefetch cache memory
+        self.prefetch_cache.clear();
+        self.prefetch_cache_bytes = 0;
+        self.current_frame_delays.clear();
+        self.current_image = None;
+    }
+}
