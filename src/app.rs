@@ -15,8 +15,10 @@ use winit::{
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{Key, NamedKey},
-    window::{Fullscreen, Window, WindowId},
+    window::{Fullscreen, Icon, Window, WindowId},
 };
+
+const APP_ICON: &[u8] = include_bytes!("../assets/icons/icon.png");
 
 pub enum AppEvent {
     ImageLoaded(Vec<ImageData>),
@@ -603,12 +605,24 @@ impl Default for SpedImageApp {
 impl ApplicationHandler for SpedImageApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
+            // Build window icon from embedded PNG
+            let icon = image::load_from_memory(APP_ICON)
+                .ok()
+                .map(|img| {
+                    let rgba = img.to_rgba8();
+                    let (w, h) = rgba.dimensions();
+                    Icon::from_rgba(rgba.into_raw(), w, h).ok()
+                })
+                .flatten();
+
             // (11) Graceful error recovery — no unwrap crashes
-            let window = match event_loop.create_window(
-                Window::default_attributes()
-                    .with_title("SpedImage")
-                    .with_decorations(true),
-            ) {
+            let mut attrs = Window::default_attributes()
+                .with_title("SpedImage")
+                .with_decorations(true);
+            if let Some(icon) = icon {
+                attrs = attrs.with_window_icon(Some(icon));
+            }
+            let window = match event_loop.create_window(attrs) {
                 Ok(w) => Arc::new(w),
                 Err(e) => {
                     tracing::error!("Failed to create window: {}", e);
