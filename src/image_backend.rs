@@ -31,6 +31,10 @@ pub enum ImageFormatType {
     WebP,
     Heic,
     Avif,
+    /// RAW camera formats (Canon, Nikon, Sony, Fuji, Adobe DNG, etc.)
+    Raw,
+    /// SVG vector graphics
+    Svg,
     Unknown,
 }
 
@@ -45,12 +49,35 @@ impl ImageFormatType {
             "webp" => Self::WebP,
             "heic" | "heif" => Self::Heic,
             "avif" => Self::Avif,
+            // RAW formats: Canon, Nikon, Sony, Fuji, Olympus, Panasonic, Leica, Adobe
+            "cr2" | "cr3" | "crw"  // Canon
+            | "nef" | "nrw"        // Nikon
+            | "arw" | "srf" | "sr2" // Sony
+            | "raf"                // Fujifilm
+            | "orf"                // Olympus
+            | "rw2"                // Panasonic
+            | "dng"                // Adobe DNG (universal)
+            | "mrw"                // Minolta
+            | "pef"                // Pentax
+            | "3fr"                // Hasselblad
+            | "rwl"                // Leica
+            | "raw" | "rw1"        // Generic
+            => Self::Raw,
+            "svg" => Self::Svg,
             _ => Self::Unknown,
         }
     }
 
     pub fn is_supported(&self) -> bool {
-        !matches!(self, Self::Unknown)
+        match self {
+            Self::Unknown => false,
+            // RAW requires the `raw` feature, SVG requires `svg`
+            #[cfg(not(feature = "raw"))]
+            Self::Raw => false,
+            #[cfg(not(feature = "svg"))]
+            Self::Svg => false,
+            _ => true,
+        }
     }
 }
 
@@ -133,6 +160,10 @@ impl ImageBackend {
 
         let (rgba_data, width, height) = match format {
             ImageFormatType::Heic | ImageFormatType::Avif => Self::load_heif(path)?,
+            #[cfg(feature = "raw")]
+            ImageFormatType::Raw => Self::load_raw(path)?,
+            #[cfg(feature = "svg")]
+            ImageFormatType::Svg => Self::load_svg(path)?,
             _ => Self::load_standard(path)?,
         };
 
@@ -299,6 +330,160 @@ impl ImageBackend {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // RAW camera format loading
+    // -------------------------------------------------------------------------
+
+    /// Load RAW camera files using the `rawler` crate.
+    /// Falls back to Windows WIC on Windows if rawler cannot decode the format.
+    #[cfg(feature = "raw")]
+    fn load_raw(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
+        tracing::debug!("Loading RAW file: {:?}", path);
+
+        let result: anyhow::Result<(Vec<u8>, u32, u32)> = (|| {
+            let raw_image =
+                rawler::decode_file(path).map_err(|e| anyhow::anyhow!("rawler decode: {}", e))?;
+
+            let width = raw_image.width;
+            let height = raw_image.height;
+
+            // rawler gives us 16-bit CFA mosaic data (Bayer pattern).
+            // We do a minimal debayer by treating R/G/B channels via the CFA pattern,
+            // then scale 16-bit → 8-bit via a simple linear mapping.
+            let rgba: Vec<u8> = match raw_image.data {
+                rawler::RawImageData::Integer(ref pixels) => {
+                    // Find actual max to normalise instead of assuming 65535
+                    let max_val = pixels.iter().copied().max().unwrap_or(1).max(1) as f32;
+                    let cfa = &raw_image.camera.cfa;
+                    let mut out = vec![0u8; (width * height * 4) as usize];
+                    for y in 0..height {
+                        for x in 0..width {
+                            let idx = (y * width + x) as usize;
+                            let raw = pixels[idx];
+                            let channel = cfa.color_at(x as usize, y as usize);
+                            let v = (raw as f32 / max_val * 255.0).clamp(0.0, 255.0) as u8;
+                            let dest = idx * 4;
+                            // Assign to the correct RGB channel; others stay 0 until
+                            // averaged by neighbouring pixels in a full debayer.
+                            // For this fast-path we just display each channel visually.
+                            match channel {
+                                0 => {
+                                    out[dest] = v;
+                                    out[dest + 3] = 255;
+                                } // R
+                                1 => {
+                                    out[dest + 1] = v;
+                                    out[dest + 3] = 255;
+                                } // G
+                                2 => {
+                                    out[dest + 2] = v;
+                                    out[dest + 3] = 255;
+                                } // B
+                                _ => {
+                                    out[dest] = v;
+                                    out[dest + 1] = v;
+                                    out[dest + 2] = v;
+                                    out[dest + 3] = 255;
+                                }
+                            }
+                        }
+                    }
+                    out
+                }
+                rawler::RawImageData::Float(ref pixels) => pixels
+                    .iter()
+                    .flat_map(|&v| {
+                        let b = (v.clamp(0.0, 1.0) * 255.0) as u8;
+                        [b, b, b, 255u8]
+                    })
+                    .collect(),
+            };
+
+            tracing::debug!("RAW decoded: {}x{}", width, height);
+            Ok((rgba, width as u32, height as u32))
+        })();
+
+        match result {
+            Ok(data) => Ok(data),
+            Err(rawler_err) => {
+                tracing::warn!("rawler failed ({}), trying WIC fallback", rawler_err);
+                // Windows fallback: WIC can handle DNG/ARW/NEF with proper codec installed
+                #[cfg(windows)]
+                {
+                    if let Ok(data) = Self::load_heif(path) {
+                        return Ok(data);
+                    }
+                }
+                Err(anyhow::anyhow!(
+                    "Failed to load RAW file. \
+                    On Windows, install the \"Microsoft Raw Image Extension\" from the Store. \
+                    Error: {}",
+                    rawler_err
+                ))
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // SVG vector graphics loading
+    // -------------------------------------------------------------------------
+
+    /// Rasterize an SVG file to RGBA using `resvg`.
+    /// SVGs are rendered at their native viewBox size, capped at 2000px on the
+    /// longest axis so they look sharp on 4K screens without wasting VRAM.
+    #[cfg(feature = "svg")]
+    fn load_svg(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
+        tracing::debug!("Loading SVG file: {:?}", path);
+
+        let svg_data = std::fs::read(path)?;
+
+        // resvg re-exports usvg and tiny_skia — use those to avoid version mismatches.
+        use resvg::tiny_skia;
+        use resvg::usvg;
+
+        // Parse SVG
+        let opts = usvg::Options::default();
+        let tree = usvg::Tree::from_data(&svg_data, &opts)
+            .map_err(|e| anyhow::anyhow!("SVG parse error: {}", e))?;
+
+        // Determine output size, cap at 2000px on longest edge
+        const MAX_SIDE: f32 = 2000.0;
+        let svg_size = tree.size();
+        let (svg_w, svg_h) = (svg_size.width(), svg_size.height());
+        let scale = (MAX_SIDE / svg_w.max(svg_h)).min(1.0);
+        let out_w = (svg_w * scale).round() as u32;
+        let out_h = (svg_h * scale).round() as u32;
+
+        if out_w == 0 || out_h == 0 {
+            return Err(anyhow::anyhow!("SVG has zero-size viewBox"));
+        }
+
+        // Create a transparent pixmap and render into it
+        let mut pixmap = tiny_skia::Pixmap::new(out_w, out_h).ok_or_else(|| {
+            anyhow::anyhow!("Failed to allocate SVG pixmap ({}x{})", out_w, out_h)
+        })?;
+
+        let transform = tiny_skia::Transform::from_scale(scale, scale);
+        resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+        tracing::debug!("SVG rasterized at {}x{} (scale {:.2})", out_w, out_h, scale);
+
+        // tiny-skia produces premultiplied RGBA (BGRA on some platforms).
+        // Un-premultiply alpha for correct GPU texture sampling.
+        let mut rgba = pixmap.take();
+        for px in rgba.chunks_exact_mut(4) {
+            let a = px[3];
+            if a > 0 && a < 255 {
+                let inv = 255.0 / a as f32;
+                px[0] = (px[0] as f32 * inv).min(255.0) as u8;
+                px[1] = (px[1] as f32 * inv).min(255.0) as u8;
+                px[2] = (px[2] as f32 * inv).min(255.0) as u8;
+            }
+        }
+
+        Ok((rgba, out_w, out_h))
+    }
+
     /// Save image to file
     pub fn save(path: &Path, image: &DynamicImage, quality: u8) -> Result<()> {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -333,9 +518,17 @@ impl ImageBackend {
 
     /// Get list of supported extensions
     pub fn supported_extensions() -> Vec<&'static str> {
-        vec![
+        let mut exts = vec![
             "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif", "avif",
-        ]
+        ];
+        #[cfg(feature = "raw")]
+        exts.extend_from_slice(&[
+            "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "raf", "orf", "rw2", "dng",
+            "mrw", "pef", "3fr", "rwl", "raw", "rw1",
+        ]);
+        #[cfg(feature = "svg")]
+        exts.push("svg");
+        exts
     }
 }
 
@@ -354,6 +547,15 @@ mod tests {
             ImageFormatType::from_extension("heic"),
             ImageFormatType::Heic
         );
+        #[cfg(feature = "svg")]
+        assert_eq!(ImageFormatType::from_extension("svg"), ImageFormatType::Svg);
+        #[cfg(feature = "raw")]
+        {
+            assert_eq!(ImageFormatType::from_extension("dng"), ImageFormatType::Raw);
+            assert_eq!(ImageFormatType::from_extension("arw"), ImageFormatType::Raw);
+            assert_eq!(ImageFormatType::from_extension("cr2"), ImageFormatType::Raw);
+            assert_eq!(ImageFormatType::from_extension("nef"), ImageFormatType::Raw);
+        }
         assert_eq!(
             ImageFormatType::from_extension("unknown"),
             ImageFormatType::Unknown

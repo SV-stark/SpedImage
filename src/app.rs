@@ -13,10 +13,15 @@ use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
-    event_loop::{ActiveEventLoop, EventLoop},
+    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     keyboard::{Key, NamedKey},
     window::{Fullscreen, Icon, Window, WindowId},
 };
+
+/// Wakeup token sent through EventLoopProxy to wake the sleeping event loop.
+/// The actual payload travels through a regular mpsc channel.
+#[derive(Debug)]
+pub struct WakeUp;
 
 const APP_ICON: &[u8] = include_bytes!("../assets/icons/icon.png");
 
@@ -24,9 +29,15 @@ pub enum AppEvent {
     ImageLoaded(Vec<ImageData>),
     ImageError(String),
     OpenPath(PathBuf),
-    Prefetched(PathBuf, Vec<ImageData>), // (7) prefetch for adjacent images
+    Prefetched(PathBuf, Vec<ImageData>), // prefetch for adjacent images
     SaveComplete(PathBuf),
     SaveError(String),
+}
+
+/// Helper: send an AppEvent through the data channel, then wake the event loop.
+fn send_event(tx: &Sender<AppEvent>, proxy: &EventLoopProxy<WakeUp>, event: AppEvent) {
+    tx.send(event).ok();
+    proxy.send_event(WakeUp).ok();
 }
 
 pub struct SpedImageApp {
@@ -41,6 +52,7 @@ pub struct SpedImageApp {
     dirty: bool,
     event_tx: Sender<AppEvent>,
     event_rx: Receiver<AppEvent>,
+    event_proxy: Option<EventLoopProxy<WakeUp>>,
     // (2) Panning
     mouse_drag_start: Option<PhysicalPosition<f64>>,
     last_cursor_pos: PhysicalPosition<f64>,
@@ -71,6 +83,7 @@ impl SpedImageApp {
             dirty: true,
             event_tx: tx,
             event_rx: rx,
+            event_proxy: None,
             mouse_drag_start: None,
             last_cursor_pos: PhysicalPosition::new(0.0, 0.0),
             show_help: false,
@@ -82,9 +95,10 @@ impl SpedImageApp {
     }
 
     pub fn run(initial_path: Option<PathBuf>) -> Result<()> {
-        let event_loop = EventLoop::new()?;
+        let event_loop: EventLoop<WakeUp> = EventLoop::with_user_event().build()?;
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         let mut app = Self::new();
+        app.event_proxy = Some(event_loop.create_proxy());
         app.initial_path = initial_path;
         event_loop.run_app(&mut app)?;
         Ok(())
@@ -177,11 +191,14 @@ impl SpedImageApp {
     }
 
     fn load_image(&mut self, path: PathBuf) {
-        // (6) Check prefetch cache first
+        // Check prefetch cache first
         if let Some(cached_frames) = self.prefetch_cache.remove(&path) {
             tracing::info!("Cache hit for {:?}", path);
-            let tx = self.event_tx.clone();
-            tx.send(AppEvent::ImageLoaded(cached_frames)).ok();
+            // Deliver from cache directly – still go through channel so process_events
+            // handles it uniformly, and the proxy wakes the event loop.
+            if let Some(ref proxy) = self.event_proxy {
+                send_event(&self.event_tx, proxy, AppEvent::ImageLoaded(cached_frames));
+            }
             self.prefetch_adjacent(&path);
             return;
         }
@@ -191,7 +208,7 @@ impl SpedImageApp {
         self.loading = true;
         self.dirty = true;
 
-        // Update window title
+        // Update window title immediately
         if let Some(ref w) = self.window {
             let name = path
                 .file_name()
@@ -209,12 +226,17 @@ impl SpedImageApp {
         };
 
         let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
         let path2 = path.clone();
         std::thread::spawn(move || {
-            match ImageBackend::load_and_downsample(&path2, max_w, max_h) {
-                Ok(data) => tx.send(AppEvent::ImageLoaded(data)).ok(),
-                Err(e) => tx.send(AppEvent::ImageError(e.to_string())).ok(),
+            let event = match ImageBackend::load_and_downsample(&path2, max_w, max_h) {
+                Ok(data) => AppEvent::ImageLoaded(data),
+                Err(e) => AppEvent::ImageError(e.to_string()),
             };
+            // Use EventLoopProxy to wake the event loop so RedrawRequested fires immediately.
+            if let Some(ref proxy) = proxy {
+                send_event(&tx, proxy, event);
+            }
         });
 
         self.prefetch_adjacent(&path);
@@ -250,10 +272,13 @@ impl SpedImageApp {
                 continue;
             }
             let tx = self.event_tx.clone();
+            let proxy = self.event_proxy.clone();
             let p = path.clone();
             std::thread::spawn(move || {
                 if let Ok(frames) = ImageBackend::load_and_downsample(&p, max_w, max_h) {
-                    tx.send(AppEvent::Prefetched(p, frames)).ok();
+                    if let Some(ref proxy) = proxy {
+                        send_event(&tx, proxy, AppEvent::Prefetched(p, frames));
+                    }
                 }
             });
         }
@@ -306,6 +331,7 @@ impl SpedImageApp {
             let adjustments = self.ui_state.adjustments;
             let tx = self.event_tx.clone();
 
+            let proxy = self.event_proxy.clone();
             std::thread::spawn(move || {
                 let result = (|| -> anyhow::Result<()> {
                     let mut img = image::open(&path_clone)?;
@@ -362,15 +388,18 @@ impl SpedImageApp {
                     Ok(())
                 })();
 
-                match result {
+                let event = match result {
                     Ok(()) => {
                         tracing::info!("Saved edited image to {:?}", save_path_clone);
-                        tx.send(AppEvent::SaveComplete(save_path_clone)).ok();
+                        AppEvent::SaveComplete(save_path_clone)
                     }
                     Err(e) => {
                         tracing::error!("Failed to save image: {}", e);
-                        tx.send(AppEvent::SaveError(e.to_string())).ok();
+                        AppEvent::SaveError(e.to_string())
                     }
+                };
+                if let Some(ref proxy) = proxy {
+                    send_event(&tx, proxy, event);
                 }
             });
 
@@ -427,17 +456,15 @@ impl SpedImageApp {
 
     fn open_file_dialog(&mut self) {
         let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
         std::thread::spawn(move || {
             if let Some(path) = rfd::FileDialog::new()
-                .add_filter(
-                    "Images",
-                    &[
-                        "jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "heic", "avif",
-                    ],
-                )
+                .add_filter("Images", &ImageBackend::supported_extensions())
                 .pick_file()
             {
-                tx.send(AppEvent::OpenPath(path)).ok();
+                if let Some(ref proxy) = proxy {
+                    send_event(&tx, proxy, AppEvent::OpenPath(path));
+                }
             }
         });
     }
@@ -602,7 +629,7 @@ impl Default for SpedImageApp {
     }
 }
 
-impl ApplicationHandler for SpedImageApp {
+impl ApplicationHandler<WakeUp> for SpedImageApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             // Build window icon from embedded PNG
@@ -654,6 +681,15 @@ impl ApplicationHandler for SpedImageApp {
             if let Some(path) = self.initial_path.take() {
                 self.load_image(path);
             }
+        }
+    }
+
+    /// Called when the background thread sends a WakeUp token via EventLoopProxy.
+    /// The actual AppEvent payload is in the mpsc channel; we just trigger a redraw.
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: WakeUp) {
+        self.dirty = true;
+        if let Some(window) = &self.window {
+            window.request_redraw();
         }
     }
 

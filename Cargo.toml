@@ -48,9 +48,17 @@ fast_image_resize = "3"
 # For GPU data types
 bytemuck = { version = "1", features = ["derive"] }
 
+# RAW camera format decoding
+rawler = { version = "0.7", optional = true }
+
+# SVG rendering
+resvg = { version = "0.47", optional = true }
+
 [features]
-default = []
+default = ["raw", "svg"]
 heif = []
+raw = ["rawler"]
+svg = ["resvg"]
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

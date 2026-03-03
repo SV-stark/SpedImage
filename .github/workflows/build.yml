@@ -42,3 +42,20 @@ jobs:
 
     - name: Cargo Build
       run: cargo build --release --verbose
+
+    - name: Generate Installer (Windows)
+      if: matrix.os == 'windows-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        makensis installer.nsi
+
+    - name: Nightly Release
+      if: matrix.os == 'windows-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "nightly"
+        prerelease: true
+        title: "Nightly Build"
+        files: |
+          target/release/spedimage.exe
+          SpedImage_Setup.exe
