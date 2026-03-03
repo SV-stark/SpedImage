@@ -43,6 +43,10 @@ jobs:
     - name: Cargo Build
       run: cargo build --release --verbose
 
+    - name: Set up NSIS
+      if: matrix.os == 'windows-latest'
+      uses: shogo82148/actions-setup-nsis@v1
+
     - name: Generate Installer (Windows)
       if: matrix.os == 'windows-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
