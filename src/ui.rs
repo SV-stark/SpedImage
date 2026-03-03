@@ -33,7 +33,7 @@ impl FileEntry {
 }
 
 /// Application state for UI
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct UiState {
     pub files: Vec<FileEntry>,
     pub current_file_index: Option<usize>,
@@ -42,20 +42,6 @@ pub struct UiState {
     pub show_file_dialog: bool,
     pub show_help: bool,
     pub status_message: Option<String>,
-}
-
-impl Default for UiState {
-    fn default() -> Self {
-        Self {
-            files: Vec::new(),
-            current_file_index: None,
-            adjustments: ImageAdjustments::default(),
-            is_cropping: false,
-            show_file_dialog: false,
-            show_help: false,
-            status_message: None,
-        }
-    }
 }
 
 impl UiState {
