@@ -537,6 +537,8 @@ impl SpedImageApp {
                     self.prefetch_cache.insert(path, frames);
                 }
                 AppEvent::ImageLoaded(mut frames) => {
+                    self.ui_state.reset_adjustments(); // Reset crop and zoom for new image
+
                     self.ui_state.reset_adjustments();
                     self.dirty = true;
                     self.ui_state.reset_adjustments(); // Reset crop and zoom for new image
@@ -864,3 +866,4 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         }
     }
 }
+

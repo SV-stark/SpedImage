@@ -45,8 +45,10 @@ impl Default for ImageAdjustments {
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     rotation: f32,
-    aspect_ratio: f32, window_aspect_ratio: f32,       // Image aspect ratio (width/height)
-    window_aspect_ratio: f32, window_aspect_ratio: f32, // Window aspect ratio (width/height)
+    aspect_ratio: f32,
+    window_aspect_ratio: f32, // Image aspect ratio (width/height)
+    window_aspect_ratio: f32,
+    window_aspect_ratio: f32, // Window aspect ratio (width/height)
     crop_x: f32,
     crop_y: f32,
     crop_w: f32,
@@ -541,7 +543,6 @@ impl Renderer {
             brightness: adjustments.brightness,
             contrast: adjustments.contrast,
             saturation: adjustments.saturation,
-            
         };
 
         self.queue
@@ -679,7 +680,6 @@ impl Renderer {
                     )
                     .with_screen_position((10.0 * scale, self.config.height as f32 - 30.0 * scale)),
             );
-            
         }
 
         if show_help {
@@ -692,7 +692,6 @@ impl Renderer {
                     )
                     .with_screen_position((10.0 * scale, 10.0 * scale)),
             );
-            
         }
 
         if sidebar_files.map(|f| !f.is_empty()).unwrap_or(false) {
@@ -706,7 +705,6 @@ impl Renderer {
                     .with_screen_position((self.config.width as f32 - 280.0 * scale, 10.0 * scale))
                     .with_bounds((270.0 * scale, self.config.height as f32 - 20.0 * scale)),
             );
-            
         }
 
         {
@@ -1004,3 +1002,7 @@ mod tests {
         assert_eq!(adj.crop_rect, [0.0, 0.0, 1.0, 1.0]);
     }
 }
+
+
+
+
