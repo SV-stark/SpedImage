@@ -104,27 +104,28 @@ impl ImageBackend {
 
         if format == ImageFormatType::Gif {
             if let Ok(file) = std::fs::File::open(path) {
-                if let Ok(decoder) = image::codecs::gif::GifDecoder::new(file) {
+                let reader = std::io::BufReader::new(file);
+                if let Ok(decoder) = image::codecs::gif::GifDecoder::new(reader) {
                     use image::AnimationDecoder;
-                    if let Ok(frames) = decoder.into_frames().collect_frames() {
-                        if !frames.is_empty() {
-                            let mut results = Vec::new();
-                            for frame in frames {
-                                let delay = frame.delay().numer_denom_ms().0;
-                                let img = frame.into_buffer();
-                                let (width, height) = img.dimensions();
-                                results.push(ImageData {
-                                    width,
-                                    height,
-                                    format,
-                                    rgba_data: img.into_raw(),
-                                    path: path.to_string_lossy().to_string(),
-                                    file_size_bytes,
-                                    frame_delay_ms: delay,
-                                });
-                            }
-                            return Ok(results);
+                    let frames: Vec<image::Frame> =
+                        decoder.into_frames().filter_map(|f| f.ok()).collect();
+                    if !frames.is_empty() {
+                        let mut results = Vec::new();
+                        for frame in frames {
+                            let delay = frame.delay().numer_denom_ms().0;
+                            let img = frame.into_buffer();
+                            let (width, height) = img.dimensions();
+                            results.push(ImageData {
+                                width,
+                                height,
+                                format,
+                                rgba_data: img.into_raw(),
+                                path: path.to_string_lossy().to_string(),
+                                file_size_bytes,
+                                frame_delay_ms: delay,
+                            });
                         }
+                        return Ok(results);
                     }
                 }
             }

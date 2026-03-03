@@ -5,17 +5,17 @@ edition = "2021"
 description = "Ultra-Lightweight GPU-Accelerated Image Viewer"
 authors = ["SpedImage Team"]
 license = "MIT"
-rust-version = "1.75"
+rust-version = "1.82"
 
 [dependencies]
 # Windowing
 winit = { version = "0.30", features = ["rwh_06"] }
 
 # GPU Rendering
-wgpu = "0.20"
+wgpu = "26.0"
 
 # Image decoding (pure Rust)
-image = { version = "0.24", default-features = false, features = [
+image = { version = "0.25", default-features = false, features = [
     "jpeg",
     "png",
     "gif",
@@ -26,7 +26,7 @@ image = { version = "0.24", default-features = false, features = [
 ] }
 
 # Text Rendering
-wgpu_text = "0.8"
+wgpu_glyph = "0.26"
 
 # File dialog (native)
 rfd = "0.14"
@@ -36,26 +36,17 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Error handling
-thiserror = "1"
+thiserror = "2"
 anyhow = "1"
 
 # Async blocking
 pollster = "0.3"
-
-# Keyboard shortcuts (using winit's built-in handling)
-# keyboard-types removed - not needed
-
-# Directory paths
-# dirs removed - not needed
 
 # For image manipulation
 fast_image_resize = "3"
 
 # For GPU data types
 bytemuck = { version = "1", features = ["derive"] }
-
-# Clipboard support
-# arboard removed - not needed
 
 [features]
 default = []

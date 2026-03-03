@@ -6,14 +6,15 @@ use wgpu::util::DeviceExt;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindingResource, BindingType, BlendState,
     ColorTargetState, ColorWrites, CommandEncoderDescriptor, Device, DeviceDescriptor, Extent3d,
-    FragmentState, FrontFace, ImageCopyTexture, ImageDataLayout, Instance, LoadOp, Operations,
-    PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPassColorAttachment,
-    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, Sampler,
-    SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, StoreOp, Surface,
-    SurfaceConfiguration, Texture, TextureAspect, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureSampleType, TextureUsages, VertexBufferLayout, VertexFormat, VertexState,
-    VertexStepMode,
+    FragmentState, FrontFace, Instance, LoadOp, Operations, PipelineLayoutDescriptor,
+    PrimitiveState, PrimitiveTopology, Queue, RenderPassColorAttachment, RenderPassDescriptor,
+    RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, Sampler, SamplerDescriptor,
+    ShaderModuleDescriptor, ShaderSource, StoreOp, Surface, SurfaceConfiguration,
+    TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, VertexBufferLayout,
+    VertexFormat, VertexState, VertexStepMode,
 };
+use wgpu_glyph::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
@@ -174,12 +175,13 @@ pub struct Renderer {
     pub scale_factor: f64, // DPI scale (12: DPI-aware rendering)
 
     // Text rendering
-    text_brush: wgpu_text::TextBrush<wgpu_text::glyph_brush::ab_glyph::FontArc>,
+    text_brush: GlyphBrush<()>,
+    staging_belt: wgpu::util::StagingBelt,
 }
 
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Result<Self> {
-        let instance = Instance::new(wgpu::InstanceDescriptor::default());
+        let instance = Instance::new(&wgpu::InstanceDescriptor::default());
 
         let surface = instance
             .create_surface(window.clone())
@@ -195,14 +197,13 @@ impl Renderer {
             .context("Failed to request WGPU adapter")?;
 
         let (device, queue) = adapter
-            .request_device(
-                &DeviceDescriptor {
-                    label: Some("SpedImage Device"),
-                    required_features: wgpu::Features::default(),
-                    required_limits: wgpu::Limits::default(),
-                },
-                None,
-            )
+            .request_device(&DeviceDescriptor {
+                label: Some("SpedImage Device"),
+                required_features: wgpu::Features::default(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::Off,
+            })
             .await
             .context("Failed to request WGPU device")?;
 
@@ -297,7 +298,7 @@ impl Renderer {
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader_module,
-                entry_point: "vertex_main",
+                entry_point: Some("vertex_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[VertexBufferLayout {
                     array_stride: 16,
@@ -318,7 +319,7 @@ impl Renderer {
             },
             fragment: Some(FragmentState {
                 module: &shader_module,
-                entry_point: "fragment_main",
+                entry_point: Some("fragment_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
                     format,
@@ -334,6 +335,7 @@ impl Renderer {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let crop_shader_module = device.create_shader_module(ShaderModuleDescriptor {
@@ -352,13 +354,13 @@ impl Renderer {
             layout: Some(&crop_pipeline_layout),
             vertex: VertexState {
                 module: &crop_shader_module,
-                entry_point: "vertex_main",
+                entry_point: Some("vertex_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[], // generating vertices directly
             },
             fragment: Some(FragmentState {
                 module: &crop_shader_module,
-                entry_point: "fragment_main",
+                entry_point: Some("fragment_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
                     format,
@@ -378,6 +380,7 @@ impl Renderer {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         // Embed Inter-Regular as the guaranteed font fallback; try Segoe UI first on Windows.
@@ -385,18 +388,14 @@ impl Renderer {
         let font_bytes = std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf")
             .unwrap_or_else(|_| EMBEDDED_FONT.to_vec());
 
-        let font = wgpu_text::glyph_brush::ab_glyph::FontArc::try_from_vec(font_bytes)
-            .unwrap_or_else(|_| {
-                wgpu_text::glyph_brush::ab_glyph::FontArc::try_from_slice(EMBEDDED_FONT)
-                    .expect("Embedded Inter-Regular.ttf failed to parse — check asset integrity")
-            });
+        let font = ab_glyph::FontArc::try_from_vec(font_bytes).unwrap_or_else(|_| {
+            ab_glyph::FontArc::try_from_slice(EMBEDDED_FONT)
+                .expect("Embedded Inter-Regular.ttf failed to parse — check asset integrity")
+        });
 
-        let text_brush = wgpu_text::BrushBuilder::using_font(font).build(
-            &device,
-            config.width,
-            config.height,
-            format,
-        );
+        let text_brush = GlyphBrushBuilder::using_font(font).build(&device, format);
+
+        let staging_belt = wgpu::util::StagingBelt::new(1024);
 
         Ok(Self {
             _window: window.clone(),
@@ -415,6 +414,7 @@ impl Renderer {
             image_size: None,
             scale_factor: window.scale_factor(),
             text_brush,
+            staging_belt,
         })
     }
 
@@ -425,8 +425,7 @@ impl Renderer {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
-        self.text_brush
-            .resize_view(size.width as f32, size.height as f32, &self.queue);
+        // wgpu_glyph text positions update automatically with new viewport dimensions
     }
 
     pub fn load_image(&mut self, image_data: &ImageData) -> Result<()> {
@@ -449,14 +448,14 @@ impl Renderer {
         });
 
         self.queue.write_texture(
-            ImageCopyTexture {
+            TexelCopyTextureInfo {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: TextureAspect::All,
             },
             image_data.as_rgba(),
-            ImageDataLayout {
+            TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(width * 4),
                 rows_per_image: Some(height),
@@ -544,6 +543,7 @@ impl Renderer {
                         load: LoadOp::Clear(wgpu::Color::BLACK),
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -553,7 +553,7 @@ impl Renderer {
             if let Some(bind_group) = &self.image_bind_group {
                 render_pass.set_pipeline(&self.pipeline);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                render_pass.set_bind_group(0, bind_group, &[]);
+                render_pass.set_bind_group(0, bind_group.as_ref(), &[]);
                 render_pass.draw(0..6, 0..1);
             }
         }
@@ -586,7 +586,7 @@ impl Renderer {
                 label: Some("UI Render Encoder"),
             });
 
-        // 1. Text rendering queueing
+        // 1. Text rendering — queue all sections
         let scale = self.scale_factor as f32;
 
         // Hoist all owned strings so they outlive the borrowed Section slices below
@@ -602,50 +602,46 @@ impl Renderer {
             })
             .unwrap_or_default();
 
-        let mut text_sections = Vec::new();
+        let mut has_text = false;
 
         if let Some(status) = status_text {
-            let section = wgpu_text::glyph_brush::Section::default()
-                .add_text(
-                    wgpu_text::glyph_brush::Text::new(status)
-                        .with_scale(18.0 * scale)
-                        .with_color([1.0, 1.0, 1.0, 1.0]),
-                )
-                .with_screen_position((10.0 * scale, self.config.height as f32 - (30.0 * scale)));
-            text_sections.push(section);
+            self.text_brush.queue(
+                Section::default()
+                    .add_text(
+                        Text::new(status)
+                            .with_scale(18.0 * scale)
+                            .with_color([1.0f32, 1.0, 1.0, 1.0]),
+                    )
+                    .with_screen_position((10.0 * scale, self.config.height as f32 - 30.0 * scale)),
+            );
+            has_text = true;
         }
 
         if show_help {
-            let section = wgpu_text::glyph_brush::Section::default()
-                .add_text(
-                    wgpu_text::glyph_brush::Text::new(help_text)
-                        .with_scale(16.0 * scale)
-                        .with_color([0.9, 0.9, 0.9, 1.0]),
-                )
-                .with_screen_position((10.0 * scale, 10.0 * scale));
-            text_sections.push(section);
+            self.text_brush.queue(
+                Section::default()
+                    .add_text(
+                        Text::new(help_text)
+                            .with_scale(16.0 * scale)
+                            .with_color([0.9f32, 0.9, 0.9, 1.0]),
+                    )
+                    .with_screen_position((10.0 * scale, 10.0 * scale)),
+            );
+            has_text = true;
         }
 
         if sidebar_files.map(|f| !f.is_empty()).unwrap_or(false) {
-            let section = wgpu_text::glyph_brush::Section::default()
-                .add_text(
-                    wgpu_text::glyph_brush::Text::new(&sidebar_list_text)
-                        .with_scale(14.0 * scale)
-                        .with_color([0.85, 0.95, 1.0, 1.0]),
-                )
-                .with_screen_position((self.config.width as f32 - 280.0 * scale, 10.0 * scale))
-                .with_bounds((270.0 * scale, self.config.height as f32 - 20.0 * scale));
-            text_sections.push(section);
-        }
-
-        if !text_sections.is_empty() {
-            // Queue text — log on failure rather than panic
-            if let Err(e) = self
-                .text_brush
-                .queue(&self.device, &self.queue, text_sections.clone())
-            {
-                tracing::warn!("Text brush queue error: {}", e);
-            }
+            self.text_brush.queue(
+                Section::default()
+                    .add_text(
+                        Text::new(&sidebar_list_text)
+                            .with_scale(14.0 * scale)
+                            .with_color([0.85f32, 0.95, 1.0, 1.0]),
+                    )
+                    .with_screen_position((self.config.width as f32 - 280.0 * scale, 10.0 * scale))
+                    .with_bounds((270.0 * scale, self.config.height as f32 - 20.0 * scale)),
+            );
+            has_text = true;
         }
 
         {
@@ -658,18 +654,14 @@ impl Renderer {
                         load: LoadOp::Load,
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
 
-            if !text_sections.is_empty() {
-                self.text_brush.draw(&mut render_pass);
-            }
-
             if is_cropping {
-                // ... logic to draw crop overlay ...
                 render_pass.set_pipeline(&self.crop_pipeline);
 
                 let win_w = self.config.width;
@@ -685,28 +677,39 @@ impl Renderer {
                 let cw = cw.min(win_w - cx);
                 let ch = ch.min(win_h - cy);
 
-                // Top rect
                 if cy > 0 {
                     render_pass.set_scissor_rect(0, 0, win_w, cy);
                     render_pass.draw(0..4, 0..1);
                 }
-                // Bottom rect
                 if cy + ch < win_h {
                     render_pass.set_scissor_rect(0, cy + ch, win_w, win_h - (cy + ch));
                     render_pass.draw(0..4, 0..1);
                 }
-                // Left rect
                 if cx > 0 {
                     render_pass.set_scissor_rect(0, cy, cx, ch);
                     render_pass.draw(0..4, 0..1);
                 }
-                // Right rect
                 if cx + cw < win_w {
                     render_pass.set_scissor_rect(cx + cw, cy, win_w - (cx + cw), ch);
                     render_pass.draw(0..4, 0..1);
                 }
             }
         } // drop render_pass
+
+        // Draw queued text
+        if has_text {
+            if let Err(e) = self.text_brush.draw_queued(
+                &self.device,
+                &mut self.staging_belt,
+                &mut encoder,
+                &view,
+                self.config.width,
+                self.config.height,
+            ) {
+                tracing::warn!("Text draw error: {}", e);
+            }
+            self.staging_belt.finish();
+        }
 
         self.queue.submit([encoder.finish()]);
         frame.present();
@@ -745,6 +748,7 @@ impl Renderer {
                         }),
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -788,14 +792,14 @@ impl Renderer {
                 view_formats: &[],
             });
             self.queue.write_texture(
-                ImageCopyTexture {
+                TexelCopyTextureInfo {
                     texture: &texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: TextureAspect::All,
                 },
                 frame.as_rgba(),
-                ImageDataLayout {
+                TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(width * 4),
                     rows_per_image: Some(height),
