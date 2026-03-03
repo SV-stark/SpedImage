@@ -45,7 +45,8 @@ impl Default for ImageAdjustments {
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     rotation: f32,
-    aspect_ratio: f32,
+    aspect_ratio: f32,       // Image aspect ratio (width/height)
+    window_aspect_ratio: f32, // Window aspect ratio (width/height)
     crop_x: f32,
     crop_y: f32,
     crop_w: f32,
@@ -53,6 +54,7 @@ struct Uniforms {
     brightness: f32,
     contrast: f32,
     saturation: f32,
+    _padding: f32, // Padding to maintain 16-byte alignment
 }
 
 const SHADER: &str = r#"
@@ -64,6 +66,7 @@ struct VertexOutput {
 struct Uniforms {
     rotation: f32,
     aspect_ratio: f32,
+    window_aspect_ratio: f32,
     crop_x: f32,
     crop_y: f32,
     crop_w: f32,
@@ -71,6 +74,7 @@ struct Uniforms {
     brightness: f32,
     contrast: f32,
     saturation: f32,
+    _padding: f32,
 };
 
 @group(0) @binding(0)
@@ -87,7 +91,17 @@ fn vertex_main(
     let center = vec2<f32>(0.5, 0.5);
     let rotated_tex = rotate(tex - center, uniforms.rotation) + center;
     var pos = position;
-    pos.x *= uniforms.aspect_ratio;
+
+    let image_ar = uniforms.aspect_ratio;
+    let window_ar = uniforms.window_aspect_ratio;
+    let ratio = image_ar / window_ar;
+
+    if (ratio > 1.0) {
+        pos.y /= ratio;
+    } else {
+        pos.x *= ratio;
+    }
+
     out.position = vec4<f32>(pos, 0.0, 1.0);
     out.tex_coords = rotated_tex;
     return out;
@@ -507,12 +521,19 @@ impl Renderer {
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
+        let window_aspect_ratio = if self.config.height > 0 {
+            self.config.width as f32 / self.config.height as f32
+        } else {
+            1.0
+        };
+
         let uniforms = Uniforms {
             rotation: adjustments.rotation,
             aspect_ratio: self
                 .image_size
                 .map(|(w, h)| w as f32 / h as f32)
                 .unwrap_or(1.0),
+            window_aspect_ratio,
             crop_x: adjustments.crop_rect[0],
             crop_y: adjustments.crop_rect[1],
             crop_w: adjustments.crop_rect[2],
@@ -520,6 +541,7 @@ impl Renderer {
             brightness: adjustments.brightness,
             contrast: adjustments.contrast,
             saturation: adjustments.saturation,
+            _padding: 0.0,
         };
 
         self.queue
@@ -572,6 +594,7 @@ impl Renderer {
 
     /// Encode UI overlay commands into `encoder` targeting `view`.
     /// Does NOT submit or present — caller owns the frame lifetime.
+    #[allow(clippy::too_many_arguments)]
     fn encode_ui_overlay(
         &mut self,
         is_cropping: bool,
@@ -587,7 +610,6 @@ impl Renderer {
         // 1. Text rendering — queue all sections
         let scale = self.scale_factor as f32;
 
-        // Hoist all owned strings so they outlive the borrowed Section slices below
         let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nEsc: Quit";
         let sidebar_list_text: String = sidebar_files
             .map(|files| {
@@ -601,6 +623,30 @@ impl Renderer {
             .unwrap_or_default();
 
         let mut has_text = false;
+
+        // Navigation elements
+        self.text_brush.queue(
+            Section::default()
+                .add_text(
+                    Text::new("◀")
+                        .with_scale(48.0 * scale)
+                        .with_color([0.8f32, 0.8, 0.8, 0.6]),
+                )
+                .with_screen_position((20.0 * scale, self.config.height as f32 / 2.0)),
+        );
+        self.text_brush.queue(
+            Section::default()
+                .add_text(
+                    Text::new("▶")
+                        .with_scale(48.0 * scale)
+                        .with_color([0.8f32, 0.8, 0.8, 0.6]),
+                )
+                .with_screen_position((
+                    self.config.width as f32 - 60.0 * scale,
+                    self.config.height as f32 / 2.0,
+                )),
+        );
+        has_text = true;
 
         if let Some(status) = status_text {
             self.text_brush.queue(
@@ -646,7 +692,7 @@ impl Renderer {
             let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("UI Overlay Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view,
+                    view: view,
                     resolve_target: None,
                     ops: Operations {
                         load: LoadOp::Load,
@@ -808,7 +854,7 @@ impl Renderer {
             let _render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("Loading Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view,
+                    view: view,
                     resolve_target: None,
                     ops: Operations {
                         // Dark gray color for loading screen

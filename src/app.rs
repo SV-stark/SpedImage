@@ -538,6 +538,8 @@ impl SpedImageApp {
                 }
                 AppEvent::ImageLoaded(mut frames) => {
                     self.dirty = true;
+                    self.ui_state.reset_adjustments(); // Reset crop and zoom for new image
+                    self.ui_state.reset_adjustments(); // Reset crop and zoom for new image
                     if frames.is_empty() {
                         continue;
                     }
@@ -744,6 +746,23 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
             WindowEvent::MouseInput { state, button, .. } => match (button, state) {
                 (MouseButton::Left, ElementState::Pressed) => {
+                    // Check if click was on UI Navigation bounds:
+                    if let Some(ref w) = self.window {
+                        let size = w.inner_size();
+                        if size.width > 0 {
+                            let mouse_x_ratio = self.last_cursor_pos.x / size.width as f64;
+                            if mouse_x_ratio < 0.1 {
+                                // Clicked far left: prev image
+                                self.prev_image();
+                                return; // don't start dragging
+                            } else if mouse_x_ratio > 0.9 {
+                                // Clicked far right: next image
+                                self.next_image();
+                                return;
+                            }
+                        }
+                    }
+
                     if !self.ui_state.is_cropping {
                         self.mouse_drag_start = Some(self.last_cursor_pos);
                     }
