@@ -46,9 +46,7 @@ impl Default for ImageAdjustments {
 struct Uniforms {
     rotation: f32,
     aspect_ratio: f32,
-    window_aspect_ratio: f32, // Image aspect ratio (width/height)
     window_aspect_ratio: f32,
-    window_aspect_ratio: f32, // Window aspect ratio (width/height)
     crop_x: f32,
     crop_y: f32,
     crop_w: f32,
@@ -56,7 +54,7 @@ struct Uniforms {
     brightness: f32,
     contrast: f32,
     saturation: f32,
-    _padding: f32, // Padding to maintain 16-byte alignment
+    _padding: [f32; 2],
 }
 
 const SHADER: &str = r#"
@@ -67,8 +65,8 @@ struct VertexOutput {
 
 struct Uniforms {
     rotation: f32,
-    aspect_ratio: f32, window_aspect_ratio: f32,
-    window_aspect_ratio: f32, window_aspect_ratio: f32,
+    aspect_ratio: f32,
+    window_aspect_ratio: f32,
     crop_x: f32,
     crop_y: f32,
     crop_w: f32,
@@ -76,7 +74,7 @@ struct Uniforms {
     brightness: f32,
     contrast: f32,
     saturation: f32,
-    _padding: f32,
+    _padding: vec2<f32>,
 };
 
 @group(0) @binding(0)
@@ -549,6 +547,7 @@ impl Renderer {
             brightness: adjustments.brightness,
             contrast: adjustments.contrast,
             saturation: adjustments.saturation,
+            _padding: [0.0; 2],
         };
 
         self.queue
@@ -616,6 +615,7 @@ impl Renderer {
 
         // 1. Text rendering — queue all sections
         let scale = self.scale_factor as f32;
+        let has_text = true; // We queue navigation arrows at minimum
 
         #[allow(unused_variables)]
         let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nEsc: Quit";
@@ -717,7 +717,7 @@ impl Renderer {
             let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("UI Overlay Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: view,
+                    view,
                     resolve_target: None,
                     ops: Operations {
                         load: LoadOp::Load,
@@ -881,7 +881,7 @@ impl Renderer {
             let _render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("Loading Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: view,
+                    view: &view,
                     resolve_target: None,
                     ops: Operations {
                         // Dark gray color for loading screen
@@ -1034,7 +1034,3 @@ mod tests {
         assert_eq!(adj.crop_rect, [0.0, 0.0, 1.0, 1.0]);
     }
 }
-
-
-
-
