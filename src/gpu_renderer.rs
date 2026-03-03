@@ -380,20 +380,15 @@ impl Renderer {
             multiview: None,
         });
 
-        // Initialize text brush
-        // For zero-dependency simplicity without bundling a font file, we can use a built-in cross-platform font if we had one.
-        // We will load a tiny pixel font embedded in the source conceptually. Wait, font is mandatory.
-        // We will use the system font fallback or we just load a dummy for now.
-        // Let's use `std::fs::read` on a known Windows font for demonstration (e.g. Segoe UI)
+        // Embed Inter-Regular as the guaranteed font fallback; try Segoe UI first on Windows.
+        const EMBEDDED_FONT: &[u8] = include_bytes!("../assets/Inter-Regular.ttf");
         let font_bytes = std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf")
-            .unwrap_or_else(|_| include_bytes!("../Cargo.toml").to_vec()); // this is a terrible fallback but prevents crash if missing
+            .unwrap_or_else(|_| EMBEDDED_FONT.to_vec());
 
         let font = wgpu_text::glyph_brush::ab_glyph::FontArc::try_from_vec(font_bytes)
             .unwrap_or_else(|_| {
-                wgpu_text::glyph_brush::ab_glyph::FontArc::try_from_slice(include_bytes!(
-                    "../Cargo.toml"
-                ))
-                .expect("Failed to load font fallback")
+                wgpu_text::glyph_brush::ab_glyph::FontArc::try_from_slice(EMBEDDED_FONT)
+                    .expect("Embedded Inter-Regular.ttf failed to parse — check asset integrity")
             });
 
         let text_brush = wgpu_text::BrushBuilder::using_font(font).build(
@@ -430,6 +425,8 @@ impl Renderer {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
+        self.text_brush
+            .resize_view(size.width as f32, size.height as f32, &self.queue);
     }
 
     pub fn load_image(&mut self, image_data: &ImageData) -> Result<()> {
@@ -572,6 +569,7 @@ impl Renderer {
         crop_rect: [f32; 4],
         status_text: Option<&str>,
         show_help: bool,
+        sidebar_files: Option<&[String]>,
     ) -> Result<()> {
         let frame = self
             .surface
@@ -590,6 +588,20 @@ impl Renderer {
 
         // 1. Text rendering queueing
         let scale = self.scale_factor as f32;
+
+        // Hoist all owned strings so they outlive the borrowed Section slices below
+        let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nEsc: Quit";
+        let sidebar_list_text: String = sidebar_files
+            .map(|files| {
+                files
+                    .iter()
+                    .enumerate()
+                    .map(|(i, name)| format!("{}. {}", i + 1, name))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default();
+
         let mut text_sections = Vec::new();
 
         if let Some(status) = status_text {
@@ -604,7 +616,6 @@ impl Renderer {
         }
 
         if show_help {
-            let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nEsc: Quit";
             let section = wgpu_text::glyph_brush::Section::default()
                 .add_text(
                     wgpu_text::glyph_brush::Text::new(help_text)
@@ -615,11 +626,26 @@ impl Renderer {
             text_sections.push(section);
         }
 
+        if sidebar_files.map(|f| !f.is_empty()).unwrap_or(false) {
+            let section = wgpu_text::glyph_brush::Section::default()
+                .add_text(
+                    wgpu_text::glyph_brush::Text::new(&sidebar_list_text)
+                        .with_scale(14.0 * scale)
+                        .with_color([0.85, 0.95, 1.0, 1.0]),
+                )
+                .with_screen_position((self.config.width as f32 - 280.0 * scale, 10.0 * scale))
+                .with_bounds((270.0 * scale, self.config.height as f32 - 20.0 * scale));
+            text_sections.push(section);
+        }
+
         if !text_sections.is_empty() {
-            // Queue text
-            self.text_brush
+            // Queue text — log on failure rather than panic
+            if let Err(e) = self
+                .text_brush
                 .queue(&self.device, &self.queue, text_sections.clone())
-                .unwrap();
+            {
+                tracing::warn!("Text brush queue error: {}", e);
+            }
         }
 
         {

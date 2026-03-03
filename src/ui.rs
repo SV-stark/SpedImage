@@ -39,7 +39,6 @@ pub struct UiState {
     pub current_file_index: Option<usize>,
     pub adjustments: ImageAdjustments,
     pub is_cropping: bool,
-    pub crop_rect: [f32; 4],
     pub show_file_dialog: bool,
     pub show_help: bool,
     pub status_message: Option<String>,
@@ -52,7 +51,6 @@ impl Default for UiState {
             current_file_index: None,
             adjustments: ImageAdjustments::default(),
             is_cropping: false,
-            crop_rect: [0.0, 0.0, 1.0, 1.0],
             show_file_dialog: false,
             show_help: false,
             status_message: None,
@@ -147,7 +145,6 @@ impl UiState {
     /// Reset all adjustments to default
     pub fn reset_adjustments(&mut self) {
         self.adjustments = ImageAdjustments::default();
-        self.crop_rect = [0.0, 0.0, 1.0, 1.0];
     }
 
     /// Rotate by 90 degrees

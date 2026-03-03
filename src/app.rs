@@ -23,6 +23,8 @@ pub enum AppEvent {
     ImageError(String),
     OpenPath(PathBuf),
     Prefetched(PathBuf, Vec<ImageData>), // (7) prefetch for adjacent images
+    SaveComplete(PathBuf),
+    SaveError(String),
 }
 
 pub struct SpedImageApp {
@@ -42,6 +44,8 @@ pub struct SpedImageApp {
     last_cursor_pos: PhysicalPosition<f64>,
     // (4) Help overlay
     show_help: bool,
+    // Sidebar overlay (file list)
+    show_sidebar: bool,
     // (6) Prefetch cache: (path → frames)
     prefetch_cache: std::collections::HashMap<PathBuf, Vec<ImageData>>,
     // (5) CLI / open-with initial file
@@ -68,6 +72,7 @@ impl SpedImageApp {
             mouse_drag_start: None,
             last_cursor_pos: PhysicalPosition::new(0.0, 0.0),
             show_help: false,
+            show_sidebar: false,
             prefetch_cache: std::collections::HashMap::new(),
             initial_path: None,
             ctrl_pressed: false,
@@ -275,6 +280,8 @@ impl SpedImageApp {
                 self.ui_state
                     .load_directory(path.parent().unwrap_or(&path).to_path_buf());
                 self.dirty = true;
+                // Navigate to the next (or first available) image so screen isn't blank
+                self.next_image();
             }
         }
     }
@@ -295,10 +302,9 @@ impl SpedImageApp {
             let path_clone = path.clone();
             let save_path_clone = save_path.clone();
             let adjustments = self.ui_state.adjustments;
-            let _tx = self.event_tx.clone();
+            let tx = self.event_tx.clone();
 
             std::thread::spawn(move || {
-                // Software fallback for adjustments since we don't have GPU readback yet
                 let result = (|| -> anyhow::Result<()> {
                     let mut img = image::open(&path_clone)?;
 
@@ -330,25 +336,39 @@ impl SpedImageApp {
                         let c = adjustments.contrast;
                         img = img.adjust_contrast(c);
                         if b != 0.0 {
-                            // The `img.brighten` method takes an i32 value.
                             img = img.brighten(b as i32);
                         }
                     }
 
-                    // Saturation (image crate doesn't have a direct saturation method,
-                    // we could do a custom pixel map, but for now we skip or approximate)
+                    // Saturation — per-pixel HSL conversion
+                    if (adjustments.saturation - 1.0).abs() > 0.01 {
+                        let sat = adjustments.saturation;
+                        let mut rgba = img.to_rgba8();
+                        for px in rgba.pixels_mut() {
+                            let r = px[0] as f32 / 255.0;
+                            let g = px[1] as f32 / 255.0;
+                            let b = px[2] as f32 / 255.0;
+                            let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                            px[0] = ((gray + (r - gray) * sat).clamp(0.0, 1.0) * 255.0) as u8;
+                            px[1] = ((gray + (g - gray) * sat).clamp(0.0, 1.0) * 255.0) as u8;
+                            px[2] = ((gray + (b - gray) * sat).clamp(0.0, 1.0) * 255.0) as u8;
+                        }
+                        img = image::DynamicImage::ImageRgba8(rgba);
+                    }
 
                     ImageBackend::save(&save_path_clone, &img, 90)?;
                     Ok(())
                 })();
 
-                // We can't easily notify the UI thread of the status update without a specific event type,
-                // but we can send a "fake" event or just let the async operation finish.
-                // For simplicity, we just log in the thread. A full fix would add an app event.
-                if let Err(e) = result {
-                    tracing::error!("Failed to save image: {}", e);
-                } else {
-                    tracing::info!("Saved edited image to {:?}", save_path_clone);
+                match result {
+                    Ok(()) => {
+                        tracing::info!("Saved edited image to {:?}", save_path_clone);
+                        tx.send(AppEvent::SaveComplete(save_path_clone)).ok();
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to save image: {}", e);
+                        tx.send(AppEvent::SaveError(e.to_string())).ok();
+                    }
                 }
             });
 
@@ -381,14 +401,14 @@ impl SpedImageApp {
     fn toggle_crop(&mut self) {
         self.ui_state.is_cropping = !self.ui_state.is_cropping;
         if !self.ui_state.is_cropping {
-            self.ui_state.crop_rect = [0.0, 0.0, 1.0, 1.0];
+            self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
         }
         self.dirty = true;
     }
 
     fn cancel_crop(&mut self) {
         self.ui_state.is_cropping = false;
-        self.ui_state.crop_rect = [0.0, 0.0, 1.0, 1.0];
+        self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
         self.dirty = true;
     }
 
@@ -399,7 +419,7 @@ impl SpedImageApp {
     }
 
     fn toggle_sidebar(&mut self) {
-        // Sidebar display is handled via show_help overlay; nothing extra to toggle
+        self.show_sidebar = !self.show_sidebar;
         self.dirty = true;
     }
 
@@ -467,6 +487,17 @@ impl SpedImageApp {
     fn process_events(&mut self) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
+                AppEvent::SaveComplete(path) => {
+                    self.dirty = true;
+                    self.ui_state.set_status(format!(
+                        "Saved: {}",
+                        path.file_name().unwrap_or_default().to_string_lossy()
+                    ));
+                }
+                AppEvent::SaveError(e) => {
+                    self.dirty = true;
+                    self.ui_state.set_status(format!("Save failed: {}", e));
+                }
                 AppEvent::Prefetched(path, frames) => {
                     // (6) Store in prefetch cache, capped at 4 entries
                     if self.prefetch_cache.len() >= 4 {
@@ -683,6 +714,12 @@ impl ApplicationHandler for SpedImageApp {
                     let is_cropping = self.ui_state.is_cropping;
                     let crop_rect = self.ui_state.adjustments.crop_rect;
                     let show_help = self.ui_state.show_help;
+                    let show_sidebar = self.show_sidebar;
+                    let sidebar_files: Vec<String> = if show_sidebar {
+                        self.ui_state.files.iter().map(|f| f.name.clone()).collect()
+                    } else {
+                        Vec::new()
+                    };
 
                     if let Some(ref mut renderer) = self.renderer {
                         if self.loading {
@@ -694,6 +731,11 @@ impl ApplicationHandler for SpedImageApp {
                                 crop_rect,
                                 status_opt.as_deref(),
                                 show_help,
+                                if show_sidebar {
+                                    Some(&sidebar_files)
+                                } else {
+                                    None
+                                },
                             );
                         }
                     }
