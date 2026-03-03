@@ -2,7 +2,7 @@
 #define MyAppName "SpedImage"
 #define MyAppVersion "2.0.0"
 #define MyAppPublisher "SpedImage Team"
-#define MyAppURL "https://github.com/user/SpedImage"
+#define MyAppURL "https://github.com/spedimage/spedimage"
 #define MyAppExeName "SpedImage.exe"
 
 [Setup]

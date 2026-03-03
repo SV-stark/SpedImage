@@ -1,10 +1,8 @@
-name: Build and Package
+name: Build and Release
 
 on:
   push:
     branches: [ "main" ]
-    tags:
-      - 'v*'
   pull_request:
     branches: [ "main" ]
 
@@ -36,11 +34,30 @@ jobs:
         name: SpedImage-Installer
         path: build/SpedImage_Setup.exe
 
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: Delete old nightly release
+      uses: dev-drprasad/delete-older-releases@v0.2.0
+      with:
+        repo: ${{ github.repository }}
+        keep_latest: 1
+        delete_regex: 'Nightly.*'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
+
+    - name: Create Nightly Release
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: Nightly-${{ github.sha }}
+        release_name: SpedImage Nightly
+        body: |
+          ## Nightly Build
+          - Commit: ${{ github.sha }}
+          - Date: ${{ github.event.head_commit.timestamp }}
+          
+          Built from main branch.
+        draft: false
+        prerelease: true
+        generate_release_notes: false
         files: build/SpedImage_Setup.exe
-        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
