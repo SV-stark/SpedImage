@@ -45,8 +45,8 @@ impl Default for ImageAdjustments {
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     rotation: f32,
-    aspect_ratio: f32,       // Image aspect ratio (width/height)
-    window_aspect_ratio: f32, // Window aspect ratio (width/height)
+    aspect_ratio: f32, window_aspect_ratio: f32,       // Image aspect ratio (width/height)
+    window_aspect_ratio: f32, window_aspect_ratio: f32, // Window aspect ratio (width/height)
     crop_x: f32,
     crop_y: f32,
     crop_w: f32,
@@ -65,8 +65,8 @@ struct VertexOutput {
 
 struct Uniforms {
     rotation: f32,
-    aspect_ratio: f32,
-    window_aspect_ratio: f32,
+    aspect_ratio: f32, window_aspect_ratio: f32,
+    window_aspect_ratio: f32, window_aspect_ratio: f32,
     crop_x: f32,
     crop_y: f32,
     crop_w: f32,
@@ -541,7 +541,7 @@ impl Renderer {
             brightness: adjustments.brightness,
             contrast: adjustments.contrast,
             saturation: adjustments.saturation,
-            _padding: 0.0,
+            
         };
 
         self.queue
@@ -610,6 +610,7 @@ impl Renderer {
         // 1. Text rendering — queue all sections
         let scale = self.scale_factor as f32;
 
+        #[allow(unused_variables)]
         let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nEsc: Quit";
         let sidebar_list_text: String = sidebar_files
             .map(|files| {
@@ -621,8 +622,6 @@ impl Renderer {
                     .join("\n")
             })
             .unwrap_or_default();
-
-        let mut has_text = false;
 
         // Navigation elements
         self.text_brush.queue(
@@ -646,7 +645,29 @@ impl Renderer {
                     self.config.height as f32 / 2.0,
                 )),
         );
-        has_text = true;
+
+        // Navigation elements
+        self.text_brush.queue(
+            Section::default()
+                .add_text(
+                    Text::new("◀")
+                        .with_scale(48.0 * scale)
+                        .with_color([0.8f32, 0.8, 0.8, 0.6]),
+                )
+                .with_screen_position((20.0 * scale, self.config.height as f32 / 2.0)),
+        );
+        self.text_brush.queue(
+            Section::default()
+                .add_text(
+                    Text::new("▶")
+                        .with_scale(48.0 * scale)
+                        .with_color([0.8f32, 0.8, 0.8, 0.6]),
+                )
+                .with_screen_position((
+                    self.config.width as f32 - 60.0 * scale,
+                    self.config.height as f32 / 2.0,
+                )),
+        );
 
         if let Some(status) = status_text {
             self.text_brush.queue(
@@ -658,7 +679,7 @@ impl Renderer {
                     )
                     .with_screen_position((10.0 * scale, self.config.height as f32 - 30.0 * scale)),
             );
-            has_text = true;
+            
         }
 
         if show_help {
@@ -671,7 +692,7 @@ impl Renderer {
                     )
                     .with_screen_position((10.0 * scale, 10.0 * scale)),
             );
-            has_text = true;
+            
         }
 
         if sidebar_files.map(|f| !f.is_empty()).unwrap_or(false) {
@@ -685,7 +706,7 @@ impl Renderer {
                     .with_screen_position((self.config.width as f32 - 280.0 * scale, 10.0 * scale))
                     .with_bounds((270.0 * scale, self.config.height as f32 - 20.0 * scale)),
             );
-            has_text = true;
+            
         }
 
         {
