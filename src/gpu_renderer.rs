@@ -174,7 +174,7 @@ pub struct Renderer {
     pub scale_factor: f64, // DPI scale (12: DPI-aware rendering)
 
     // Text rendering
-    text_brush: wgpu_text::TextBrush<wgpu_text::font::FontArc>,
+    text_brush: wgpu_text::TextBrush<wgpu_text::glyph_brush::ab_glyph::FontArc>,
 }
 
 impl Renderer {
@@ -388,10 +388,13 @@ impl Renderer {
         let font_bytes = std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf")
             .unwrap_or_else(|_| include_bytes!("../Cargo.toml").to_vec()); // this is a terrible fallback but prevents crash if missing
 
-        let font = wgpu_text::font::FontArc::try_from_vec(font_bytes).unwrap_or_else(|_| {
-            wgpu_text::font::FontArc::try_from_slice(include_bytes!("../Cargo.toml"))
+        let font = wgpu_text::glyph_brush::ab_glyph::FontArc::try_from_vec(font_bytes)
+            .unwrap_or_else(|_| {
+                wgpu_text::glyph_brush::ab_glyph::FontArc::try_from_slice(include_bytes!(
+                    "../Cargo.toml"
+                ))
                 .expect("Failed to load font fallback")
-        });
+            });
 
         let text_brush = wgpu_text::BrushBuilder::using_font(font).build(
             &device,
@@ -590,9 +593,9 @@ impl Renderer {
         let mut text_sections = Vec::new();
 
         if let Some(status) = status_text {
-            let section = wgpu_text::section::Section::default()
+            let section = wgpu_text::glyph_brush::Section::default()
                 .add_text(
-                    wgpu_text::section::Text::new(status)
+                    wgpu_text::glyph_brush::Text::new(status)
                         .with_scale(18.0 * scale)
                         .with_color([1.0, 1.0, 1.0, 1.0]),
                 )
@@ -602,9 +605,9 @@ impl Renderer {
 
         if show_help {
             let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nEsc: Quit";
-            let section = wgpu_text::section::Section::default()
+            let section = wgpu_text::glyph_brush::Section::default()
                 .add_text(
-                    wgpu_text::section::Text::new(help_text)
+                    wgpu_text::glyph_brush::Text::new(help_text)
                         .with_scale(16.0 * scale)
                         .with_color([0.9, 0.9, 0.9, 1.0]),
                 )
@@ -615,7 +618,7 @@ impl Renderer {
         if !text_sections.is_empty() {
             // Queue text
             self.text_brush
-                .queue(&self.device, &self.queue, text_sections)
+                .queue(&self.device, &self.queue, text_sections.clone())
                 .unwrap();
         }
 

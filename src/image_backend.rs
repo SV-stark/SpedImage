@@ -217,8 +217,8 @@ impl ImageBackend {
 
         // Fallback to Windows Imaging Component (WIC)
         use windows::core::HSTRING;
+        use windows::Win32::Foundation::GENERIC_READ;
         use windows::Win32::Graphics::Imaging::*;
-        use windows::Win32::Storage::FileSystem::GENERIC_READ;
         use windows::Win32::System::Com::{
             CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
         };
@@ -235,7 +235,7 @@ impl ImageBackend {
                 let decoder = factory.CreateDecoderFromFilename(
                     &path_hstring,
                     None,
-                    GENERIC_READ.0,
+                    GENERIC_READ,
                     WICDecodeMetadataCacheOnDemand,
                 )?;
 
@@ -259,7 +259,7 @@ impl ImageBackend {
                 let size = stride * height;
                 let mut buffer: Vec<u8> = vec![0; size as usize];
 
-                converter.CopyPixels(None, stride, &mut buffer)?;
+                converter.CopyPixels(std::ptr::null(), stride, &mut buffer)?;
 
                 Ok((buffer, width, height))
             }

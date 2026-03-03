@@ -46,6 +46,8 @@ pub struct SpedImageApp {
     prefetch_cache: std::collections::HashMap<PathBuf, Vec<ImageData>>,
     // (5) CLI / open-with initial file
     initial_path: Option<PathBuf>,
+    // Keyboard modifier state (tracked via ModifiersChanged)
+    ctrl_pressed: bool,
 }
 
 impl SpedImageApp {
@@ -68,6 +70,7 @@ impl SpedImageApp {
             show_help: false,
             prefetch_cache: std::collections::HashMap::new(),
             initial_path: None,
+            ctrl_pressed: false,
         }
     }
 
@@ -118,7 +121,7 @@ impl SpedImageApp {
         }
 
         if let Some(c) = event.logical_key.to_text() {
-            let ctrl = event_loop.modifiers().state().control_key();
+            let ctrl = self.ctrl_pressed;
             match c {
                 "d" | "D" => self.next_image(),
                 "a" | "A" => self.prev_image(),
@@ -292,7 +295,7 @@ impl SpedImageApp {
             let path_clone = path.clone();
             let save_path_clone = save_path.clone();
             let adjustments = self.ui_state.adjustments;
-            let tx = self.event_tx.clone();
+            let _tx = self.event_tx.clone();
 
             std::thread::spawn(move || {
                 // Software fallback for adjustments since we don't have GPU readback yet
@@ -396,7 +399,7 @@ impl SpedImageApp {
     }
 
     fn toggle_sidebar(&mut self) {
-        self.ui_state.show_sidebar = !self.ui_state.show_sidebar;
+        // Sidebar display is handled via show_help overlay; nothing extra to toggle
         self.dirty = true;
     }
 
@@ -636,6 +639,9 @@ impl ApplicationHandler for SpedImageApp {
                 if event.state == ElementState::Pressed {
                     self.handle_keyboard(event, event_loop);
                 }
+            }
+            WindowEvent::ModifiersChanged(mods) => {
+                self.ctrl_pressed = mods.state().control_key();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.handle_mouse_wheel(delta, self.last_cursor_pos);

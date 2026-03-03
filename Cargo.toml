@@ -26,7 +26,7 @@ image = { version = "0.24", default-features = false, features = [
 ] }
 
 # Text Rendering
-wgpu_text = "0.9"
+wgpu_text = "0.8"
 
 # File dialog (native)
 rfd = "0.14"
@@ -66,7 +66,6 @@ windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_Graphics_Imaging",
     "Win32_System_Com",
-    "Win32_Storage_Streams",
     "Win32_Storage_FileSystem",
 ] }
 
