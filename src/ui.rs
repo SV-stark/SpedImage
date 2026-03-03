@@ -161,3 +161,196 @@ impl UiState {
 
 // Re-export ImageBackend for file filtering
 use crate::image_backend::ImageBackend;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_file_entry_new() {
+        let temp_dir = env::temp_dir();
+        let test_path = temp_dir.join("test_image.png");
+
+        std::fs::File::create(&test_path).unwrap();
+
+        let entry = FileEntry::new(test_path.clone());
+        assert_eq!(entry.name, "test_image.png");
+        assert!(entry.is_image);
+
+        std::fs::remove_file(&test_path).unwrap();
+    }
+
+    #[test]
+    fn test_file_entry_unknown_extension() {
+        let temp_dir = env::temp_dir();
+        let test_path = temp_dir.join("test.xyz");
+
+        if std::fs::File::create(&test_path).is_err() {
+            return;
+        }
+
+        let entry = FileEntry::new(test_path.clone());
+        assert_eq!(entry.name, "test.xyz");
+        assert!(!entry.is_image);
+
+        let _ = std::fs::remove_file(&test_path);
+    }
+
+    #[test]
+    fn test_ui_state_current_file() {
+        let mut state = UiState::default();
+        assert!(state.current_file().is_none());
+
+        let temp_dir = env::temp_dir();
+        let path = temp_dir.join("test.png");
+        std::fs::File::create(&path).unwrap();
+
+        state.files.push(FileEntry::new(path.clone()));
+        state.current_file_index = Some(0);
+
+        assert_eq!(state.current_file(), Some(&path));
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn test_ui_state_next_file() {
+        let mut state = UiState::default();
+
+        let temp_dir = env::temp_dir();
+        let path1 = temp_dir.join("a.png");
+        let path2 = temp_dir.join("b.png");
+        let path3 = temp_dir.join("c.png");
+
+        std::fs::File::create(&path1).unwrap();
+        std::fs::File::create(&path2).unwrap();
+        std::fs::File::create(&path3).unwrap();
+
+        state.files.push(FileEntry::new(path1));
+        state.files.push(FileEntry::new(path2.clone()));
+        state.files.push(FileEntry::new(path3));
+        state.current_file_index = Some(0);
+
+        state.next_file();
+        assert_eq!(state.current_file_index, Some(1));
+
+        state.next_file();
+        assert_eq!(state.current_file_index, Some(2));
+
+        state.next_file();
+        assert_eq!(state.current_file_index, Some(0));
+
+        std::fs::remove_file(&path2).unwrap();
+    }
+
+    #[test]
+    fn test_ui_state_prev_file() {
+        let mut state = UiState::default();
+
+        let temp_dir = env::temp_dir();
+        let path1 = temp_dir.join("a.png");
+        let path2 = temp_dir.join("b.png");
+
+        std::fs::File::create(&path1).unwrap();
+        std::fs::File::create(&path2.clone()).unwrap();
+
+        state.files.push(FileEntry::new(path1.clone()));
+        state.files.push(FileEntry::new(path2));
+        state.current_file_index = Some(1);
+
+        state.prev_file();
+        assert_eq!(state.current_file_index, Some(0));
+
+        state.prev_file();
+        assert_eq!(state.current_file_index, Some(1));
+
+        std::fs::remove_file(&path1).unwrap();
+    }
+
+    #[test]
+    fn test_ui_state_load_directory() {
+        let mut state = UiState::default();
+
+        let temp_dir = env::temp_dir();
+        let test_dir = temp_dir.join("spedimage_test_dir");
+        std::fs::create_dir(&test_dir).unwrap();
+
+        let path1 = test_dir.join("aaa.png");
+        let path2 = test_dir.join("bbb.jpg");
+
+        std::fs::File::create(&path1).unwrap();
+        std::fs::File::create(&path2).unwrap();
+
+        state.load_directory(test_dir.clone());
+
+        assert!(!state.files.is_empty());
+        assert!(state.current_file_index.is_some());
+
+        std::fs::remove_file(&path1).unwrap();
+        std::fs::remove_file(&path2).unwrap();
+        std::fs::remove_dir(&test_dir).unwrap();
+    }
+
+    #[test]
+    fn test_ui_state_reset_adjustments() {
+        let mut state = UiState::default();
+
+        state.adjustments.brightness = 2.0;
+        state.adjustments.contrast = 1.5;
+        state.adjustments.rotation = std::f32::consts::FRAC_PI_4;
+
+        state.reset_adjustments();
+
+        assert_eq!(state.adjustments.brightness, 1.0);
+        assert_eq!(state.adjustments.contrast, 1.0);
+        assert_eq!(state.adjustments.rotation, 0.0);
+    }
+
+    #[test]
+    fn test_ui_state_rotate_90() {
+        let mut state = UiState::default();
+
+        let initial_rotation = state.adjustments.rotation;
+        state.rotate_90();
+
+        assert_eq!(
+            state.adjustments.rotation,
+            initial_rotation + std::f32::consts::FRAC_PI_2
+        );
+    }
+
+    #[test]
+    fn test_ui_state_set_status() {
+        let mut state = UiState::default();
+
+        state.set_status("Test message");
+        assert_eq!(state.get_status(), "Test message");
+
+        state.set_status("Another message");
+        assert_eq!(state.get_status(), "Another message");
+    }
+
+    #[test]
+    fn test_ui_state_clear_status() {
+        let mut state = UiState::default();
+
+        state.set_status("Test message");
+        state.clear_status();
+
+        assert_eq!(state.get_status(), "");
+    }
+
+    #[test]
+    fn test_ui_state_toggle_help() {
+        let mut state = UiState::default();
+
+        assert!(!state.show_help);
+
+        state.toggle_help();
+        assert!(state.show_help);
+
+        state.toggle_help();
+        assert!(!state.show_help);
+    }
+}

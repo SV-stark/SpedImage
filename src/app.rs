@@ -633,14 +633,11 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             // Build window icon from embedded PNG
-            let icon = image::load_from_memory(APP_ICON)
-                .ok()
-                .map(|img| {
-                    let rgba = img.to_rgba8();
-                    let (w, h) = rgba.dimensions();
-                    Icon::from_rgba(rgba.into_raw(), w, h).ok()
-                })
-                .flatten();
+            let icon = image::load_from_memory(APP_ICON).ok().and_then(|img| {
+                let rgba = img.to_rgba8();
+                let (w, h) = rgba.dimensions();
+                Icon::from_rgba(rgba.into_raw(), w, h).ok()
+            });
 
             // (11) Graceful error recovery — no unwrap crashes
             let mut attrs = Window::default_attributes()

@@ -849,3 +849,19 @@ impl Renderer {
         self.scale_factor = scale;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_image_adjustments_default() {
+        let adj = ImageAdjustments::default();
+
+        assert_eq!(adj.brightness, 1.0);
+        assert_eq!(adj.contrast, 1.0);
+        assert_eq!(adj.saturation, 1.0);
+        assert_eq!(adj.rotation, 0.0);
+        assert_eq!(adj.crop_rect, [0.0, 0.0, 1.0, 1.0]);
+    }
+}
