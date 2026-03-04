@@ -843,14 +843,7 @@ impl Renderer {
             });
 
             pass.set_pipeline(&self.pipeline);
-            pass.set_viewport(
-                vp_x as f32,
-                vp_y as f32,
-                vp_w as f32,
-                vp_h as f32,
-                0.0,
-                1.0,
-            );
+            pass.set_viewport(vp_x as f32, vp_y as f32, vp_w as f32, vp_h as f32, 0.0, 1.0);
             // Scissor to strip area so thumbnails cannot bleed outside
             pass.set_scissor_rect(0, strip_y, win_w, STRIP_HEIGHT_PX);
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
@@ -968,10 +961,7 @@ impl Renderer {
                         .with_scale(48.0 * scale)
                         .with_color([0.8f32, 0.8, 0.8, 0.6]),
                 )
-                .with_screen_position((
-                    self.config.width as f32 - 60.0 * scale,
-                    nav_y,
-                )),
+                .with_screen_position((self.config.width as f32 - 60.0 * scale, nav_y)),
         );
 
         // Status text — move it above the strip when strip is visible
@@ -1335,11 +1325,7 @@ impl Renderer {
 
     /// Return the index into `self.thumbnails` for a given pixel click coordinate
     /// within the thumbnail strip. Returns None if the click is not in the strip.
-    pub fn thumbnail_index_at(
-        &self,
-        x: f64,
-        y: f64,
-    ) -> Option<usize> {
+    pub fn thumbnail_index_at(&self, x: f64, y: f64) -> Option<usize> {
         let win_h = self.config.height as f64;
         let win_w = self.config.width as f64;
         let strip_y = win_h - STRIP_HEIGHT_PX as f64;
