@@ -20,6 +20,13 @@ use winit::window::Window;
 
 use crate::image_backend::ImageData;
 
+/// Height of the thumbnail strip in physical pixels.
+pub const STRIP_HEIGHT_PX: u32 = 90;
+/// Width of each thumbnail slot (including gap).
+pub const THUMB_SLOT_W: u32 = 80;
+/// Thumbnail image size (square, aspect-fit inside the slot).
+pub const THUMB_SIZE: u32 = 74;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ImageAdjustments {
     pub brightness: f32,
@@ -171,6 +178,17 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// A fully-uploaded thumbnail ready for GPU rendering.
+pub struct ThumbnailEntry {
+    pub path: std::path::PathBuf,
+    /// Bind group pointing at the thumbnail texture (same layout as image pipeline).
+    pub bind_group: Arc<BindGroup>,
+    pub width: u32,
+    pub height: u32,
+    /// The GPU texture (kept alive so bind group stays valid).
+    _texture: Texture,
+}
+
 pub struct Renderer {
     _window: Arc<Window>,
     device: Device,
@@ -179,6 +197,8 @@ pub struct Renderer {
     pipeline: RenderPipeline,
     crop_pipeline: RenderPipeline,
     uniform_buffer: wgpu::Buffer,
+    /// Uniform buffer used with identity (no-op) uniforms for thumbnail rendering.
+    thumb_uniform_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
     sampler: Sampler,
     image_texture: Option<Texture>,
@@ -191,6 +211,9 @@ pub struct Renderer {
     // Text rendering
     text_brush: GlyphBrush<()>,
     staging_belt: wgpu::util::StagingBelt,
+
+    // Thumbnails
+    pub thumbnails: Vec<ThumbnailEntry>,
 }
 
 impl Renderer {
@@ -257,6 +280,26 @@ impl Renderer {
             size: std::mem::size_of::<Uniforms>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
+        });
+
+        // A second uniform buffer pre-filled with "identity" values for thumbnail rendering.
+        let thumb_uniforms = Uniforms {
+            rotation: 0.0,
+            aspect_ratio: 1.0,
+            window_aspect_ratio: 1.0,
+            crop_x: 0.0,
+            crop_y: 0.0,
+            crop_w: 1.0,
+            crop_h: 1.0,
+            brightness: 1.0,
+            contrast: 1.0,
+            saturation: 1.0,
+            _padding: [0.0; 2],
+        };
+        let thumb_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Thumbnail Uniform Buffer"),
+            contents: bytemuck::bytes_of(&thumb_uniforms),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let sampler = device.create_sampler(&SamplerDescriptor {
@@ -419,6 +462,7 @@ impl Renderer {
             pipeline,
             crop_pipeline,
             uniform_buffer,
+            thumb_uniform_buffer,
             vertex_buffer,
             sampler,
             image_texture: None,
@@ -429,6 +473,7 @@ impl Renderer {
             scale_factor: window.scale_factor(),
             text_brush,
             staging_belt,
+            thumbnails: Vec::new(),
         })
     }
 
@@ -519,6 +564,91 @@ impl Renderer {
         Ok(())
     }
 
+    /// Upload a single thumbnail RGBA buffer to the GPU and return its bind group.
+    /// The bind group uses `thumb_uniform_buffer` so thumbnails render with identity settings.
+    pub fn upload_thumbnail(
+        &mut self,
+        path: std::path::PathBuf,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        let texture = self.device.create_texture(&TextureDescriptor {
+            label: Some("Thumbnail Texture"),
+            size: Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        self.queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            rgba,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group_layout = self.pipeline.get_bind_group_layout(0);
+
+        let bind_group = Arc::new(self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("Thumbnail Bind Group"),
+            layout: &bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(
+                        self.thumb_uniform_buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&self.sampler),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&view),
+                },
+            ],
+        }));
+
+        self.thumbnails.push(ThumbnailEntry {
+            path,
+            bind_group,
+            width,
+            height,
+            _texture: texture,
+        });
+
+        Ok(())
+    }
+
+    /// Remove all thumbnails and free their GPU textures.
+    pub fn clear_thumbnails(&mut self) {
+        // ThumbnailEntry holds the texture so dropping the Vec frees VRAM.
+        self.thumbnails.clear();
+    }
+
     /// Encode image draw commands into `encoder` targeting `view`.
     /// Does NOT submit or present — caller owns the frame lifetime.
     fn encode_image(
@@ -577,25 +707,208 @@ impl Renderer {
         }
     }
 
-    /// Kept for compatibility — renders image only (no UI) and presents.
-    /// Prefer `render_frame` which combines image + UI in one surface acquire.
-    pub fn render(&self, adjustments: &ImageAdjustments) -> Result<()> {
-        let frame = self
-            .surface
-            .get_current_texture()
-            .context("Failed to get current surface texture")?;
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
+    /// Encode the thumbnail strip at the bottom of the screen.
+    /// Draws a dark background, then each uploaded thumbnail in its slot.
+    /// `active_idx` is the index into `self.thumbnails` that is currently displayed.
+    fn encode_thumbnail_strip(
+        &mut self,
+        active_idx: Option<usize>,
+        view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let win_w = self.config.width;
+        let win_h = self.config.height;
+
+        if win_h < STRIP_HEIGHT_PX || win_w < THUMB_SLOT_W {
+            return;
+        }
+
+        let strip_y = win_h - STRIP_HEIGHT_PX;
+
+        // --- Pass 1: darken the strip background using the crop pipeline --------
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("Thumbnail Strip Background"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
-        self.encode_image(adjustments, &view, &mut encoder);
-        self.queue.submit([encoder.finish()]);
-        frame.present();
-        Ok(())
+            pass.set_pipeline(&self.crop_pipeline);
+            pass.set_scissor_rect(0, strip_y, win_w, STRIP_HEIGHT_PX);
+            pass.draw(0..4, 0..1);
+        }
+
+        // --- Pass 2: draw each thumbnail using set_viewport --------------------
+        let n = self.thumbnails.len();
+        if n == 0 {
+            return;
+        }
+
+        // Centre the strip horizontally; if too many thumbnails, they scroll left
+        let total_w = n as u32 * THUMB_SLOT_W;
+        let start_x: i64 = if total_w <= win_w {
+            ((win_w - total_w) / 2) as i64
+        } else if let Some(ai) = active_idx {
+            // Keep active thumbnail in view
+            let active_cx = ai as i64 * THUMB_SLOT_W as i64 + THUMB_SLOT_W as i64 / 2;
+            let half_win = win_w as i64 / 2;
+            let raw = half_win - active_cx;
+            raw.clamp(win_w as i64 - total_w as i64, 0)
+        } else {
+            0
+        };
+
+        // Padding inside a slot so the thumbnail image is centred
+        let pad = (THUMB_SLOT_W - THUMB_SIZE) / 2;
+
+        // We need to iterate by index to capture bind groups - collect them first
+        let bind_groups: Vec<(Arc<BindGroup>, u32, u32)> = self
+            .thumbnails
+            .iter()
+            .map(|t| (Arc::clone(&t.bind_group), t.width, t.height))
+            .collect();
+
+        for (i, (bg, tw, th)) in bind_groups.iter().enumerate() {
+            let slot_x = start_x + (i as i64) * THUMB_SLOT_W as i64;
+            // Skip thumbnails fully outside the window
+            if slot_x + THUMB_SLOT_W as i64 <= 0 || slot_x >= win_w as i64 {
+                continue;
+            }
+
+            // Compute aspect-fit rect inside the slot's THUMB_SIZE square
+            let thumb_ar = *tw as f32 / (*th).max(1) as f32;
+            let (fit_w, fit_h) = if thumb_ar >= 1.0 {
+                (THUMB_SIZE, (THUMB_SIZE as f32 / thumb_ar).round() as u32)
+            } else {
+                ((THUMB_SIZE as f32 * thumb_ar).round() as u32, THUMB_SIZE)
+            };
+
+            // Centre fit rect inside the THUMB_SIZE square
+            let offset_x = (THUMB_SIZE - fit_w) / 2;
+            let offset_y = (THUMB_SIZE - fit_h) / 2;
+
+            let vp_x = (slot_x + pad as i64 + offset_x as i64).max(0) as u32;
+            let vp_y = strip_y + pad + offset_y;
+            let vp_w = fit_w.min(win_w.saturating_sub(vp_x));
+            let vp_h = fit_h;
+
+            if vp_w == 0 || vp_h == 0 {
+                continue;
+            }
+
+            // Update thumb uniforms for this thumbnail's aspect ratio
+            let ar = *tw as f32 / (*th).max(1) as f32;
+            let thumb_uniforms = Uniforms {
+                rotation: 0.0,
+                aspect_ratio: ar,
+                window_aspect_ratio: ar, // square viewport ≈ identity
+                crop_x: 0.0,
+                crop_y: 0.0,
+                crop_w: 1.0,
+                crop_h: 1.0,
+                brightness: 1.0,
+                contrast: 1.0,
+                saturation: 1.0,
+                _padding: [0.0; 2],
+            };
+            self.queue.write_buffer(
+                &self.thumb_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&thumb_uniforms),
+            );
+
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("Thumbnail Draw"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            pass.set_pipeline(&self.pipeline);
+            pass.set_viewport(
+                vp_x as f32,
+                vp_y as f32,
+                vp_w as f32,
+                vp_h as f32,
+                0.0,
+                1.0,
+            );
+            // Scissor to strip area so thumbnails cannot bleed outside
+            pass.set_scissor_rect(0, strip_y, win_w, STRIP_HEIGHT_PX);
+            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            pass.set_bind_group(0, bg.as_ref(), &[]);
+            pass.draw(0..6, 0..1);
+        }
+
+        // --- Pass 3: highlight border for active thumbnail ---------------------
+        if let Some(ai) = active_idx {
+            let slot_x = start_x + ai as i64 * THUMB_SLOT_W as i64;
+            if slot_x >= 0 && slot_x + THUMB_SLOT_W as i64 <= win_w as i64 {
+                let bx = slot_x as u32 + 2;
+                let by = strip_y + 2;
+                let bw = THUMB_SLOT_W.saturating_sub(4);
+                let bh = STRIP_HEIGHT_PX.saturating_sub(4);
+                const BORDER: u32 = 2;
+
+                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("Thumbnail Active Border"),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Load,
+                            store: StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_pipeline(&self.crop_pipeline);
+
+                // Top border
+                if by >= strip_y && BORDER > 0 {
+                    pass.set_scissor_rect(bx, by, bw, BORDER);
+                    pass.draw(0..4, 0..1);
+                }
+                // Bottom border
+                let bot = by + bh;
+                if bot + BORDER <= win_h {
+                    pass.set_scissor_rect(bx, bot, bw, BORDER);
+                    pass.draw(0..4, 0..1);
+                }
+                // Left border
+                if bw > 0 {
+                    pass.set_scissor_rect(bx, by, BORDER, bh);
+                    pass.draw(0..4, 0..1);
+                }
+                // Right border
+                let rx = bx + bw;
+                if rx + BORDER <= win_w {
+                    pass.set_scissor_rect(rx, by, BORDER, bh);
+                    pass.draw(0..4, 0..1);
+                }
+            }
+        }
     }
 
     /// Encode UI overlay commands into `encoder` targeting `view`.
@@ -608,6 +921,7 @@ impl Renderer {
         status_text: Option<&str>,
         show_help: bool,
         sidebar_files: Option<&[String]>,
+        show_thumbnail_strip: bool,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -618,7 +932,7 @@ impl Renderer {
         let has_text = true; // We queue navigation arrows at minimum
 
         #[allow(unused_variables)]
-        let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nEsc: Quit";
+        let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nT: Toggle Thumbnails\nEsc: Quit";
         let sidebar_list_text: String = sidebar_files
             .map(|files| {
                 files
@@ -631,6 +945,13 @@ impl Renderer {
             .unwrap_or_default();
 
         // Navigation elements
+        let nav_y = if show_thumbnail_strip && !self.thumbnails.is_empty() {
+            // Push nav arrows up above the strip
+            (self.config.height as f32 - STRIP_HEIGHT_PX as f32) / 2.0
+        } else {
+            self.config.height as f32 / 2.0
+        };
+
         self.text_brush.queue(
             Section::default()
                 .add_text(
@@ -638,7 +959,7 @@ impl Renderer {
                         .with_scale(48.0 * scale)
                         .with_color([0.8f32, 0.8, 0.8, 0.6]),
                 )
-                .with_screen_position((20.0 * scale, self.config.height as f32 / 2.0)),
+                .with_screen_position((20.0 * scale, nav_y)),
         );
         self.text_brush.queue(
             Section::default()
@@ -649,32 +970,16 @@ impl Renderer {
                 )
                 .with_screen_position((
                     self.config.width as f32 - 60.0 * scale,
-                    self.config.height as f32 / 2.0,
+                    nav_y,
                 )),
         );
 
-        // Navigation elements
-        self.text_brush.queue(
-            Section::default()
-                .add_text(
-                    Text::new("◀")
-                        .with_scale(48.0 * scale)
-                        .with_color([0.8f32, 0.8, 0.8, 0.6]),
-                )
-                .with_screen_position((20.0 * scale, self.config.height as f32 / 2.0)),
-        );
-        self.text_brush.queue(
-            Section::default()
-                .add_text(
-                    Text::new("▶")
-                        .with_scale(48.0 * scale)
-                        .with_color([0.8f32, 0.8, 0.8, 0.6]),
-                )
-                .with_screen_position((
-                    self.config.width as f32 - 60.0 * scale,
-                    self.config.height as f32 / 2.0,
-                )),
-        );
+        // Status text — move it above the strip when strip is visible
+        let status_y = if show_thumbnail_strip && !self.thumbnails.is_empty() {
+            self.config.height as f32 - STRIP_HEIGHT_PX as f32 - 28.0 * scale
+        } else {
+            self.config.height as f32 - 30.0 * scale
+        };
 
         if let Some(status) = status_text {
             self.text_brush.queue(
@@ -684,7 +989,7 @@ impl Renderer {
                             .with_scale(18.0 * scale)
                             .with_color([1.0f32, 1.0, 1.0, 1.0]),
                     )
-                    .with_screen_position((10.0 * scale, self.config.height as f32 - 30.0 * scale)),
+                    .with_screen_position((10.0 * scale, status_y)),
             );
         }
 
@@ -783,6 +1088,7 @@ impl Renderer {
 
     /// Combined render: acquires surface texture once, draws image then UI, presents once.
     /// This is the correct path for still images — avoids the double-present black screen bug.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_frame(
         &mut self,
         adjustments: &ImageAdjustments,
@@ -791,6 +1097,8 @@ impl Renderer {
         status_text: Option<&str>,
         show_help: bool,
         sidebar_files: Option<&[String]>,
+        show_thumbnail_strip: bool,
+        active_thumb_idx: Option<usize>,
     ) -> Result<()> {
         let frame = self
             .surface
@@ -808,18 +1116,24 @@ impl Renderer {
         // 1. Draw image (clears to black first)
         self.encode_image(adjustments, &view, &mut encoder);
 
-        // 2. Draw UI overlay on top (LoadOp::Load to preserve image pixels)
+        // 2. Draw thumbnail strip (before text so text overlays on top)
+        if show_thumbnail_strip && !self.thumbnails.is_empty() {
+            self.encode_thumbnail_strip(active_thumb_idx, &view, &mut encoder);
+        }
+
+        // 3. Draw UI overlay on top (LoadOp::Load to preserve image pixels)
         self.encode_ui_overlay(
             is_cropping,
             crop_rect,
             status_text,
             show_help,
             sidebar_files,
+            show_thumbnail_strip,
             &view,
             &mut encoder,
         );
 
-        // 3. Single submit + present
+        // 4. Single submit + present
         self.queue.submit([encoder.finish()]);
         self.staging_belt.recall();
         frame.present();
@@ -852,6 +1166,7 @@ impl Renderer {
             status_text,
             show_help,
             sidebar_files,
+            false,
             &view,
             &mut encoder,
         );
@@ -1016,6 +1331,41 @@ impl Renderer {
 
     pub fn update_scale_factor(&mut self, scale: f64) {
         self.scale_factor = scale;
+    }
+
+    /// Return the index into `self.thumbnails` for a given pixel click coordinate
+    /// within the thumbnail strip. Returns None if the click is not in the strip.
+    pub fn thumbnail_index_at(
+        &self,
+        x: f64,
+        y: f64,
+    ) -> Option<usize> {
+        let win_h = self.config.height as f64;
+        let win_w = self.config.width as f64;
+        let strip_y = win_h - STRIP_HEIGHT_PX as f64;
+
+        if y < strip_y || self.thumbnails.is_empty() {
+            return None;
+        }
+
+        let n = self.thumbnails.len();
+        let total_w = n as f64 * THUMB_SLOT_W as f64;
+        let start_x: f64 = if total_w <= win_w {
+            (win_w - total_w) / 2.0
+        } else {
+            0.0
+        };
+
+        if x < start_x || x >= start_x + total_w {
+            return None;
+        }
+
+        let slot = ((x - start_x) / THUMB_SLOT_W as f64) as usize;
+        if slot < n {
+            Some(slot)
+        } else {
+            None
+        }
     }
 }
 

@@ -2,7 +2,7 @@
 //!
 //! Coordinates the WGPU renderer, image backend, and UI components.
 
-use crate::gpu_renderer::Renderer;
+use crate::gpu_renderer::{Renderer, STRIP_HEIGHT_PX};
 use crate::image_backend::{ImageBackend, ImageData};
 use crate::ui::UiState;
 use anyhow::Result;
@@ -26,6 +26,13 @@ pub struct WakeUp;
 
 const APP_ICON: &[u8] = include_bytes!("../assets/icons/icon.png");
 
+/// Thumbnail size used for background loading (must match THUMB_SIZE in gpu_renderer).
+const THUMB_LOAD_SIZE: u32 = 80;
+/// Max concurrently-running thumbnail background threads.
+const MAX_THUMB_THREADS: usize = 4;
+/// Max thumbnails kept in GPU at once (older ones are not evicted but new ones stop loading).
+const MAX_THUMBNAILS: usize = 200;
+
 pub enum AppEvent {
     ImageLoaded(Vec<ImageData>),
     ImageError(String),
@@ -33,6 +40,8 @@ pub enum AppEvent {
     Prefetched(PathBuf, Vec<ImageData>), // prefetch for adjacent images
     SaveComplete(PathBuf),
     SaveError(String),
+    /// A thumbnail has finished loading: (path, rgba_bytes, width, height)
+    ThumbnailLoaded(PathBuf, Vec<u8>, u32, u32),
 }
 
 /// Helper: send an AppEvent through the data channel, then wake the event loop.
@@ -69,6 +78,12 @@ pub struct SpedImageApp {
     initial_path: Option<PathBuf>,
     // Keyboard modifier state (tracked via ModifiersChanged)
     ctrl_pressed: bool,
+    // Thumbnail strip
+    show_thumbnail_strip: bool,
+    thumb_active: Arc<AtomicUsize>, // count of running thumbnail threads
+    /// Ordered list of file paths for which thumbnails have been requested,
+    /// in the same order as ui_state.files (may lag behind while loading).
+    thumb_paths: Vec<PathBuf>,
 }
 
 impl SpedImageApp {
@@ -96,6 +111,9 @@ impl SpedImageApp {
             prefetch_active: Arc::new(AtomicUsize::new(0)),
             initial_path: None,
             ctrl_pressed: false,
+            show_thumbnail_strip: true,
+            thumb_active: Arc::new(AtomicUsize::new(0)),
+            thumb_paths: Vec::new(),
         }
     }
 
@@ -162,6 +180,7 @@ impl SpedImageApp {
                 "r" | "R" => self.rotate_image(),
                 "o" | "O" => self.open_file_dialog(),
                 "f" | "F" => self.toggle_sidebar(),
+                "t" | "T" => self.toggle_thumbnail_strip(),
                 "1" => self.reset_adjustments(),
                 "c" | "C" => self.toggle_crop(),
                 "+" | "=" => self.zoom_in(None),
@@ -294,6 +313,58 @@ impl SpedImageApp {
                 if let Ok(frames) = result {
                     if let Some(ref proxy) = proxy {
                         send_event(&tx, proxy, AppEvent::Prefetched(p, frames));
+                    }
+                }
+            });
+        }
+    }
+
+    /// Spawn background thumbnail-loading threads for all files in the current directory.
+    /// Only files that haven't been requested yet (not in thumb_paths) are queued.
+    fn load_thumbnails_for_dir(&mut self) {
+        let files: Vec<PathBuf> = self.ui_state.files.iter().map(|f| f.path.clone()).collect();
+
+        // Reset thumb_paths to match the new directory order
+        self.thumb_paths = files.clone();
+
+        // Clear existing GPU thumbnails so order matches the new directory
+        if let Some(ref mut renderer) = self.renderer {
+            renderer.clear_thumbnails();
+        }
+
+        let n = files.len().min(MAX_THUMBNAILS);
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+        let active = self.thumb_active.clone();
+
+        for path in files.into_iter().take(n) {
+            // Throttle concurrency
+            while active.load(Ordering::Relaxed) >= MAX_THUMB_THREADS {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            active.fetch_add(1, Ordering::Relaxed);
+            let tx2 = tx.clone();
+            let proxy2 = proxy.clone();
+            let act2 = active.clone();
+            let p = path.clone();
+            std::thread::spawn(move || {
+                let result =
+                    ImageBackend::load_and_downsample(&p, THUMB_LOAD_SIZE, THUMB_LOAD_SIZE);
+                act2.fetch_sub(1, Ordering::Relaxed);
+                if let Ok(frames) = result {
+                    if let Some(first) = frames.into_iter().next() {
+                        if let Some(ref proxy) = proxy2 {
+                            send_event(
+                                &tx2,
+                                proxy,
+                                AppEvent::ThumbnailLoaded(
+                                    p,
+                                    first.rgba_data,
+                                    first.width,
+                                    first.height,
+                                ),
+                            );
+                        }
                     }
                 }
             });
@@ -470,6 +541,11 @@ impl SpedImageApp {
         self.dirty = true;
     }
 
+    fn toggle_thumbnail_strip(&mut self) {
+        self.show_thumbnail_strip = !self.show_thumbnail_strip;
+        self.dirty = true;
+    }
+
     fn open_file_dialog(&mut self) {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
@@ -529,6 +605,14 @@ impl SpedImageApp {
         self.dirty = true;
     }
 
+    /// Return the index into `renderer.thumbnails` that matches the active image.
+    /// Since thumbnails are inserted in the same order as `thumb_paths`, this is
+    /// the position of the active path in `thumb_paths`.
+    fn active_thumb_index(&self) -> Option<usize> {
+        let current = self.ui_state.current_file()?;
+        self.thumb_paths.iter().position(|p| p == current)
+    }
+
     fn process_events(&mut self) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
@@ -562,6 +646,19 @@ impl SpedImageApp {
                     self.prefetch_cache_bytes += new_bytes;
                     self.prefetch_cache.insert(path, frames);
                 }
+                AppEvent::ThumbnailLoaded(path, rgba, width, height) => {
+                    if let Some(ref mut renderer) = self.renderer {
+                        // Only upload if we haven't already got this thumbnail
+                        let already_have = renderer.thumbnails.iter().any(|t| t.path == path);
+                        if !already_have {
+                            if let Err(e) = renderer.upload_thumbnail(path, &rgba, width, height) {
+                                tracing::warn!("Failed to upload thumbnail: {}", e);
+                            } else {
+                                self.dirty = true;
+                            }
+                        }
+                    }
+                }
                 AppEvent::ImageLoaded(mut frames) => {
                     self.ui_state.reset_adjustments();
                     self.dirty = true;
@@ -574,6 +671,12 @@ impl SpedImageApp {
                     // Extract frame delays before consuming pixel data
                     let frame_delays: Vec<u32> = frames.iter().map(|f| f.frame_delay_ms).collect();
 
+                    let new_dir = path.parent().map(|p| p.to_path_buf());
+                    let old_dir = self
+                        .ui_state
+                        .current_file()
+                        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
                     if let Some(parent) = path.parent() {
                         self.ui_state.load_directory(parent.to_path_buf());
                     }
@@ -582,6 +685,11 @@ impl SpedImageApp {
                             self.ui_state.current_file_index = Some(i);
                             break;
                         }
+                    }
+
+                    // Reload thumbnails if we moved to a new directory
+                    if new_dir != old_dir || self.thumb_paths.is_empty() {
+                        self.load_thumbnails_for_dir();
                     }
 
                     if let Some(ref mut renderer) = self.renderer {
@@ -773,6 +881,35 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
             WindowEvent::MouseInput { state, button, .. } => match (button, state) {
                 (MouseButton::Left, ElementState::Pressed) => {
+                    let pos = self.last_cursor_pos;
+
+                    // --- Check thumbnail strip click first ---
+                    if self.show_thumbnail_strip {
+                        if let Some(ref renderer) = self.renderer {
+                            if let Some(thumb_slot) = renderer.thumbnail_index_at(pos.x, pos.y) {
+                                // Find the file that corresponds to this thumbnail slot
+                                if let Some(path) = self.thumb_paths.get(thumb_slot).cloned() {
+                                    // Find the index in ui_state.files
+                                    if let Some(file_idx) =
+                                        self.ui_state.files.iter().position(|f| f.path == path)
+                                    {
+                                        self.ui_state.current_file_index = Some(file_idx);
+                                        self.load_image(path);
+                                    }
+                                }
+                                return; // consumed by thumbnail strip
+                            }
+                        }
+                    }
+
+                    // Check if click was within the strip area but no thumbnail (blank area)
+                    if let Some(ref w) = self.window {
+                        let win_h = w.inner_size().height as f64;
+                        if self.show_thumbnail_strip && pos.y > win_h - STRIP_HEIGHT_PX as f64 {
+                            return; // swallow clicks on the strip background
+                        }
+                    }
+
                     // Check if click was on UI Navigation bounds:
                     if let Some(ref w) = self.window {
                         let size = w.inner_size();
@@ -808,6 +945,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let crop_rect = self.ui_state.adjustments.crop_rect;
                     let show_help = self.ui_state.show_help;
                     let show_sidebar = self.show_sidebar;
+                    let show_thumbnail_strip = self.show_thumbnail_strip;
+                    let active_thumb_idx = self.active_thumb_index();
                     let sidebar_files: Vec<String> = if show_sidebar {
                         self.ui_state.files.iter().map(|f| f.name.clone()).collect()
                     } else {
@@ -832,6 +971,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                                 } else {
                                     None
                                 },
+                                show_thumbnail_strip,
+                                active_thumb_idx,
                             );
                         }
                     }
@@ -897,5 +1038,9 @@ impl Drop for SpedImageApp {
         self.prefetch_cache_bytes = 0;
         self.current_frame_delays.clear();
         self.current_image = None;
+        // Clear thumbnail GPU resources
+        if let Some(ref mut renderer) = self.renderer {
+            renderer.clear_thumbnails();
+        }
     }
 }
