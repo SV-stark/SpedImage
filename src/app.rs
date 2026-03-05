@@ -42,6 +42,8 @@ pub enum AppEvent {
     SaveError(String),
     /// A thumbnail has finished loading: (path, rgba_bytes, width, height)
     ThumbnailLoaded(PathBuf, Vec<u8>, u32, u32),
+    SetStatus(String),
+    FileRenamed(PathBuf, PathBuf),
 }
 
 /// Helper: send an AppEvent through the data channel, then wake the event loop.
@@ -84,6 +86,11 @@ pub struct SpedImageApp {
     /// Ordered list of file paths for which thumbnails have been requested,
     /// in the same order as ui_state.files (may lag behind while loading).
     thumb_paths: Vec<PathBuf>,
+    
+    // (8) Slideshow Mode
+    slideshow_active: bool,
+    slideshow_interval: std::time::Duration,
+    slideshow_next_time: Option<std::time::Instant>,
 }
 
 impl SpedImageApp {
@@ -114,6 +121,9 @@ impl SpedImageApp {
             show_thumbnail_strip: true,
             thumb_active: Arc::new(AtomicUsize::new(0)),
             thumb_paths: Vec::new(),
+            slideshow_active: false,
+            slideshow_interval: std::time::Duration::from_secs(5),
+            slideshow_next_time: None,
         }
     }
 
@@ -154,6 +164,10 @@ impl SpedImageApp {
                 self.dirty = true;
                 return;
             }
+            Key::Named(NamedKey::F2) => {
+                self.rename_current_image();
+                return;
+            }
             Key::Named(NamedKey::F11) => {
                 if let Some(ref w) = self.window {
                     let mode = if w.fullscreen().is_some() {
@@ -177,7 +191,13 @@ impl SpedImageApp {
             match c {
                 "d" | "D" => self.next_image(),
                 "a" | "A" => self.prev_image(),
-                "w" | "W" => self.prev_image(),
+                "w" | "W" => {
+                    if ctrl {
+                        self.set_as_wallpaper();
+                    } else {
+                        self.prev_image();
+                    }
+                }
                 "s" | "S" => {
                     if ctrl {
                         self.save_image();
@@ -190,6 +210,7 @@ impl SpedImageApp {
                 "f" | "F" => self.toggle_sidebar(),
                 "t" | "T" => self.toggle_thumbnail_strip(),
                 "1" => self.reset_adjustments(),
+                "c" | "C" if ctrl => self.copy_to_clipboard(),
                 "c" | "C" => self.toggle_crop(),
                 "h" | "H" => self.toggle_hdr_toning(),
                 "i" | "I" => {
@@ -200,6 +221,9 @@ impl SpedImageApp {
                 "+" | "=" => self.zoom_in(None),
                 "-" => self.zoom_out(None),
                 "0" => self.zoom_fit(),
+                " " => self.toggle_slideshow(),
+                "[" => self.adjust_slideshow_interval(-1),
+                "]" => self.adjust_slideshow_interval(1),
                 "?" => {
                     self.ui_state.toggle_help();
                     self.dirty = true;
@@ -207,6 +231,31 @@ impl SpedImageApp {
                 _ => {}
             }
         }
+    }
+
+    fn toggle_slideshow(&mut self) {
+        self.slideshow_active = !self.slideshow_active;
+        if self.slideshow_active {
+            self.slideshow_next_time = Some(std::time::Instant::now() + self.slideshow_interval);
+            self.ui_state.set_status(format!("Slideshow started ({}s per image)", self.slideshow_interval.as_secs()));
+        } else {
+            self.slideshow_next_time = None;
+            self.ui_state.set_status("Slideshow paused");
+        }
+        self.dirty = true;
+    }
+
+    fn adjust_slideshow_interval(&mut self, change: i32) {
+        let current_secs = self.slideshow_interval.as_secs() as i32;
+        let new_secs = (current_secs + change).clamp(1, 120) as u64;
+        self.slideshow_interval = std::time::Duration::from_secs(new_secs);
+        if self.slideshow_active {
+            self.slideshow_next_time = Some(std::time::Instant::now() + self.slideshow_interval);
+            self.ui_state.set_status(format!("Slideshow interval: {}s", new_secs));
+        } else {
+            self.ui_state.set_status(format!("Slideshow interval configured to {}s", new_secs));
+        }
+        self.dirty = true;
     }
 
     fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, cursor_pos: PhysicalPosition<f64>) {
@@ -586,6 +635,179 @@ impl SpedImageApp {
         self.dirty = true;
     }
 
+    fn rename_current_image(&mut self) {
+        if let Some(img) = &self.current_image {
+            let old_path = std::path::PathBuf::from(&img.path);
+            let filename = old_path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            
+            let tx = self.event_tx.clone();
+            let proxy = self.event_proxy.clone();
+            
+            std::thread::spawn(move || {
+                if let Some(new_path) = rfd::FileDialog::new()
+                    .set_title("Rename File")
+                    .set_file_name(&filename)
+                    .save_file()
+                {
+                    if let Err(e) = std::fs::rename(&old_path, &new_path) {
+                        if let Some(ref p) = proxy {
+                            send_event(&tx, p, AppEvent::SetStatus(format!("Rename failed: {}", e)));
+                        }
+                    } else {
+                        if let Some(ref p) = proxy {
+                            send_event(&tx, p, AppEvent::FileRenamed(old_path, new_path));
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    fn set_as_wallpaper(&mut self) {
+        #[cfg(windows)]
+        {
+            if let Some(img) = &self.current_image {
+                tracing::info!("Setting wallpaper: {}", img.path);
+                use std::os::windows::ffi::OsStrExt;
+                use windows::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SPIF_SENDWININICHANGE};
+
+                let path = std::path::Path::new(&img.path);
+                let abs_path = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    std::env::current_dir().unwrap_or_default().join(path)
+                };
+
+                let mut path_wide: Vec<u16> = abs_path.as_os_str().encode_wide().collect();
+                path_wide.push(0);
+
+                unsafe {
+                    let _ = SystemParametersInfoW(
+                        SPI_SETDESKWALLPAPER,
+                        0,
+                        Some(path_wide.as_mut_ptr() as *mut _),
+                        SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE,
+                    );
+                }
+                self.ui_state.set_status("Desktop wallpaper set!");
+                self.dirty = true;
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            self.ui_state.set_status("Wallpaper setting not supported on this OS");
+            self.dirty = true;
+        }
+    }
+
+    fn show_context_menu(&mut self) {
+        #[cfg(windows)]
+        {
+            if let Some(ref w) = self.window {
+                use windows::Win32::UI::WindowsAndMessaging::{CreatePopupMenu, AppendMenuW, TrackPopupMenu, TPM_RETURNCMD, TPM_NONOTIFY, MF_STRING};
+                use windows::Win32::Foundation::HWND;
+                use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+                use windows::core::PCWSTR;
+                use std::os::windows::ffi::OsStrExt;
+                
+                unsafe {
+                    let hmenu = CreatePopupMenu().unwrap_or_default();
+                    if hmenu.is_invalid() {
+                        return;
+                    }
+                    
+                    let mut id = 1;
+                    let items = [
+                        "Open in Explorer",
+                        "Copy (Ctrl+C)",
+                        "Rename (F2)",
+                        "Delete (Del)",
+                        "Set as Wallpaper (Ctrl+W)",
+                    ];
+                    
+                    for item in &items {
+                        let mut wide: Vec<u16> = std::ffi::OsStr::new(item).encode_wide().collect();
+                        wide.push(0);
+                        let _ = AppendMenuW(hmenu, MF_STRING, id, PCWSTR(wide.as_ptr()));
+                        id += 1;
+                    }
+                    
+                    let mut pt = windows::Win32::Foundation::POINT::default();
+                    let _ = GetCursorPos(&mut pt);
+                    
+                    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    let hwnd = if let Ok(handle) = w.window_handle() {
+                        match handle.as_raw() {
+                            RawWindowHandle::Win32(h) => HWND(h.hwnd.get() as *mut _),
+                            _ => HWND::default(),
+                        }
+                    } else {
+                        HWND::default()
+                    };
+                    
+                    let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
+                    
+                    let cmd = TrackPopupMenu(
+                        hmenu,
+                        TPM_RETURNCMD | TPM_NONOTIFY,
+                        pt.x,
+                        pt.y,
+                        0,
+                        hwnd,
+                        None,
+                    );
+                    
+                    let _ = windows::Win32::UI::WindowsAndMessaging::DestroyMenu(hmenu);
+                    
+                    match cmd.0 {
+                        1 => self.open_in_explorer(),
+                        2 => self.copy_to_clipboard(),
+                        3 => self.rename_current_image(),
+                        4 => self.delete_current_image(),
+                        5 => { self.set_as_wallpaper(); }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    
+    fn open_in_explorer(&self) {
+        #[cfg(windows)]
+        {
+            if let Some(img) = &self.current_image {
+                let path = std::path::Path::new(&img.path);
+                let abs_path = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    std::env::current_dir().unwrap_or_default().join(path)
+                };
+                
+                use windows::Win32::UI::Shell::ShellExecuteW;
+                use windows::Win32::UI::WindowsAndMessaging::SW_SHOW;
+                use windows::core::PCWSTR;
+                use std::os::windows::ffi::OsStrExt;
+                
+                let arg = format!("/select,\"{}\"", abs_path.display());
+                
+                let verb: Vec<u16> = std::ffi::OsStr::new("open").encode_wide().chain(std::iter::once(0)).collect();
+                let file: Vec<u16> = std::ffi::OsStr::new("explorer.exe").encode_wide().chain(std::iter::once(0)).collect();
+                let params: Vec<u16> = std::ffi::OsStr::new(&arg).encode_wide().chain(std::iter::once(0)).collect();
+                
+                unsafe {
+                    let _ = ShellExecuteW(
+                        None,
+                        PCWSTR(verb.as_ptr()),
+                        PCWSTR(file.as_ptr()),
+                        PCWSTR(params.as_ptr()),
+                        None,
+                        SW_SHOW,
+                    );
+                }
+            }
+        }
+    }
+
     fn print_image(&self) {
         #[cfg(windows)]
         {
@@ -621,6 +843,130 @@ impl SpedImageApp {
         #[cfg(not(windows))]
         {
             tracing::warn!("Print not currently supported on this platform.");
+        }
+    }
+
+    fn copy_to_clipboard(&mut self) {
+        if let Some(img) = &self.current_image {
+            let path = std::path::PathBuf::from(&img.path);
+            self.ui_state.set_status("Copying to clipboard...");
+            self.dirty = true;
+            
+            let tx = self.event_tx.clone();
+            let proxy = self.event_proxy.clone();
+            std::thread::spawn(move || {
+                let res = Self::do_copy_to_clipboard(&path);
+                if let Some(ref p) = proxy {
+                    if let Err(e) = res {
+                        send_event(&tx, p, AppEvent::SetStatus(format!("Copy failed: {}", e)));
+                    } else {
+                        send_event(&tx, p, AppEvent::SetStatus("Copied to clipboard".to_string()));
+                    }
+                }
+            });
+        }
+    }
+
+    fn do_copy_to_clipboard(path: &Path) -> Result<()> {
+        let img = image::open(path)?;
+        
+        #[cfg(target_os = "linux")]
+        {
+            let mut png_data = Vec::new();
+            img.write_to(&mut std::io::Cursor::new(&mut png_data), image::ImageFormat::Png)?;
+            
+            // Try wl-copy
+            let child = std::process::Command::new("wl-copy")
+                .arg("-t")
+                .arg("image/png")
+                .stdin(std::process::Stdio::piped())
+                .spawn();
+            
+            if let Ok(mut c) = child {
+                if let Some(mut stdin) = c.stdin.take() {
+                    use std::io::Write;
+                    let _ = stdin.write_all(&png_data);
+                }
+                let _ = c.wait();
+                return Ok(());
+            }
+            
+            // Try xclip
+            let child = std::process::Command::new("xclip")
+                .args(&["-selection", "clipboard", "-t", "image/png"])
+                .stdin(std::process::Stdio::piped())
+                .spawn();
+            
+            if let Ok(mut c) = child {
+                if let Some(mut stdin) = c.stdin.take() {
+                    use std::io::Write;
+                    let _ = stdin.write_all(&png_data);
+                }
+                let _ = c.wait();
+                return Ok(());
+            }
+            
+            anyhow::bail!("Neither wl-copy nor xclip found");
+        }
+        
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GHND};
+            use windows::Win32::System::DataExchange::{OpenClipboard, EmptyClipboard, SetClipboardData, CloseClipboard};
+            use windows::Win32::Graphics::Gdi::{BITMAPINFOHEADER, BI_RGB};
+            use windows::Win32::Foundation::HANDLE;
+
+            let rgba = img.into_rgba8();
+            let (width, height) = rgba.dimensions();
+            let mut bgra = rgba.into_raw();
+            for chunk in bgra.chunks_exact_mut(4) {
+                chunk.swap(0, 2); // RGBA -> BGRA
+            }
+            
+            let stride = (width * 4) as usize;
+            let mut flipped = vec![0u8; bgra.len()];
+            for (y, row) in bgra.chunks_exact(stride).enumerate() {
+                let flipped_y = (height as usize - 1) - y;
+                flipped[flipped_y * stride..(flipped_y + 1) * stride].copy_from_slice(row);
+            }
+            
+            let header_size = std::mem::size_of::<BITMAPINFOHEADER>();
+            let size = header_size + flipped.len();
+            
+            unsafe {
+                let hmem = GlobalAlloc(GHND, size)?;
+                let ptr = GlobalLock(hmem) as *mut u8;
+                
+                let header = BITMAPINFOHEADER {
+                    biSize: header_size as u32,
+                    biWidth: width as i32,
+                    biHeight: height as i32,
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB,
+                    biSizeImage: flipped.len() as u32,
+                    ..Default::default()
+                };
+                
+                std::ptr::copy_nonoverlapping(&header as *const _ as *const u8, ptr, header_size);
+                std::ptr::copy_nonoverlapping(flipped.as_ptr(), ptr.add(header_size), flipped.len());
+                GlobalUnlock(hmem);
+                
+                // OpenClipboard needs a valid HWND, None connects to current task
+                if OpenClipboard(None).as_bool() {
+                    EmptyClipboard();
+                    SetClipboardData(8, HANDLE(hmem.0 as isize)); // 8 is CF_DIB
+                    CloseClipboard();
+                } else {
+                    anyhow::bail!("Failed to open clipboard");
+                }
+            }
+            Ok(())
+        }
+        
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        {
+            anyhow::bail!("Native clipboard not implemented on this OS");
         }
     }
 
@@ -704,6 +1050,10 @@ impl SpedImageApp {
                 AppEvent::SaveError(e) => {
                     self.dirty = true;
                     self.ui_state.set_status(format!("Save failed: {}", e));
+                }
+                AppEvent::SetStatus(msg) => {
+                    self.dirty = true;
+                    self.ui_state.set_status(msg);
                 }
                 AppEvent::Prefetched(path, frames) => {
                     // Memory-budget-based prefetch cache eviction (100 MB limit)
@@ -811,8 +1161,14 @@ impl SpedImageApp {
                     } else {
                         format!("  |  {} frames", frame_delays.len() + 1)
                     };
+                    
+                    let image_count = self.ui_state.files.iter().filter(|f| f.is_image).count();
+                    let current_idx = self.ui_state.current_file_index.unwrap_or(0) + 1;
+                    
                     self.ui_state.set_status(format!(
-                        "{}  |  {}×{}  |  {size_mb:.1} MB{}",
+                        "{}/{}  |  {}  |  {}×{}  |  {size_mb:.1} MB{}",
+                        current_idx,
+                        image_count,
                         path.file_name().unwrap_or_default().to_string_lossy(),
                         first_frame.width,
                         first_frame.height,
@@ -832,6 +1188,25 @@ impl SpedImageApp {
                 }
                 AppEvent::OpenPath(path) => {
                     self.load_image(path);
+                }
+                AppEvent::FileRenamed(old_path, new_path) => {
+                    if let Some(img) = &mut self.current_image {
+                        if std::path::PathBuf::from(&img.path) == old_path {
+                            img.path = new_path.to_string_lossy().into_owned();
+                        }
+                    }
+                    for file in &mut self.ui_state.files {
+                        if file.path == old_path {
+                            file.path = new_path.clone();
+                            file.name = new_path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                            break;
+                        }
+                    }
+                    if let Some(frames) = self.prefetch_cache.remove(&old_path) {
+                        self.prefetch_cache.insert(new_path.clone(), frames);
+                    }
+                    self.ui_state.set_status(format!("Renamed to {}", new_path.file_name().unwrap_or_default().to_string_lossy()));
+                    self.dirty = true;
                 }
             }
         }
@@ -1018,13 +1393,29 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 (MouseButton::Left, ElementState::Released) => {
                     self.mouse_drag_start = None;
                 }
+                (MouseButton::Right, ElementState::Released) => {
+                    self.mouse_drag_start = None;
+                    self.show_context_menu();
+                }
                 _ => {}
             },
             WindowEvent::RedrawRequested => {
                 self.process_events();
                 if self.dirty {
                     // Clone status and capture flags before mut-borrowing renderer
-                    let status_opt: Option<String> = self.ui_state.status_message.clone();
+                    let status_opt: Option<String> = self.ui_state.status_message.clone().map(|msg| {
+                        let mut final_msg = msg;
+                        // Append zoom level to the end of the status message if we are zoomed
+                        let zoom_pct = (1.0 / self.ui_state.adjustments.crop_rect[2] * 100.0).round() as u32;
+                        if zoom_pct != 100 {
+                            final_msg = format!("{}  |  {}%", final_msg, zoom_pct);
+                        }
+                        if self.slideshow_active {
+                            final_msg = format!("▶ {}s  |  {}", self.slideshow_interval.as_secs(), final_msg);
+                        }
+                        final_msg
+                    });
+                    
                     let is_cropping = self.ui_state.is_cropping;
                     let crop_rect = self.ui_state.adjustments.crop_rect;
                     let show_help = self.ui_state.show_help;
@@ -1124,21 +1515,33 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     Some(now + std::time::Duration::from_millis(delay.max(10) as u64));
                 self.dirty = true;
             }
-            
-            if animating_zoom {
-                let zoom_time = std::time::Instant::now() + std::time::Duration::from_millis(16);
-                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                    self.next_frame_time.unwrap().min(zoom_time),
-                ));
-            } else {
-                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                    self.next_frame_time.unwrap(),
-                ));
+        }
+        
+        let now = std::time::Instant::now();
+        if self.slideshow_active {
+            if let Some(st) = self.slideshow_next_time {
+                if now >= st {
+                    self.next_image();
+                    self.slideshow_next_time = Some(now + self.slideshow_interval);
+                }
             }
-        } else if animating_zoom {
-            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                std::time::Instant::now() + std::time::Duration::from_millis(16),
-            ));
+        }
+
+        let mut wait_until = None;
+        if animating_zoom {
+            wait_until = Some(now + std::time::Duration::from_millis(16));
+        }
+        if let Some(ft) = self.next_frame_time {
+            wait_until = Some(wait_until.map_or(ft, |w| w.min(ft)));
+        }
+        if self.slideshow_active {
+            if let Some(st) = self.slideshow_next_time {
+                wait_until = Some(wait_until.map_or(st, |w| w.min(st)));
+            }
+        }
+
+        if let Some(wu) = wait_until {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wu));
         } else {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         }
