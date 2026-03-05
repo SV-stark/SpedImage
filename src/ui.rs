@@ -43,6 +43,8 @@ pub struct UiState {
     pub show_help: bool,
     pub show_info: bool,
     pub status_message: Option<String>,
+    /// Set of file indices that are currently selected in the thumbnail strip.
+    pub selected_indices: std::collections::HashSet<usize>,
 }
 
 impl UiState {

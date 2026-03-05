@@ -727,6 +727,7 @@ impl Renderer {
     fn encode_thumbnail_strip(
         &mut self,
         active_idx: Option<usize>,
+        selected_indices: &std::collections::HashSet<usize>,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -866,54 +867,60 @@ impl Renderer {
             pass.draw(0..6, 0..1);
         }
 
-        // --- Pass 3: highlight border for active thumbnail ---------------------
-        if let Some(ai) = active_idx {
-            let slot_x = start_x + ai as i64 * THUMB_SLOT_W as i64;
-            if slot_x >= 0 && slot_x + THUMB_SLOT_W as i64 <= win_w as i64 {
-                let bx = slot_x as u32 + 2;
-                let by = strip_y + 2;
-                let bw = THUMB_SLOT_W.saturating_sub(4);
-                let bh = STRIP_HEIGHT_PX.saturating_sub(4);
-                const BORDER: u32 = 2;
+        // --- Pass 3: highlight borders (active and selected) ---------------------
+        for (i, _) in bind_groups.iter().enumerate() {
+            let is_active = active_idx.map_or(false, |ai| ai == i);
+            let is_selected = selected_indices.contains(&i);
 
-                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                    label: Some("Thumbnail Active Border"),
-                    color_attachments: &[Some(RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: Operations {
-                            load: LoadOp::Load,
-                            store: StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-                pass.set_pipeline(&self.crop_pipeline);
-
-                // Top border
-                if by >= strip_y && BORDER > 0 {
-                    pass.set_scissor_rect(bx, by, bw, BORDER);
-                    pass.draw(0..4, 0..1);
-                }
-                // Bottom border
-                let bot = by + bh;
-                if bot + BORDER <= win_h {
-                    pass.set_scissor_rect(bx, bot, bw, BORDER);
-                    pass.draw(0..4, 0..1);
-                }
-                // Left border
-                if bw > 0 {
-                    pass.set_scissor_rect(bx, by, BORDER, bh);
-                    pass.draw(0..4, 0..1);
-                }
-                // Right border
-                let rx = bx + bw;
-                if rx + BORDER <= win_w {
-                    pass.set_scissor_rect(rx, by, BORDER, bh);
-                    pass.draw(0..4, 0..1);
+            if is_active || is_selected {
+                let slot_x = start_x + i as i64 * THUMB_SLOT_W as i64;
+                if slot_x + THUMB_SLOT_W as i64 > 0 && slot_x < win_w as i64 {
+                    let bx = slot_x as i32 + 2;
+                    let by = strip_y as i32 + 2;
+                    let bw = THUMB_SLOT_W as i32 - 4;
+                    let bh = STRIP_HEIGHT_PX as i32 - 4;
+                    // Draw a subtle border for selected, prominent for active
+                    let bsize = if is_active { 2 } else { 1 };
+                    
+                    let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                        label: Some("Thumbnail Border Pass"),
+                        color_attachments: &[Some(RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            ops: Operations { load: LoadOp::Load, store: StoreOp::Store },
+                            depth_slice: None,
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+                    pass.set_pipeline(&self.crop_pipeline);
+                    
+                    // Top border
+                    let b_win_w = win_w as u32;
+                    let b_win_h = win_h as u32;
+                    
+                    if by >= 0 {
+                        pass.set_scissor_rect(bx.max(0) as u32, by.max(0) as u32, bw.max(0) as u32, bsize);
+                        pass.draw(0..4, 0..1);
+                    }
+                    // Bottom border
+                    let bot = by + bh - bsize as i32;
+                    if bot < win_h as i32 {
+                        pass.set_scissor_rect(bx.max(0) as u32, bot.max(0) as u32, bw.max(0) as u32, bsize);
+                        pass.draw(0..4, 0..1);
+                    }
+                    // Left border
+                    if bx >= 0 {
+                        pass.set_scissor_rect(bx.max(0) as u32, by.max(0) as u32, bsize, bh.max(0) as u32);
+                        pass.draw(0..4, 0..1);
+                    }
+                    // Right border
+                    let rx = bx + bw - bsize as i32;
+                    if rx < win_w as i32 {
+                        pass.set_scissor_rect(rx.max(0) as u32, by.max(0) as u32, bsize, bh.max(0) as u32);
+                        pass.draw(0..4, 0..1);
+                    }
                 }
             }
         }
@@ -931,6 +938,8 @@ impl Renderer {
         sidebar_files: Option<&[String]>,
         show_thumbnail_strip: bool,
         exif_text: Option<&str>,
+        show_histogram: bool,
+        histogram_data: Option<&([u32; 256], [u32; 256], [u32; 256])>,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -997,6 +1006,58 @@ impl Renderer {
                     )
                     .with_screen_position((10.0 * scale, status_y)),
             );
+        }
+
+        // --- Histogram Rendering ---
+        if show_histogram {
+            if let Some((r_hist, g_hist, b_hist)) = histogram_data {
+                let h_w = 256.0 * scale;
+                let h_h = 100.0 * scale;
+                let h_x = self.config.width as f32 - h_w - 10.0 * scale;
+                let h_y = 10.0 * scale; // top right
+
+                // Background
+                self.text_brush.queue(Section::default()
+                    .add_text(Text::new("▇")
+                        .with_scale(h_h)
+                        .with_color([0.0, 0.0, 0.0, 0.4]))
+                    .with_screen_position((h_x, h_y))
+                    .with_bounds((h_w, h_h)));
+
+                let max_val = r_hist.iter().chain(g_hist.iter()).chain(b_hist.iter()).max().copied().unwrap_or(1).max(1);
+                
+                // Draw R, G, B bars
+                for (chan_idx, (hist, color)) in [
+                    (r_hist, [1.0f32, 0.3, 0.3, 0.6]),
+                    (g_hist, [0.3f32, 1.0, 0.3, 0.6]),
+                    (b_hist, [0.3f32, 0.3, 1.0, 0.6]),
+                ].into_iter().enumerate() {
+                    let mut bars = String::new();
+                    // Subsample to 64 bins for performance and readability in text
+                    for i in (0..256).step_by(4) {
+                        let val = hist[i..i+4].iter().sum::<u32>() / 4;
+                        let bar_h = (val as f32 / max_val as f32 * 8.0).round() as u32;
+                        let char = match bar_h {
+                            0 => " ",
+                            1 => " ",
+                            2 => "▂",
+                            3 => "▃",
+                            4 => "▄",
+                            5 => "▅",
+                            6 => "▆",
+                            7 => "▇",
+                            _ => "█",
+                        };
+                        bars.push_str(char);
+                    }
+                    
+                    self.text_brush.queue(Section::default()
+                        .add_text(Text::new(&bars)
+                            .with_scale(h_h / 4.0)
+                            .with_color(color))
+                        .with_screen_position((h_x, h_y + (chan_idx as f32 * h_h / 4.0))));
+                }
+            }
         }
 
         if show_help {
@@ -1117,7 +1178,10 @@ impl Renderer {
         sidebar_files: Option<&[String]>,
         show_thumbnail_strip: bool,
         active_thumb_idx: Option<usize>,
+        selected_indices: &std::collections::HashSet<usize>,
         exif_text: Option<&str>,
+        show_histogram: bool,
+        histogram_data: Option<&([u32; 256], [u32; 256], [u32; 256])>,
     ) -> Result<()> {
         let frame = self
             .surface
@@ -1137,7 +1201,7 @@ impl Renderer {
 
         // 2. Draw thumbnail strip (before text so text overlays on top)
         if show_thumbnail_strip && !self.thumbnails.is_empty() {
-            self.encode_thumbnail_strip(active_thumb_idx, &view, &mut encoder);
+            self.encode_thumbnail_strip(active_thumb_idx, selected_indices, &view, &mut encoder);
         }
 
         // 3. Draw UI overlay on top (LoadOp::Load to preserve image pixels)
@@ -1149,6 +1213,8 @@ impl Renderer {
             sidebar_files,
             show_thumbnail_strip,
             exif_text,
+            show_histogram,
+            histogram_data,
             &view,
             &mut encoder,
         );
@@ -1186,6 +1252,8 @@ impl Renderer {
             status_text,
             show_help,
             sidebar_files,
+            false,
+            None,
             false,
             None,
             &view,

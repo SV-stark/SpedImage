@@ -91,6 +91,10 @@ pub struct SpedImageApp {
     slideshow_active: bool,
     slideshow_interval: std::time::Duration,
     slideshow_next_time: Option<std::time::Instant>,
+    // (9) Color Picker - track Alt modifier
+    alt_pressed: bool,
+    // (10) Histogram panel
+    show_histogram: bool,
 }
 
 impl SpedImageApp {
@@ -124,6 +128,8 @@ impl SpedImageApp {
             slideshow_active: false,
             slideshow_interval: std::time::Duration::from_secs(5),
             slideshow_next_time: None,
+            alt_pressed: false,
+            show_histogram: false,
         }
     }
 
@@ -212,7 +218,18 @@ impl SpedImageApp {
                 "1" => self.reset_adjustments(),
                 "c" | "C" if ctrl => self.copy_to_clipboard(),
                 "c" | "C" => self.toggle_crop(),
-                "h" | "H" => self.toggle_hdr_toning(),
+                "h" | "H" => {
+                    if self.alt_pressed {
+                        // do nothing; alt+h is reserved
+                    } else if event.modifiers.shift_key() {
+                        self.show_histogram = !self.show_histogram;
+                        let state = if self.show_histogram { "ON" } else { "OFF" };
+                        self.ui_state.set_status(format!("Histogram: {}", state));
+                        self.dirty = true;
+                    } else {
+                        self.toggle_hdr_toning();
+                    }
+                }
                 "i" | "I" => {
                     self.ui_state.toggle_info();
                     self.dirty = true;
@@ -616,6 +633,77 @@ impl SpedImageApp {
         self.ui_state.is_cropping = false;
         self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
         self.ui_state.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
+        self.dirty = true;
+    }
+
+    fn pick_color_at(&mut self, cursor: PhysicalPosition<f64>) {
+        let (img, window) = match (&self.current_image, &self.window) {
+            (Some(i), Some(w)) => (i, w),
+            _ => return,
+        };
+
+        let size = window.inner_size();
+        if size.width == 0 || size.height == 0 {
+            return;
+        }
+
+        // Compute available height (subtract thumbnail strip if visible)
+        let available_h = if self.show_thumbnail_strip {
+            (size.height as i32 - STRIP_HEIGHT_PX as i32).max(1) as f64
+        } else {
+            size.height as f64
+        };
+
+        // The image is centered (letterboxed) -- reconstruct the same mapping as the GPU shader
+        let image_ar = img.width as f32 / img.height as f32;
+        let window_ar = size.width as f32 / available_h as f32;
+        let ratio = image_ar / window_ar;
+
+        // Extent of the visible image region in normalised window coords (range -1..1)
+        let (img_half_w, img_half_h) = if ratio > 1.0 {
+            (1.0_f32, 1.0 / ratio)
+        } else {
+            (ratio, 1.0_f32)
+        };
+
+        // Map cursor to -1..1 window space
+        let wx = (cursor.x / size.width as f64) as f32 * 2.0 - 1.0;
+        let wy = (cursor.y / available_h) as f32 * 2.0 - 1.0;
+
+        // Reject clicks outside the image quad
+        if wx < -img_half_w || wx > img_half_w || wy < -img_half_h || wy > img_half_h {
+            self.ui_state.set_status("Color Picker: click on the image");
+            self.dirty = true;
+            return;
+        }
+
+        // Convert to [0,1] image UV (accounting for current crop)
+        let u_img = (wx + img_half_w) / (2.0 * img_half_w);
+        let v_img = (wy + img_half_h) / (2.0 * img_half_h);
+
+        let cr = &self.ui_state.adjustments.crop_rect;
+        let u = cr[0] + u_img * cr[2];
+        let v = cr[1] + v_img * cr[3];
+        let u = u.clamp(0.0, 1.0);
+        let v = v.clamp(0.0, 1.0);
+
+        // Sample the RGBA pixel
+        let px = (u * (img.width - 1) as f32) as usize;
+        let py = (v * (img.height - 1) as f32) as usize;
+        let idx = (py * img.width as usize + px) * 4;
+
+        if idx + 3 >= img.rgba_data.len() {
+            return;
+        }
+
+        let r = img.rgba_data[idx];
+        let g = img.rgba_data[idx + 1];
+        let b = img.rgba_data[idx + 2];
+
+        self.ui_state.set_status(format!(
+            "Color Picker: R:{} G:{} B:{}  #{:02X}{:02X}{:02X}",
+            r, g, b, r, g, b
+        ));
         self.dirty = true;
     }
 
@@ -1175,6 +1263,7 @@ impl SpedImageApp {
                         frame_info
                     ));
 
+                    first_frame.compute_histogram();
                     self.current_image = Some(first_frame);
                     self.current_frame_delays = frame_delays;
                     self.current_frame_idx = 0;
@@ -1310,6 +1399,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
             WindowEvent::ModifiersChanged(mods) => {
                 self.ctrl_pressed = mods.state().control_key();
+                self.alt_pressed = mods.state().alt_key();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.handle_mouse_wheel(delta, self.last_cursor_pos);
@@ -1346,13 +1436,33 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                                     if let Some(file_idx) =
                                         self.ui_state.files.iter().position(|f| f.path == path)
                                     {
-                                        self.ui_state.current_file_index = Some(file_idx);
-                                        self.load_image(path);
+                                        if self.ctrl_pressed {
+                                            // Ctrl+Click: toggle selection
+                                            if self.ui_state.selected_indices.contains(&file_idx) {
+                                                self.ui_state.selected_indices.remove(&file_idx);
+                                            } else {
+                                                self.ui_state.selected_indices.insert(file_idx);
+                                            }
+                                            let sel_count = self.ui_state.selected_indices.len();
+                                            self.ui_state.set_status(format!("{} item(s) selected", sel_count));
+                                            self.dirty = true;
+                                        } else {
+                                            // Regular click: navigate + clear selection
+                                            self.ui_state.selected_indices.clear();
+                                            self.ui_state.current_file_index = Some(file_idx);
+                                            self.load_image(path);
+                                        }
                                     }
                                 }
                                 return; // consumed by thumbnail strip
                             }
                         }
+                    }
+
+                    // Alt+Click: Color Picker
+                    if self.alt_pressed {
+                        self.pick_color_at(self.last_cursor_pos);
+                        return;
                     }
 
                     // Check if click was within the strip area but no thumbnail (blank area)
@@ -1454,7 +1564,10 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                                 },
                                 show_thumbnail_strip,
                                 active_thumb_idx,
+                                &self.ui_state.selected_indices,
                                 exif_text,
+                                self.show_histogram,
+                                self.current_image.as_ref().and_then(|img| img.histogram.as_ref()),
                             );
                         }
                     }

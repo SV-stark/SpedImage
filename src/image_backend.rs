@@ -92,12 +92,30 @@ pub struct ImageData {
     pub file_size_bytes: u64,
     pub frame_delay_ms: u32,
     pub exif_info: Option<String>,
+    pub histogram: Option<([u32; 256], [u32; 256], [u32; 256])>,
 }
 
 impl ImageData {
     /// Get the raw RGBA bytes for GPU upload
     pub fn as_rgba(&self) -> &[u8] {
         &self.rgba_data
+    }
+
+    pub fn compute_histogram(&mut self) {
+        if self.rgba_data.is_empty() {
+            return;
+        }
+        let mut r_hist = [0u32; 256];
+        let mut g_hist = [0u32; 256];
+        let mut b_hist = [0u32; 256];
+
+        for chunk in self.rgba_data.chunks_exact(4) {
+            r_hist[chunk[0] as usize] += 1;
+            g_hist[chunk[1] as usize] += 1;
+            b_hist[chunk[2] as usize] += 1;
+        }
+
+        self.histogram = Some((r_hist, g_hist, b_hist));
     }
 
     /// Get aspect ratio
@@ -152,6 +170,7 @@ impl ImageBackend {
                                 file_size_bytes,
                                 frame_delay_ms: delay,
                                 exif_info: None,
+                                histogram: None,
                             });
                         }
                         return Ok(results);
@@ -180,6 +199,7 @@ impl ImageBackend {
             file_size_bytes,
             frame_delay_ms: 0,
             exif_info,
+            histogram: None,
         }])
     }
 
