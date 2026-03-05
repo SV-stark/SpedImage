@@ -33,7 +33,9 @@ pub struct ImageAdjustments {
     pub contrast: f32,
     pub saturation: f32,
     pub rotation: f32,
-    pub crop_rect: [f32; 4],
+    pub crop_rect_target: [f32; 4], // Where we want to be
+    pub crop_rect: [f32; 4],        // Where we currently are (rendered)
+    pub hdr_toning: bool,
 }
 
 impl Default for ImageAdjustments {
@@ -43,7 +45,9 @@ impl Default for ImageAdjustments {
             contrast: 1.0,
             saturation: 1.0,
             rotation: 0.0,
+            crop_rect_target: [0.0, 0.0, 1.0, 1.0],
             crop_rect: [0.0, 0.0, 1.0, 1.0],
+            hdr_toning: false,
         }
     }
 }
@@ -61,7 +65,8 @@ struct Uniforms {
     brightness: f32,
     contrast: f32,
     saturation: f32,
-    _padding: [f32; 2],
+    hdr_toning: f32,
+    _padding: f32,
 }
 
 const SHADER: &str = r#"
@@ -81,7 +86,8 @@ struct Uniforms {
     brightness: f32,
     contrast: f32,
     saturation: f32,
-    _padding: vec2<f32>,
+    hdr_toning: f32,
+    _padding: f32,
 };
 
 @group(0) @binding(0)
@@ -136,8 +142,14 @@ fn fragment_main(input: FragmentInput) -> @location(0) vec4<f32> {
     var color = tex_color.rgb;
     color = color * uniforms.brightness;
     color = (color - vec3<f32>(0.5)) * uniforms.contrast + vec3<f32>(0.5);
-    let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
     color = mix(vec3<f32>(gray), color, uniforms.saturation);
+
+    if (uniforms.hdr_toning > 0.5) {
+        let exposed = color * 1.6;
+        color = exposed / (1.0 + exposed);
+        color = color * color * (3.0 - 2.0 * color);
+    }
+
     return vec4<f32>(color, tex_color.a);
 }
 "#;
@@ -294,7 +306,8 @@ impl Renderer {
             brightness: 1.0,
             contrast: 1.0,
             saturation: 1.0,
-            _padding: [0.0; 2],
+            hdr_toning: 0.0,
+            _padding: 0.0,
         };
         let thumb_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Thumbnail Uniform Buffer"),
@@ -677,7 +690,8 @@ impl Renderer {
             brightness: adjustments.brightness,
             contrast: adjustments.contrast,
             saturation: adjustments.saturation,
-            _padding: [0.0; 2],
+            hdr_toning: if adjustments.hdr_toning { 1.0 } else { 0.0 },
+            _padding: 0.0,
         };
 
         self.queue
@@ -818,7 +832,8 @@ impl Renderer {
                 brightness: 1.0,
                 contrast: 1.0,
                 saturation: 1.0,
-                _padding: [0.0; 2],
+                hdr_toning: 0.0,
+                _padding: 0.0,
             };
             self.queue.write_buffer(
                 &self.thumb_uniform_buffer,
@@ -915,6 +930,7 @@ impl Renderer {
         show_help: bool,
         sidebar_files: Option<&[String]>,
         show_thumbnail_strip: bool,
+        exif_text: Option<&str>,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -925,7 +941,7 @@ impl Renderer {
         let has_text = true; // We queue navigation arrows at minimum
 
         #[allow(unused_variables)]
-        let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nCtrl+S: Save\nF: Toggle Sidebar\nT: Toggle Thumbnails\nEsc: Quit";
+        let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nH: Toggle HDR\nCtrl+S: Save\nF: Toggle Sidebar\nT: Toggle Thumbnails\nEsc: Quit";
         let sidebar_list_text: String = sidebar_files
             .map(|files| {
                 files
@@ -990,6 +1006,18 @@ impl Renderer {
                         Text::new(help_text)
                             .with_scale(16.0 * scale)
                             .with_color([0.9f32, 0.9, 0.9, 1.0]),
+                    )
+                    .with_screen_position((10.0 * scale, 10.0 * scale)),
+            );
+        }
+
+        if let Some(exif) = exif_text {
+            self.text_brush.queue(
+                Section::default()
+                    .add_text(
+                        Text::new(exif)
+                            .with_scale(15.0 * scale)
+                            .with_color([0.85f32, 0.95, 1.0, 1.0]),
                     )
                     .with_screen_position((10.0 * scale, 10.0 * scale)),
             );
@@ -1089,6 +1117,7 @@ impl Renderer {
         sidebar_files: Option<&[String]>,
         show_thumbnail_strip: bool,
         active_thumb_idx: Option<usize>,
+        exif_text: Option<&str>,
     ) -> Result<()> {
         let frame = self
             .surface
@@ -1119,6 +1148,7 @@ impl Renderer {
             show_help,
             sidebar_files,
             show_thumbnail_strip,
+            exif_text,
             &view,
             &mut encoder,
         );
@@ -1157,6 +1187,7 @@ impl Renderer {
             show_help,
             sidebar_files,
             false,
+            None,
             &view,
             &mut encoder,
         );
@@ -1368,5 +1399,7 @@ mod tests {
         assert_eq!(adj.saturation, 1.0);
         assert_eq!(adj.rotation, 0.0);
         assert_eq!(adj.crop_rect, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(adj.crop_rect_target, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(adj.hdr_toning, false);
     }
 }

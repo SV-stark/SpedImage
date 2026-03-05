@@ -42,6 +42,10 @@ anyhow = "1"
 # Async blocking
 pollster = "0.3"
 
+# EXIF parsing
+kamadak-exif = "0.5"
+chrono = "0.4"
+
 # For image manipulation
 fast_image_resize = "3"
 
@@ -61,6 +65,7 @@ raw = ["rawler"]
 svg = ["resvg"]
 
 [target.'cfg(windows)'.dependencies]
+winreg = "0.51"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_Graphics_Imaging",

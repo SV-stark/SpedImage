@@ -91,6 +91,7 @@ pub struct ImageData {
     pub path: String,
     pub file_size_bytes: u64,
     pub frame_delay_ms: u32,
+    pub exif_info: Option<String>,
 }
 
 impl ImageData {
@@ -150,6 +151,7 @@ impl ImageBackend {
                                 path: path.to_string_lossy().to_string(),
                                 file_size_bytes,
                                 frame_delay_ms: delay,
+                                exif_info: None,
                             });
                         }
                         return Ok(results);
@@ -157,6 +159,8 @@ impl ImageBackend {
                 }
             }
         }
+
+        let exif_info = Self::extract_exif(path);
 
         let (rgba_data, width, height) = match format {
             ImageFormatType::Heic | ImageFormatType::Avif => Self::load_heif(path)?,
@@ -175,7 +179,63 @@ impl ImageBackend {
             path: path.to_string_lossy().to_string(),
             file_size_bytes,
             frame_delay_ms: 0,
+            exif_info,
         }])
+    }
+
+    /// Extract key EXIF fields as a formatted multi-line string
+    fn extract_exif(path: &Path) -> Option<String> {
+        let file = std::fs::File::open(path).ok()?;
+        let mut bufreader = std::io::BufReader::new(&file);
+        let exifreader = exif::Reader::new();
+        let exif_data = exifreader.read_from_container(&mut bufreader).ok()?;
+
+        let mut out = String::new();
+
+        // Helper macro to append EXIF fields concisely
+        let mut add_field = |tag: exif::Tag, label: &str| {
+            if let Some(field) = exif_data.get_field(tag, exif::In::PRIMARY) {
+                out.push_str(label);
+                out.push_str(&field.display_value().with_unit(&exif_data).to_string());
+                out.push('\n');
+            }
+        };
+
+        add_field(exif::Tag::Make, "Make: ");
+        add_field(exif::Tag::Model, "Model: ");
+        add_field(exif::Tag::LensModel, "Lens: ");
+        
+        let mut exposure_line = String::new();
+        if let Some(f) = exif_data.get_field(exif::Tag::FocalLength, exif::In::PRIMARY) {
+            exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
+            exposure_line.push_str("  ");
+        }
+        if let Some(f) = exif_data.get_field(exif::Tag::FNumber, exif::In::PRIMARY) {
+            exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
+            exposure_line.push_str("  ");
+        }
+        if let Some(f) = exif_data.get_field(exif::Tag::ExposureTime, exif::In::PRIMARY) {
+            exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
+            exposure_line.push_str("s  ");
+        }
+        if let Some(f) = exif_data.get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY) { // ISO
+            exposure_line.push_str("ISO ");
+            exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
+        }
+        
+        if !exposure_line.is_empty() {
+            out.push_str("Exposure: ");
+            out.push_str(&exposure_line);
+            out.push('\n');
+        }
+
+        add_field(exif::Tag::DateTimeOriginal, "Date: ");
+        
+        if out.is_empty() {
+            None
+        } else {
+            Some(out.trim_end().to_string())
+        }
     }
 
     /// Load an image and optionally downsample it if it exceeds maximum dimensions

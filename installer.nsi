@@ -33,6 +33,11 @@ Section "Install"
     CreateDirectory "$SMPROGRAMS\SpedImage"
     CreateShortCut "$SMPROGRAMS\SpedImage\SpedImage.lnk" "$INSTDIR\spedimage.exe" "" "$INSTDIR\icon.png"
     CreateShortCut "$SMPROGRAMS\SpedImage\Uninstall.lnk" "$INSTDIR\uninstall.exe"
+
+    ; Register file associations
+    WriteRegStr HKCU "Software\Classes\SpedImage.Image" "" "SpedImage Image File"
+    WriteRegStr HKCU "Software\Classes\SpedImage.Image\DefaultIcon" "" "$INSTDIR\spedimage.exe,0"
+    WriteRegStr HKCU "Software\Classes\SpedImage.Image\shell\open\command" "" '"$INSTDIR\spedimage.exe" "%1"'
 SectionEnd
 
 Section "Uninstall"
@@ -43,5 +48,8 @@ Section "Uninstall"
     Delete "$INSTDIR\icon.png"
     Delete "$INSTDIR\uninstall.exe"
     
+    ; Remove registry file associations
+    DeleteRegKey HKCU "Software\Classes\SpedImage.Image"
+
     RMDir "$INSTDIR"
 SectionEnd

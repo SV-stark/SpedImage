@@ -41,6 +41,7 @@ pub struct UiState {
     pub is_cropping: bool,
     pub show_file_dialog: bool,
     pub show_help: bool,
+    pub show_info: bool,
     pub status_message: Option<String>,
 }
 
@@ -156,6 +157,11 @@ impl UiState {
     /// Toggle help overlay
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+    }
+
+    /// Toggle info panel
+    pub fn toggle_info(&mut self) {
+        self.show_info = !self.show_info;
     }
 }
 
@@ -299,12 +305,14 @@ mod tests {
         state.adjustments.brightness = 2.0;
         state.adjustments.contrast = 1.5;
         state.adjustments.rotation = std::f32::consts::FRAC_PI_4;
+        state.adjustments.hdr_toning = true;
 
         state.reset_adjustments();
 
         assert_eq!(state.adjustments.brightness, 1.0);
         assert_eq!(state.adjustments.contrast, 1.0);
         assert_eq!(state.adjustments.rotation, 0.0);
+        assert_eq!(state.adjustments.hdr_toning, false);
     }
 
     #[test]

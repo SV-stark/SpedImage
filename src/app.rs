@@ -141,6 +141,14 @@ impl SpedImageApp {
                 }
                 return;
             }
+            Key::Named(NamedKey::ArrowLeft) => {
+                self.prev_image();
+                return;
+            }
+            Key::Named(NamedKey::ArrowRight) => {
+                self.next_image();
+                return;
+            }
             Key::Named(NamedKey::F1) => {
                 self.show_help = !self.show_help;
                 self.dirty = true;
@@ -183,6 +191,12 @@ impl SpedImageApp {
                 "t" | "T" => self.toggle_thumbnail_strip(),
                 "1" => self.reset_adjustments(),
                 "c" | "C" => self.toggle_crop(),
+                "h" | "H" => self.toggle_hdr_toning(),
+                "i" | "I" => {
+                    self.ui_state.toggle_info();
+                    self.dirty = true;
+                }
+                "p" | "P" if ctrl => self.print_image(),
                 "+" | "=" => self.zoom_in(None),
                 "-" => self.zoom_out(None),
                 "0" => self.zoom_fit(),
@@ -471,6 +485,23 @@ impl SpedImageApp {
                         img = image::DynamicImage::ImageRgba8(rgba);
                     }
 
+                    // HDR Toning (Reinhard filmic)
+                    if adjustments.hdr_toning {
+                        let mut rgba = img.to_rgba8();
+                        for px in rgba.pixels_mut() {
+                            for c in 0..3 {
+                                // Expose
+                                let mut color = (px[c] as f32 / 255.0) * 1.6;
+                                // Reinhard
+                                color = color / (1.0 + color);
+                                // S-curve test
+                                color = color * color * (3.0 - 2.0 * color);
+                                px[c] = (color.clamp(0.0, 1.0) * 255.0) as u8;
+                            }
+                        }
+                        img = image::DynamicImage::ImageRgba8(rgba);
+                    }
+
                     ImageBackend::save(&save_path_clone, &img, 90)?;
                     Ok(())
                 })();
@@ -520,13 +551,22 @@ impl SpedImageApp {
         self.ui_state.is_cropping = !self.ui_state.is_cropping;
         if !self.ui_state.is_cropping {
             self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
+            self.ui_state.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
         }
+        self.dirty = true;
+    }
+
+    fn toggle_hdr_toning(&mut self) {
+        self.ui_state.adjustments.hdr_toning = !self.ui_state.adjustments.hdr_toning;
+        let label = if self.ui_state.adjustments.hdr_toning { "ON" } else { "OFF" };
+        self.ui_state.set_status(format!("HDR Toning: {}", label));
         self.dirty = true;
     }
 
     fn cancel_crop(&mut self) {
         self.ui_state.is_cropping = false;
         self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
+        self.ui_state.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
         self.dirty = true;
     }
 
@@ -544,6 +584,44 @@ impl SpedImageApp {
     fn toggle_thumbnail_strip(&mut self) {
         self.show_thumbnail_strip = !self.show_thumbnail_strip;
         self.dirty = true;
+    }
+
+    fn print_image(&self) {
+        #[cfg(windows)]
+        {
+            if let Some(img) = &self.current_image {
+                tracing::info!("Printing image: {}", img.path);
+                use std::os::windows::ffi::OsStrExt;
+                use windows::core::PCWSTR;
+                use windows::Win32::UI::Shell::ShellExecuteW;
+                use windows::Win32::UI::WindowsAndMessaging::SW_SHOW;
+
+                let verb: Vec<u16> = std::ffi::OsStr::new("print")
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect();
+                
+                let file: Vec<u16> = std::ffi::OsStr::new(&img.path)
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect();
+
+                unsafe {
+                    ShellExecuteW(
+                        None,
+                        PCWSTR(verb.as_ptr()),
+                        PCWSTR(file.as_ptr()),
+                        None,
+                        None,
+                        SW_SHOW,
+                    );
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            tracing::warn!("Print not currently supported on this platform.");
+        }
     }
 
     fn open_file_dialog(&mut self) {
@@ -931,6 +1009,12 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         self.mouse_drag_start = Some(self.last_cursor_pos);
                     }
                 }
+                (MouseButton::Back, ElementState::Released) => {
+                    self.prev_image();
+                }
+                (MouseButton::Forward, ElementState::Released) => {
+                    self.next_image();
+                }
                 (MouseButton::Left, ElementState::Released) => {
                     self.mouse_drag_start = None;
                 }
@@ -946,7 +1030,13 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let show_help = self.ui_state.show_help;
                     let show_sidebar = self.show_sidebar;
                     let show_thumbnail_strip = self.show_thumbnail_strip;
+                    let show_info = self.ui_state.show_info;
                     let active_thumb_idx = self.active_thumb_index();
+                    let exif_text = if show_info {
+                        self.current_image.as_ref().and_then(|img| img.exif_info.as_deref())
+                    } else {
+                        None
+                    };
                     let sidebar_files: Vec<String> = if show_sidebar {
                         self.ui_state.files.iter().map(|f| f.name.clone()).collect()
                     } else {
@@ -973,6 +1063,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                                 },
                                 show_thumbnail_strip,
                                 active_thumb_idx,
+                                exif_text,
                             );
                         }
                     }
@@ -985,6 +1076,23 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         self.process_events();
+
+        // Smooth zoom interpolation
+        let current = self.ui_state.adjustments.crop_rect;
+        let target = self.ui_state.adjustments.crop_rect_target;
+        let mut animating_zoom = false;
+        
+        let diff: f32 = current.iter().zip(target.iter()).map(|(c, t)| (c - t).abs()).sum();
+        if diff > 0.001 {
+            animating_zoom = true;
+            for i in 0..4 {
+                self.ui_state.adjustments.crop_rect[i] = current[i] + (target[i] - current[i]) * 0.2;
+            }
+            self.dirty = true;
+        } else if diff > 0.0 {
+            self.ui_state.adjustments.crop_rect = target;
+            self.dirty = true;
+        }
 
         if let Some(next_time) = self.next_frame_time {
             let now = std::time::Instant::now();
@@ -1016,8 +1124,20 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     Some(now + std::time::Duration::from_millis(delay.max(10) as u64));
                 self.dirty = true;
             }
+            
+            if animating_zoom {
+                let zoom_time = std::time::Instant::now() + std::time::Duration::from_millis(16);
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                    self.next_frame_time.unwrap().min(zoom_time),
+                ));
+            } else {
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                    self.next_frame_time.unwrap(),
+                ));
+            }
+        } else if animating_zoom {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                self.next_frame_time.unwrap(),
+                std::time::Instant::now() + std::time::Duration::from_millis(16),
             ));
         } else {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
