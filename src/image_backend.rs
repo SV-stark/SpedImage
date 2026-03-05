@@ -224,7 +224,7 @@ impl ImageBackend {
         add_field(exif::Tag::Make, "Make: ");
         add_field(exif::Tag::Model, "Model: ");
         add_field(exif::Tag::LensModel, "Lens: ");
-        
+
         let mut exposure_line = String::new();
         if let Some(f) = exif_data.get_field(exif::Tag::FocalLength, exif::In::PRIMARY) {
             exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
@@ -238,19 +238,21 @@ impl ImageBackend {
             exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
             exposure_line.push_str("s  ");
         }
-        if let Some(f) = exif_data.get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY) { // ISO
+        if let Some(f) = exif_data.get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY)
+        {
+            // ISO
             exposure_line.push_str("ISO ");
             exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
         }
-        
+
+        add_field(exif::Tag::DateTimeOriginal, "Date: ");
+
         if !exposure_line.is_empty() {
             out.push_str("Exposure: ");
             out.push_str(&exposure_line);
             out.push('\n');
         }
 
-        add_field(exif::Tag::DateTimeOriginal, "Date: ");
-        
         if out.is_empty() {
             None
         } else {
@@ -704,6 +706,8 @@ mod tests {
             path: "/test/image.png".to_string(),
             file_size_bytes: 1024,
             frame_delay_ms: 0,
+            exif_info: None,
+            histogram: None,
         };
 
         assert_eq!(data.as_rgba().len(), 800 * 600 * 4);

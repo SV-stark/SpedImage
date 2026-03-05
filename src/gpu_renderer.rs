@@ -869,7 +869,7 @@ impl Renderer {
 
         // --- Pass 3: highlight borders (active and selected) ---------------------
         for (i, _) in bind_groups.iter().enumerate() {
-            let is_active = active_idx.map_or(false, |ai| ai == i);
+            let is_active = active_idx == Some(i);
             let is_selected = selected_indices.contains(&i);
 
             if is_active || is_selected {
@@ -881,13 +881,16 @@ impl Renderer {
                     let bh = STRIP_HEIGHT_PX as i32 - 4;
                     // Draw a subtle border for selected, prominent for active
                     let bsize = if is_active { 2 } else { 1 };
-                    
+
                     let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                         label: Some("Thumbnail Border Pass"),
                         color_attachments: &[Some(RenderPassColorAttachment {
                             view,
                             resolve_target: None,
-                            ops: Operations { load: LoadOp::Load, store: StoreOp::Store },
+                            ops: Operations {
+                                load: LoadOp::Load,
+                                store: StoreOp::Store,
+                            },
                             depth_slice: None,
                         })],
                         depth_stencil_attachment: None,
@@ -895,30 +898,50 @@ impl Renderer {
                         occlusion_query_set: None,
                     });
                     pass.set_pipeline(&self.crop_pipeline);
-                    
+
                     // Top border
-                    let b_win_w = win_w as u32;
-                    let b_win_h = win_h as u32;
-                    
+                    let _b_win_w = win_w;
+                    let _b_win_h = win_h;
+
                     if by >= 0 {
-                        pass.set_scissor_rect(bx.max(0) as u32, by.max(0) as u32, bw.max(0) as u32, bsize);
+                        pass.set_scissor_rect(
+                            bx.max(0) as u32,
+                            by.max(0) as u32,
+                            bw.max(0) as u32,
+                            bsize,
+                        );
                         pass.draw(0..4, 0..1);
                     }
                     // Bottom border
                     let bot = by + bh - bsize as i32;
                     if bot < win_h as i32 {
-                        pass.set_scissor_rect(bx.max(0) as u32, bot.max(0) as u32, bw.max(0) as u32, bsize);
+                        pass.set_scissor_rect(
+                            bx.max(0) as u32,
+                            bot.max(0) as u32,
+                            bw.max(0) as u32,
+                            bsize,
+                        );
                         pass.draw(0..4, 0..1);
                     }
                     // Left border
                     if bx >= 0 {
-                        pass.set_scissor_rect(bx.max(0) as u32, by.max(0) as u32, bsize, bh.max(0) as u32);
+                        pass.set_scissor_rect(
+                            bx.max(0) as u32,
+                            by.max(0) as u32,
+                            bsize,
+                            bh.max(0) as u32,
+                        );
                         pass.draw(0..4, 0..1);
                     }
                     // Right border
                     let rx = bx + bw - bsize as i32;
                     if rx < win_w as i32 {
-                        pass.set_scissor_rect(rx.max(0) as u32, by.max(0) as u32, bsize, bh.max(0) as u32);
+                        pass.set_scissor_rect(
+                            rx.max(0) as u32,
+                            by.max(0) as u32,
+                            bsize,
+                            bh.max(0) as u32,
+                        );
                         pass.draw(0..4, 0..1);
                     }
                 }
@@ -1017,25 +1040,39 @@ impl Renderer {
                 let h_y = 10.0 * scale; // top right
 
                 // Background
-                self.text_brush.queue(Section::default()
-                    .add_text(Text::new("▇")
-                        .with_scale(h_h)
-                        .with_color([0.0, 0.0, 0.0, 0.4]))
-                    .with_screen_position((h_x, h_y))
-                    .with_bounds((h_w, h_h)));
+                self.text_brush.queue(
+                    Section::default()
+                        .add_text(
+                            Text::new("▇")
+                                .with_scale(h_h)
+                                .with_color([0.0, 0.0, 0.0, 0.4]),
+                        )
+                        .with_screen_position((h_x, h_y))
+                        .with_bounds((h_w, h_h)),
+                );
 
-                let max_val = r_hist.iter().chain(g_hist.iter()).chain(b_hist.iter()).max().copied().unwrap_or(1).max(1);
-                
+                let max_val = r_hist
+                    .iter()
+                    .chain(g_hist.iter())
+                    .chain(b_hist.iter())
+                    .max()
+                    .copied()
+                    .unwrap_or(1)
+                    .max(1);
+
                 // Draw R, G, B bars
                 for (chan_idx, (hist, color)) in [
                     (r_hist, [1.0f32, 0.3, 0.3, 0.6]),
                     (g_hist, [0.3f32, 1.0, 0.3, 0.6]),
                     (b_hist, [0.3f32, 0.3, 1.0, 0.6]),
-                ].into_iter().enumerate() {
+                ]
+                .into_iter()
+                .enumerate()
+                {
                     let mut bars = String::new();
                     // Subsample to 64 bins for performance and readability in text
                     for i in (0..256).step_by(4) {
-                        let val = hist[i..i+4].iter().sum::<u32>() / 4;
+                        let val = hist[i..i + 4].iter().sum::<u32>() / 4;
                         let bar_h = (val as f32 / max_val as f32 * 8.0).round() as u32;
                         let char = match bar_h {
                             0 => " ",
@@ -1050,12 +1087,12 @@ impl Renderer {
                         };
                         bars.push_str(char);
                     }
-                    
-                    self.text_brush.queue(Section::default()
-                        .add_text(Text::new(&bars)
-                            .with_scale(h_h / 4.0)
-                            .with_color(color))
-                        .with_screen_position((h_x, h_y + (chan_idx as f32 * h_h / 4.0))));
+
+                    self.text_brush.queue(
+                        Section::default()
+                            .add_text(Text::new(&bars).with_scale(h_h / 4.0).with_color(color))
+                            .with_screen_position((h_x, h_y + (chan_idx as f32 * h_h / 4.0))),
+                    );
                 }
             }
         }
@@ -1468,6 +1505,6 @@ mod tests {
         assert_eq!(adj.rotation, 0.0);
         assert_eq!(adj.crop_rect, [0.0, 0.0, 1.0, 1.0]);
         assert_eq!(adj.crop_rect_target, [0.0, 0.0, 1.0, 1.0]);
-        assert_eq!(adj.hdr_toning, false);
+        assert!(!adj.hdr_toning);
     }
 }

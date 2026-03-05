@@ -261,7 +261,7 @@ mod tests {
         let path2 = temp_dir.join("b.png");
 
         std::fs::File::create(&path1).unwrap();
-        std::fs::File::create(&path2.clone()).unwrap();
+        std::fs::File::create(path2.clone()).unwrap();
 
         state.files.push(FileEntry::new(path1.clone()));
         state.files.push(FileEntry::new(path2));
@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(state.adjustments.brightness, 1.0);
         assert_eq!(state.adjustments.contrast, 1.0);
         assert_eq!(state.adjustments.rotation, 0.0);
-        assert_eq!(state.adjustments.hdr_toning, false);
+        assert!(!state.adjustments.hdr_toning);
     }
 
     #[test]

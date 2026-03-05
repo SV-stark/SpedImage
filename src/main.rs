@@ -11,7 +11,9 @@ fn register_file_associations() {
     use winreg::RegKey;
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let classes = hkcu.open_subkey_with_flags("Software\\Classes", KEY_ALL_ACCESS).ok();
+    let classes = hkcu
+        .open_subkey_with_flags("Software\\Classes", KEY_ALL_ACCESS)
+        .ok();
     if let Some(classes) = classes {
         // Check if we already registered or user dismissed it
         if classes.open_subkey("SpedImage.Image").is_ok() {
@@ -23,7 +25,8 @@ fn register_file_associations() {
             .set_title("Default Photo Viewer")
             .set_description("Would you like to register SpedImage to open image files by default?")
             .set_buttons(rfd::MessageButtons::YesNo)
-            .show() == rfd::MessageDialogResult::Yes;
+            .show()
+            == rfd::MessageDialogResult::Yes;
 
         if !confirmed {
             // Write a dummy key so we don't ask again
@@ -47,7 +50,7 @@ fn register_file_associations() {
 
         let exts = [
             ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".avif", ".bmp", ".tiff", ".tif",
-            ".cr2", ".dng", ".arw", ".nef", ".raw", ".orf", ".rw2"
+            ".cr2", ".dng", ".arw", ".nef", ".raw", ".orf", ".rw2",
         ];
         for ext in exts {
             if let Ok((ext_key, _)) = classes.create_subkey(ext) {

@@ -80,13 +80,14 @@ pub struct SpedImageApp {
     initial_path: Option<PathBuf>,
     // Keyboard modifier state (tracked via ModifiersChanged)
     ctrl_pressed: bool,
+    shift_pressed: bool,
     // Thumbnail strip
     show_thumbnail_strip: bool,
     thumb_active: Arc<AtomicUsize>, // count of running thumbnail threads
     /// Ordered list of file paths for which thumbnails have been requested,
     /// in the same order as ui_state.files (may lag behind while loading).
     thumb_paths: Vec<PathBuf>,
-    
+
     // (8) Slideshow Mode
     slideshow_active: bool,
     slideshow_interval: std::time::Duration,
@@ -129,6 +130,7 @@ impl SpedImageApp {
             slideshow_interval: std::time::Duration::from_secs(5),
             slideshow_next_time: None,
             alt_pressed: false,
+            shift_pressed: false,
             show_histogram: false,
         }
     }
@@ -221,7 +223,7 @@ impl SpedImageApp {
                 "h" | "H" => {
                     if self.alt_pressed {
                         // do nothing; alt+h is reserved
-                    } else if event.modifiers.shift_key() {
+                    } else if self.shift_pressed {
                         self.show_histogram = !self.show_histogram;
                         let state = if self.show_histogram { "ON" } else { "OFF" };
                         self.ui_state.set_status(format!("Histogram: {}", state));
@@ -254,7 +256,10 @@ impl SpedImageApp {
         self.slideshow_active = !self.slideshow_active;
         if self.slideshow_active {
             self.slideshow_next_time = Some(std::time::Instant::now() + self.slideshow_interval);
-            self.ui_state.set_status(format!("Slideshow started ({}s per image)", self.slideshow_interval.as_secs()));
+            self.ui_state.set_status(format!(
+                "Slideshow started ({}s per image)",
+                self.slideshow_interval.as_secs()
+            ));
         } else {
             self.slideshow_next_time = None;
             self.ui_state.set_status("Slideshow paused");
@@ -268,9 +273,11 @@ impl SpedImageApp {
         self.slideshow_interval = std::time::Duration::from_secs(new_secs);
         if self.slideshow_active {
             self.slideshow_next_time = Some(std::time::Instant::now() + self.slideshow_interval);
-            self.ui_state.set_status(format!("Slideshow interval: {}s", new_secs));
+            self.ui_state
+                .set_status(format!("Slideshow interval: {}s", new_secs));
         } else {
-            self.ui_state.set_status(format!("Slideshow interval configured to {}s", new_secs));
+            self.ui_state
+                .set_status(format!("Slideshow interval configured to {}s", new_secs));
         }
         self.dirty = true;
     }
@@ -624,7 +631,11 @@ impl SpedImageApp {
 
     fn toggle_hdr_toning(&mut self) {
         self.ui_state.adjustments.hdr_toning = !self.ui_state.adjustments.hdr_toning;
-        let label = if self.ui_state.adjustments.hdr_toning { "ON" } else { "OFF" };
+        let label = if self.ui_state.adjustments.hdr_toning {
+            "ON"
+        } else {
+            "OFF"
+        };
         self.ui_state.set_status(format!("HDR Toning: {}", label));
         self.dirty = true;
     }
@@ -726,11 +737,15 @@ impl SpedImageApp {
     fn rename_current_image(&mut self) {
         if let Some(img) = &self.current_image {
             let old_path = std::path::PathBuf::from(&img.path);
-            let filename = old_path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-            
+            let filename = old_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
-            
+
             std::thread::spawn(move || {
                 if let Some(new_path) = rfd::FileDialog::new()
                     .set_title("Rename File")
@@ -739,12 +754,14 @@ impl SpedImageApp {
                 {
                     if let Err(e) = std::fs::rename(&old_path, &new_path) {
                         if let Some(ref p) = proxy {
-                            send_event(&tx, p, AppEvent::SetStatus(format!("Rename failed: {}", e)));
+                            send_event(
+                                &tx,
+                                p,
+                                AppEvent::SetStatus(format!("Rename failed: {}", e)),
+                            );
                         }
-                    } else {
-                        if let Some(ref p) = proxy {
-                            send_event(&tx, p, AppEvent::FileRenamed(old_path, new_path));
-                        }
+                    } else if let Some(ref p) = proxy {
+                        send_event(&tx, p, AppEvent::FileRenamed(old_path, new_path));
                     }
                 }
             });
@@ -757,7 +774,10 @@ impl SpedImageApp {
             if let Some(img) = &self.current_image {
                 tracing::info!("Setting wallpaper: {}", img.path);
                 use std::os::windows::ffi::OsStrExt;
-                use windows::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SPIF_SENDWININICHANGE};
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    SystemParametersInfoW, SPIF_SENDWININICHANGE, SPIF_UPDATEINIFILE,
+                    SPI_SETDESKWALLPAPER,
+                };
 
                 let path = std::path::Path::new(&img.path);
                 let abs_path = if path.is_absolute() {
@@ -783,7 +803,8 @@ impl SpedImageApp {
         }
         #[cfg(not(windows))]
         {
-            self.ui_state.set_status("Wallpaper setting not supported on this OS");
+            self.ui_state
+                .set_status("Wallpaper setting not supported on this OS");
             self.dirty = true;
         }
     }
@@ -792,18 +813,21 @@ impl SpedImageApp {
         #[cfg(windows)]
         {
             if let Some(ref w) = self.window {
-                use windows::Win32::UI::WindowsAndMessaging::{CreatePopupMenu, AppendMenuW, TrackPopupMenu, TPM_RETURNCMD, TPM_NONOTIFY, MF_STRING};
+                use std::os::windows::ffi::OsStrExt;
+                use windows::core::PCWSTR;
                 use windows::Win32::Foundation::HWND;
                 use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
-                use windows::core::PCWSTR;
-                use std::os::windows::ffi::OsStrExt;
-                
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    AppendMenuW, CreatePopupMenu, TrackPopupMenu, MF_STRING, TPM_NONOTIFY,
+                    TPM_RETURNCMD,
+                };
+
                 unsafe {
                     let hmenu = CreatePopupMenu().unwrap_or_default();
                     if hmenu.is_invalid() {
                         return;
                     }
-                    
+
                     let mut id = 1;
                     let items = [
                         "Open in Explorer",
@@ -812,17 +836,17 @@ impl SpedImageApp {
                         "Delete (Del)",
                         "Set as Wallpaper (Ctrl+W)",
                     ];
-                    
+
                     for item in &items {
                         let mut wide: Vec<u16> = std::ffi::OsStr::new(item).encode_wide().collect();
                         wide.push(0);
                         let _ = AppendMenuW(hmenu, MF_STRING, id, PCWSTR(wide.as_ptr()));
                         id += 1;
                     }
-                    
+
                     let mut pt = windows::Win32::Foundation::POINT::default();
                     let _ = GetCursorPos(&mut pt);
-                    
+
                     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
                     let hwnd = if let Ok(handle) = w.window_handle() {
                         match handle.as_raw() {
@@ -832,9 +856,9 @@ impl SpedImageApp {
                     } else {
                         HWND::default()
                     };
-                    
+
                     let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
-                    
+
                     let cmd = TrackPopupMenu(
                         hmenu,
                         TPM_RETURNCMD | TPM_NONOTIFY,
@@ -844,22 +868,24 @@ impl SpedImageApp {
                         hwnd,
                         None,
                     );
-                    
+
                     let _ = windows::Win32::UI::WindowsAndMessaging::DestroyMenu(hmenu);
-                    
+
                     match cmd.0 {
                         1 => self.open_in_explorer(),
                         2 => self.copy_to_clipboard(),
                         3 => self.rename_current_image(),
                         4 => self.delete_current_image(),
-                        5 => { self.set_as_wallpaper(); }
+                        5 => {
+                            self.set_as_wallpaper();
+                        }
                         _ => {}
                     }
                 }
             }
         }
     }
-    
+
     fn open_in_explorer(&self) {
         #[cfg(windows)]
         {
@@ -870,18 +896,27 @@ impl SpedImageApp {
                 } else {
                     std::env::current_dir().unwrap_or_default().join(path)
                 };
-                
+
+                use std::os::windows::ffi::OsStrExt;
+                use windows::core::PCWSTR;
                 use windows::Win32::UI::Shell::ShellExecuteW;
                 use windows::Win32::UI::WindowsAndMessaging::SW_SHOW;
-                use windows::core::PCWSTR;
-                use std::os::windows::ffi::OsStrExt;
-                
+
                 let arg = format!("/select,\"{}\"", abs_path.display());
-                
-                let verb: Vec<u16> = std::ffi::OsStr::new("open").encode_wide().chain(std::iter::once(0)).collect();
-                let file: Vec<u16> = std::ffi::OsStr::new("explorer.exe").encode_wide().chain(std::iter::once(0)).collect();
-                let params: Vec<u16> = std::ffi::OsStr::new(&arg).encode_wide().chain(std::iter::once(0)).collect();
-                
+
+                let verb: Vec<u16> = std::ffi::OsStr::new("open")
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect();
+                let file: Vec<u16> = std::ffi::OsStr::new("explorer.exe")
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect();
+                let params: Vec<u16> = std::ffi::OsStr::new(&arg)
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect();
+
                 unsafe {
                     let _ = ShellExecuteW(
                         None,
@@ -910,7 +945,7 @@ impl SpedImageApp {
                     .encode_wide()
                     .chain(std::iter::once(0))
                     .collect();
-                
+
                 let file: Vec<u16> = std::ffi::OsStr::new(&img.path)
                     .encode_wide()
                     .chain(std::iter::once(0))
@@ -939,7 +974,7 @@ impl SpedImageApp {
             let path = std::path::PathBuf::from(&img.path);
             self.ui_state.set_status("Copying to clipboard...");
             self.dirty = true;
-            
+
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
             std::thread::spawn(move || {
@@ -948,7 +983,11 @@ impl SpedImageApp {
                     if let Err(e) = res {
                         send_event(&tx, p, AppEvent::SetStatus(format!("Copy failed: {}", e)));
                     } else {
-                        send_event(&tx, p, AppEvent::SetStatus("Copied to clipboard".to_string()));
+                        send_event(
+                            &tx,
+                            p,
+                            AppEvent::SetStatus("Copied to clipboard".to_string()),
+                        );
                     }
                 }
             });
@@ -957,19 +996,22 @@ impl SpedImageApp {
 
     fn do_copy_to_clipboard(path: &Path) -> Result<()> {
         let img = image::open(path)?;
-        
+
         #[cfg(target_os = "linux")]
         {
             let mut png_data = Vec::new();
-            img.write_to(&mut std::io::Cursor::new(&mut png_data), image::ImageFormat::Png)?;
-            
+            img.write_to(
+                &mut std::io::Cursor::new(&mut png_data),
+                image::ImageFormat::Png,
+            )?;
+
             // Try wl-copy
             let child = std::process::Command::new("wl-copy")
                 .arg("-t")
                 .arg("image/png")
                 .stdin(std::process::Stdio::piped())
                 .spawn();
-            
+
             if let Ok(mut c) = child {
                 if let Some(mut stdin) = c.stdin.take() {
                     use std::io::Write;
@@ -978,13 +1020,13 @@ impl SpedImageApp {
                 let _ = c.wait();
                 return Ok(());
             }
-            
+
             // Try xclip
             let child = std::process::Command::new("xclip")
                 .args(&["-selection", "clipboard", "-t", "image/png"])
                 .stdin(std::process::Stdio::piped())
                 .spawn();
-            
+
             if let Ok(mut c) = child {
                 if let Some(mut stdin) = c.stdin.take() {
                     use std::io::Write;
@@ -993,16 +1035,18 @@ impl SpedImageApp {
                 let _ = c.wait();
                 return Ok(());
             }
-            
+
             anyhow::bail!("Neither wl-copy nor xclip found");
         }
-        
+
         #[cfg(target_os = "windows")]
         {
-            use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GHND};
-            use windows::Win32::System::DataExchange::{OpenClipboard, EmptyClipboard, SetClipboardData, CloseClipboard};
-            use windows::Win32::Graphics::Gdi::{BITMAPINFOHEADER, BI_RGB};
             use windows::Win32::Foundation::HANDLE;
+            use windows::Win32::Graphics::Gdi::{BITMAPINFOHEADER, BI_RGB};
+            use windows::Win32::System::DataExchange::{
+                CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+            };
+            use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GHND};
 
             let rgba = img.into_rgba8();
             let (width, height) = rgba.dimensions();
@@ -1010,48 +1054,52 @@ impl SpedImageApp {
             for chunk in bgra.chunks_exact_mut(4) {
                 chunk.swap(0, 2); // RGBA -> BGRA
             }
-            
+
             let stride = (width * 4) as usize;
             let mut flipped = vec![0u8; bgra.len()];
             for (y, row) in bgra.chunks_exact(stride).enumerate() {
                 let flipped_y = (height as usize - 1) - y;
                 flipped[flipped_y * stride..(flipped_y + 1) * stride].copy_from_slice(row);
             }
-            
+
             let header_size = std::mem::size_of::<BITMAPINFOHEADER>();
             let size = header_size + flipped.len();
-            
+
             unsafe {
                 let hmem = GlobalAlloc(GHND, size)?;
                 let ptr = GlobalLock(hmem) as *mut u8;
-                
+
                 let header = BITMAPINFOHEADER {
                     biSize: header_size as u32,
                     biWidth: width as i32,
                     biHeight: height as i32,
                     biPlanes: 1,
                     biBitCount: 32,
-                    biCompression: BI_RGB,
+                    biCompression: BI_RGB.0,
                     biSizeImage: flipped.len() as u32,
                     ..Default::default()
                 };
-                
+
                 std::ptr::copy_nonoverlapping(&header as *const _ as *const u8, ptr, header_size);
-                std::ptr::copy_nonoverlapping(flipped.as_ptr(), ptr.add(header_size), flipped.len());
-                GlobalUnlock(hmem);
-                
+                std::ptr::copy_nonoverlapping(
+                    flipped.as_ptr(),
+                    ptr.add(header_size),
+                    flipped.len(),
+                );
+                let _ = GlobalUnlock(hmem);
+
                 // OpenClipboard needs a valid HWND, None connects to current task
-                if OpenClipboard(None).as_bool() {
-                    EmptyClipboard();
-                    SetClipboardData(8, HANDLE(hmem.0 as isize)); // 8 is CF_DIB
-                    CloseClipboard();
+                if OpenClipboard(None).is_ok() {
+                    let _ = EmptyClipboard();
+                    let _ = SetClipboardData(8, HANDLE(hmem.0 as *mut _)); // 8 is CF_DIB
+                    let _ = CloseClipboard();
                 } else {
                     anyhow::bail!("Failed to open clipboard");
                 }
             }
             Ok(())
         }
-        
+
         #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         {
             anyhow::bail!("Native clipboard not implemented on this OS");
@@ -1249,10 +1297,10 @@ impl SpedImageApp {
                     } else {
                         format!("  |  {} frames", frame_delays.len() + 1)
                     };
-                    
+
                     let image_count = self.ui_state.files.iter().filter(|f| f.is_image).count();
                     let current_idx = self.ui_state.current_file_index.unwrap_or(0) + 1;
-                    
+
                     self.ui_state.set_status(format!(
                         "{}/{}  |  {}  |  {}×{}  |  {size_mb:.1} MB{}",
                         current_idx,
@@ -1280,21 +1328,28 @@ impl SpedImageApp {
                 }
                 AppEvent::FileRenamed(old_path, new_path) => {
                     if let Some(img) = &mut self.current_image {
-                        if std::path::PathBuf::from(&img.path) == old_path {
+                        if img.path == old_path {
                             img.path = new_path.to_string_lossy().into_owned();
                         }
                     }
                     for file in &mut self.ui_state.files {
                         if file.path == old_path {
                             file.path = new_path.clone();
-                            file.name = new_path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                            file.name = new_path
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .into_owned();
                             break;
                         }
                     }
                     if let Some(frames) = self.prefetch_cache.remove(&old_path) {
                         self.prefetch_cache.insert(new_path.clone(), frames);
                     }
-                    self.ui_state.set_status(format!("Renamed to {}", new_path.file_name().unwrap_or_default().to_string_lossy()));
+                    self.ui_state.set_status(format!(
+                        "Renamed to {}",
+                        new_path.file_name().unwrap_or_default().to_string_lossy()
+                    ));
                     self.dirty = true;
                 }
             }
@@ -1400,6 +1455,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             WindowEvent::ModifiersChanged(mods) => {
                 self.ctrl_pressed = mods.state().control_key();
                 self.alt_pressed = mods.state().alt_key();
+                self.shift_pressed = mods.state().shift_key();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.handle_mouse_wheel(delta, self.last_cursor_pos);
@@ -1444,7 +1500,10 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                                                 self.ui_state.selected_indices.insert(file_idx);
                                             }
                                             let sel_count = self.ui_state.selected_indices.len();
-                                            self.ui_state.set_status(format!("{} item(s) selected", sel_count));
+                                            self.ui_state.set_status(format!(
+                                                "{} item(s) selected",
+                                                sel_count
+                                            ));
                                             self.dirty = true;
                                         } else {
                                             // Regular click: navigate + clear selection
@@ -1513,19 +1572,25 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 self.process_events();
                 if self.dirty {
                     // Clone status and capture flags before mut-borrowing renderer
-                    let status_opt: Option<String> = self.ui_state.status_message.clone().map(|msg| {
-                        let mut final_msg = msg;
-                        // Append zoom level to the end of the status message if we are zoomed
-                        let zoom_pct = (1.0 / self.ui_state.adjustments.crop_rect[2] * 100.0).round() as u32;
-                        if zoom_pct != 100 {
-                            final_msg = format!("{}  |  {}%", final_msg, zoom_pct);
-                        }
-                        if self.slideshow_active {
-                            final_msg = format!("▶ {}s  |  {}", self.slideshow_interval.as_secs(), final_msg);
-                        }
-                        final_msg
-                    });
-                    
+                    let status_opt: Option<String> =
+                        self.ui_state.status_message.clone().map(|msg| {
+                            let mut final_msg = msg;
+                            // Append zoom level to the end of the status message if we are zoomed
+                            let zoom_pct = (1.0 / self.ui_state.adjustments.crop_rect[2] * 100.0)
+                                .round() as u32;
+                            if zoom_pct != 100 {
+                                final_msg = format!("{}  |  {}%", final_msg, zoom_pct);
+                            }
+                            if self.slideshow_active {
+                                final_msg = format!(
+                                    "▶ {}s  |  {}",
+                                    self.slideshow_interval.as_secs(),
+                                    final_msg
+                                );
+                            }
+                            final_msg
+                        });
+
                     let is_cropping = self.ui_state.is_cropping;
                     let crop_rect = self.ui_state.adjustments.crop_rect;
                     let show_help = self.ui_state.show_help;
@@ -1534,7 +1599,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let show_info = self.ui_state.show_info;
                     let active_thumb_idx = self.active_thumb_index();
                     let exif_text = if show_info {
-                        self.current_image.as_ref().and_then(|img| img.exif_info.as_deref())
+                        self.current_image
+                            .as_ref()
+                            .and_then(|img| img.exif_info.as_deref())
                     } else {
                         None
                     };
@@ -1567,7 +1634,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                                 &self.ui_state.selected_indices,
                                 exif_text,
                                 self.show_histogram,
-                                self.current_image.as_ref().and_then(|img| img.histogram.as_ref()),
+                                self.current_image
+                                    .as_ref()
+                                    .and_then(|img| img.histogram.as_ref()),
                             );
                         }
                     }
@@ -1585,12 +1654,17 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         let current = self.ui_state.adjustments.crop_rect;
         let target = self.ui_state.adjustments.crop_rect_target;
         let mut animating_zoom = false;
-        
-        let diff: f32 = current.iter().zip(target.iter()).map(|(c, t)| (c - t).abs()).sum();
+
+        let diff: f32 = current
+            .iter()
+            .zip(target.iter())
+            .map(|(c, t)| (c - t).abs())
+            .sum();
         if diff > 0.001 {
             animating_zoom = true;
             for i in 0..4 {
-                self.ui_state.adjustments.crop_rect[i] = current[i] + (target[i] - current[i]) * 0.2;
+                self.ui_state.adjustments.crop_rect[i] =
+                    current[i] + (target[i] - current[i]) * 0.2;
             }
             self.dirty = true;
         } else if diff > 0.0 {
@@ -1629,7 +1703,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 self.dirty = true;
             }
         }
-        
+
         let now = std::time::Instant::now();
         if self.slideshow_active {
             if let Some(st) = self.slideshow_next_time {
