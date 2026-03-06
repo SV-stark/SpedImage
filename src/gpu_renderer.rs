@@ -573,7 +573,7 @@ impl Renderer {
         self.image_bind_group = Some(bind_group);
         self.image_size = Some((width, height));
 
-        tracing::debug!("Loaded image into GPU: {}x{}", width, height);
+        tracing::debug!("Loaded image into GPU: {width}x{height}");
         Ok(())
     }
 
@@ -979,7 +979,7 @@ impl Renderer {
                 files
                     .iter()
                     .enumerate()
-                    .map(|(i, name)| format!("{}. {}", i + 1, name))
+                    .map(|(i, name)| format!("{}. {name}", i + 1))
                     .collect::<Vec<_>>()
                     .join("\n")
             })
@@ -1196,7 +1196,7 @@ impl Renderer {
                 self.config.width,
                 self.config.height,
             ) {
-                tracing::warn!("Text draw error: {}", e);
+                tracing::warn!("Text draw error: {e}");
             }
             self.staging_belt.finish();
         }
@@ -1443,7 +1443,8 @@ impl Renderer {
             }));
             self.gif_textures.push((texture, bind_group));
         }
-        tracing::debug!("Preloaded {} GIF frames to GPU", self.gif_textures.len());
+        let len = self.gif_textures.len();
+        tracing::debug!("Preloaded {len} GIF frames to GPU");
         Ok(())
     }
 

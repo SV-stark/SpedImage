@@ -38,12 +38,14 @@ fn register_file_associations() {
             let _ = prog_id.set_value("", &"SpedImage Image File");
             if let Ok((shell, _)) = prog_id.create_subkey("shell\\open\\command") {
                 let exe_path = std::env::current_exe().unwrap_or_default();
-                let cmd = format!("\"{}\" \"%1\"", exe_path.to_string_lossy());
+                let exe_path_lossy = exe_path.to_string_lossy();
+                let cmd = format!("\"{exe_path_lossy}\" \"%1\"");
                 let _ = shell.set_value("", &cmd);
             }
             if let Ok((icon, _)) = prog_id.create_subkey("DefaultIcon") {
                 let exe_path = std::env::current_exe().unwrap_or_default();
-                let cmd = format!("\"{}\",0", exe_path.to_string_lossy());
+                let exe_path_lossy = exe_path.to_string_lossy();
+                let cmd = format!("\"{exe_path_lossy}\",0");
                 let _ = icon.set_value("", &cmd);
             }
         }
@@ -82,11 +84,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Starting SpedImage v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!(concat!("Starting SpedImage v", env!("CARGO_PKG_VERSION")));
 
     // Set up panic handler for logging
     std::panic::set_hook(Box::new(|panic_info| {
-        tracing::error!("Application panicked: {}", panic_info);
+        tracing::error!("Application panicked: {panic_info}");
     }));
 
     register_file_associations();

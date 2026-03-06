@@ -308,14 +308,16 @@ impl ImageBackend {
 
     /// Load standard image formats using the `image` crate
     fn load_standard(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
-        let img = image::open(path)
-            .with_context(|| format!("Failed to open image: {}", path.display()))?;
+        let img = image::open(path).with_context(|| {
+            let p = path.display();
+            format!("Failed to open image: {p}")
+        })?;
 
         let (width, height) = img.dimensions();
         let rgba = img.to_rgba8();
         let rgba_data = rgba.into_raw();
 
-        tracing::debug!("Loaded standard image: {}x{}", width, height);
+        tracing::debug!("Loaded standard image: {width}x{height}");
         Ok((rgba_data, width, height))
     }
 
@@ -381,15 +383,15 @@ impl ImageBackend {
 
         match result {
             Ok(data) => {
-                tracing::debug!("Loaded HEIC via WIC: {}x{}", data.1, data.2);
+                let (w, h) = (data.1, data.2);
+                tracing::debug!("Loaded HEIC via WIC: {w}x{h}");
                 Ok(data)
             }
             Err(e) => {
                 let msg = format!(
-                    "Failed to decode HEIC using Windows WIC: {}. You may need to install the 'HEVC Video Extensions' and 'HEIF Image Extensions' from the Microsoft Store.", 
-                    e
+                    "Failed to decode HEIC using Windows WIC: {e}. You may need to install the 'HEVC Video Extensions' and 'HEIF Image Extensions' from the Microsoft Store.", 
                 );
-                tracing::error!("{}", msg);
+                tracing::error!("{msg}");
                 Err(anyhow::anyhow!(msg))
             }
         }
@@ -424,7 +426,7 @@ impl ImageBackend {
 
         let result: anyhow::Result<(Vec<u8>, u32, u32)> = (|| {
             let raw_image =
-                rawler::decode_file(path).map_err(|e| anyhow::anyhow!("rawler decode: {}", e))?;
+                rawler::decode_file(path).map_err(|e| anyhow::anyhow!("rawler decode: {e}"))?;
 
             let width = raw_image.width;
             let height = raw_image.height;
@@ -481,14 +483,14 @@ impl ImageBackend {
                     .collect(),
             };
 
-            tracing::debug!("RAW decoded: {}x{}", width, height);
+            tracing::debug!("RAW decoded: {width}x{height}");
             Ok((rgba, width as u32, height as u32))
         })();
 
         match result {
             Ok(data) => Ok(data),
             Err(rawler_err) => {
-                tracing::warn!("rawler failed ({}), trying WIC fallback", rawler_err);
+                tracing::warn!("rawler failed ({rawler_err}), trying WIC fallback");
                 // Windows fallback: WIC can handle DNG/ARW/NEF with proper codec installed
                 #[cfg(windows)]
                 {
@@ -526,7 +528,7 @@ impl ImageBackend {
         // Parse SVG
         let opts = usvg::Options::default();
         let tree = usvg::Tree::from_data(&svg_data, &opts)
-            .map_err(|e| anyhow::anyhow!("SVG parse error: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("SVG parse error: {e}"))?;
 
         // Determine output size, cap at 2000px on longest edge
         const MAX_SIDE: f32 = 2000.0;
@@ -541,14 +543,13 @@ impl ImageBackend {
         }
 
         // Create a transparent pixmap and render into it
-        let mut pixmap = tiny_skia::Pixmap::new(out_w, out_h).ok_or_else(|| {
-            anyhow::anyhow!("Failed to allocate SVG pixmap ({}x{})", out_w, out_h)
-        })?;
+        let mut pixmap = tiny_skia::Pixmap::new(out_w, out_h)
+            .ok_or_else(|| anyhow::anyhow!("Failed to allocate SVG pixmap ({out_w}x{out_h})"))?;
 
         let transform = tiny_skia::Transform::from_scale(scale, scale);
         resvg::render(&tree, transform, &mut pixmap.as_mut());
 
-        tracing::debug!("SVG rasterized at {}x{} (scale {:.2})", out_w, out_h, scale);
+        tracing::debug!("SVG rasterized at {out_w}x{out_h} (scale {scale:.2})");
 
         // tiny-skia produces premultiplied RGBA (BGRA on some platforms).
         // Un-premultiply alpha for correct GPU texture sampling.
@@ -587,7 +588,8 @@ impl ImageBackend {
             }
         }
 
-        tracing::info!("Saved image to: {}", path.display());
+        let p = path.display();
+        tracing::info!("Saved image to: {p}");
         Ok(())
     }
 

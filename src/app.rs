@@ -226,7 +226,7 @@ impl SpedImageApp {
                     } else if self.shift_pressed {
                         self.show_histogram = !self.show_histogram;
                         let state = if self.show_histogram { "ON" } else { "OFF" };
-                        self.ui_state.set_status(format!("Histogram: {}", state));
+                        self.ui_state.set_status(format!("Histogram: {state}"));
                         self.dirty = true;
                     } else {
                         self.toggle_hdr_toning();
@@ -274,10 +274,10 @@ impl SpedImageApp {
         if self.slideshow_active {
             self.slideshow_next_time = Some(std::time::Instant::now() + self.slideshow_interval);
             self.ui_state
-                .set_status(format!("Slideshow interval: {}s", new_secs));
+                .set_status(format!("Slideshow interval: {new_secs}s"));
         } else {
             self.ui_state
-                .set_status(format!("Slideshow interval configured to {}s", new_secs));
+                .set_status(format!("Slideshow interval configured to {new_secs}s"));
         }
         self.dirty = true;
     }
@@ -327,7 +327,7 @@ impl SpedImageApp {
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("SpedImage");
-            w.set_title(&format!("SpedImage — {}", name));
+            w.set_title(&format!("SpedImage — {name}"));
         }
 
         let (max_w, max_h) = match &self.window {
@@ -494,7 +494,8 @@ impl SpedImageApp {
 
             if let Some(stem) = path.file_stem() {
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
-                save_path.set_file_name(format!("{}_edited.{}", stem.to_string_lossy(), ext));
+                let stem_lossy = stem.to_string_lossy();
+                save_path.set_file_name(format!("{stem_lossy}_edited.{ext}"));
             }
 
             self.ui_state.set_status("Saving...");
@@ -585,7 +586,7 @@ impl SpedImageApp {
                         AppEvent::SaveComplete(save_path_clone)
                     }
                     Err(e) => {
-                        tracing::error!("Failed to save image: {}", e);
+                        tracing::error!("Failed to save image: {e}");
                         AppEvent::SaveError(e.to_string())
                     }
                 };
@@ -636,7 +637,7 @@ impl SpedImageApp {
         } else {
             "OFF"
         };
-        self.ui_state.set_status(format!("HDR Toning: {}", label));
+        self.ui_state.set_status(format!("HDR Toning: {label}"));
         self.dirty = true;
     }
 
@@ -757,7 +758,7 @@ impl SpedImageApp {
                             send_event(
                                 &tx,
                                 p,
-                                AppEvent::SetStatus(format!("Rename failed: {}", e)),
+                                AppEvent::SetStatus(format!("Rename failed: {e}")),
                             );
                         }
                     } else if let Some(ref p) = proxy {
@@ -772,7 +773,8 @@ impl SpedImageApp {
         #[cfg(windows)]
         {
             if let Some(img) = &self.current_image {
-                tracing::info!("Setting wallpaper: {}", img.path);
+                let p = &img.path;
+                tracing::info!("Setting wallpaper: {p}");
                 use std::os::windows::ffi::OsStrExt;
                 use windows::Win32::UI::WindowsAndMessaging::{
                     SystemParametersInfoW, SPIF_SENDWININICHANGE, SPIF_UPDATEINIFILE,
@@ -886,6 +888,7 @@ impl SpedImageApp {
         }
     }
 
+    #[cfg(windows)]
     fn open_in_explorer(&self) {
         #[cfg(windows)]
         {
@@ -901,8 +904,8 @@ impl SpedImageApp {
                 use windows::core::PCWSTR;
                 use windows::Win32::UI::Shell::ShellExecuteW;
                 use windows::Win32::UI::WindowsAndMessaging::SW_SHOW;
-
-                let arg = format!("/select,\"{}\"", abs_path.display());
+                let abs_path_disp = abs_path.display();
+                let arg = format!("/select,\"{abs_path_disp}\"");
 
                 let verb: Vec<u16> = std::ffi::OsStr::new("open")
                     .encode_wide()
@@ -935,7 +938,8 @@ impl SpedImageApp {
         #[cfg(windows)]
         {
             if let Some(img) = &self.current_image {
-                tracing::info!("Printing image: {}", img.path);
+                let p = &img.path;
+                tracing::info!("Printing image: {p}");
                 use std::os::windows::ffi::OsStrExt;
                 use windows::core::PCWSTR;
                 use windows::Win32::UI::Shell::ShellExecuteW;
@@ -981,7 +985,7 @@ impl SpedImageApp {
                 let res = Self::do_copy_to_clipboard(&path);
                 if let Some(ref p) = proxy {
                     if let Err(e) = res {
-                        send_event(&tx, p, AppEvent::SetStatus(format!("Copy failed: {}", e)));
+                        send_event(&tx, p, AppEvent::SetStatus(format!("Copy failed: {e}")));
                     } else {
                         send_event(
                             &tx,
@@ -1185,7 +1189,7 @@ impl SpedImageApp {
                 }
                 AppEvent::SaveError(e) => {
                     self.dirty = true;
-                    self.ui_state.set_status(format!("Save failed: {}", e));
+                    self.ui_state.set_status(format!("Save failed: {e}"));
                 }
                 AppEvent::SetStatus(msg) => {
                     self.dirty = true;
@@ -1216,7 +1220,7 @@ impl SpedImageApp {
                         let already_have = renderer.thumbnails.iter().any(|t| t.path == path);
                         if !already_have {
                             if let Err(e) = renderer.upload_thumbnail(path, &rgba, width, height) {
-                                tracing::warn!("Failed to upload thumbnail: {}", e);
+                                tracing::warn!("Failed to upload thumbnail: {e}");
                             } else {
                                 self.dirty = true;
                             }
@@ -1258,14 +1262,14 @@ impl SpedImageApp {
 
                     if let Some(ref mut renderer) = self.renderer {
                         if let Err(e) = renderer.load_image(&first_frame) {
-                            tracing::error!("Failed to load image to GPU: {}", e);
+                            tracing::error!("Failed to load image to GPU: {e}");
                             self.ui_state.set_status("Failed to load image");
                             self.loading = false;
                             return;
                         }
                         if !frame_delays.is_empty() {
                             if let Err(e) = renderer.preload_gif_textures(&frames) {
-                                tracing::warn!("Failed to preload GIF textures: {}", e);
+                                tracing::warn!("Failed to preload GIF textures: {e}");
                             }
                         } else {
                             // Explicitly destroy old GIF textures
@@ -1295,7 +1299,8 @@ impl SpedImageApp {
                     let frame_info = if frame_delays.is_empty() {
                         String::new()
                     } else {
-                        format!("  |  {} frames", frame_delays.len() + 1)
+                        let len = frame_delays.len() + 1;
+                        format!("  |  {len} frames")
                     };
 
                     let image_count = self.ui_state.files.iter().filter(|f| f.is_image).count();
@@ -1319,8 +1324,8 @@ impl SpedImageApp {
                 }
                 AppEvent::ImageError(e) => {
                     self.dirty = true;
-                    tracing::error!("Failed to load image: {}", e);
-                    self.ui_state.set_status(format!("Error: {}", e));
+                    tracing::error!("Failed to load image: {e}");
+                    self.ui_state.set_status(format!("Error: {e}"));
                     self.loading = false;
                 }
                 AppEvent::OpenPath(path) => {
@@ -1383,7 +1388,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             let window = match event_loop.create_window(attrs) {
                 Ok(w) => Arc::new(w),
                 Err(e) => {
-                    tracing::error!("Failed to create window: {}", e);
+                    tracing::error!("Failed to create window: {e}");
                     event_loop.exit();
                     return;
                 }
@@ -1395,7 +1400,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     self.renderer = Some(renderer);
                 }
                 Err(e) => {
-                    tracing::error!("Failed to initialize GPU renderer: {}", e);
+                    tracing::error!("Failed to initialize GPU renderer: {e}");
                     let _ = rfd::MessageDialog::new()
                         .set_title("GPU Error")
                         .set_description(format!(
@@ -1579,14 +1584,11 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                             let zoom_pct = (1.0 / self.ui_state.adjustments.crop_rect[2] * 100.0)
                                 .round() as u32;
                             if zoom_pct != 100 {
-                                final_msg = format!("{}  |  {}%", final_msg, zoom_pct);
+                                final_msg = format!("{final_msg}  |  {zoom_pct}%");
                             }
                             if self.slideshow_active {
-                                final_msg = format!(
-                                    "▶ {}s  |  {}",
-                                    self.slideshow_interval.as_secs(),
-                                    final_msg
-                                );
+                                let interval_secs = self.slideshow_interval.as_secs();
+                                final_msg = format!("▶ {interval_secs}s  |  {final_msg}");
                             }
                             final_msg
                         });
