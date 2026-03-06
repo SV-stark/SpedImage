@@ -755,11 +755,7 @@ impl SpedImageApp {
                 {
                     if let Err(e) = std::fs::rename(&old_path, &new_path) {
                         if let Some(ref p) = proxy {
-                            send_event(
-                                &tx,
-                                p,
-                                AppEvent::SetStatus(format!("Rename failed: {e}")),
-                            );
+                            send_event(&tx, p, AppEvent::SetStatus(format!("Rename failed: {e}")));
                         }
                     } else if let Some(ref p) = proxy {
                         send_event(&tx, p, AppEvent::FileRenamed(old_path, new_path));
