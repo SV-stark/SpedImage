@@ -11,20 +11,10 @@ env:
 
 jobs:
   build:
-    name: Build & Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-
+    name: Build & Test (Windows)
+    runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-
-    - name: Install dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libx11-dev libxext-dev libxft-dev libxinerama-dev libxcursor-dev libxrender-dev libxfixes-dev libwayland-dev libxkbcommon-dev libasound2-dev libfontconfig1-dev
 
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
@@ -44,16 +34,15 @@ jobs:
       run: cargo build --release --verbose
 
     - name: Set up NSIS
-      if: matrix.os == 'windows-latest'
       uses: negrutiu/nsis-install@v1
 
     - name: Generate Installer (Windows)
-      if: matrix.os == 'windows-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
         makensis installer.nsi
 
     - name: Nightly Release
-      if: matrix.os == 'windows-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: "marvinpinto/action-automatic-releases@latest"
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
