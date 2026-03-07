@@ -93,6 +93,7 @@ pub struct ImageData {
     pub frame_delay_ms: u32,
     pub exif_info: Option<String>,
     pub histogram: Option<([u32; 256], [u32; 256], [u32; 256])>,
+    pub exif_loaded: bool,
 }
 
 impl ImageData {
@@ -101,7 +102,19 @@ impl ImageData {
         &self.rgba_data
     }
 
+    /// Load EXIF data lazily on demand
+    pub fn load_exif(&mut self) {
+        if self.exif_loaded {
+            return;
+        }
+        self.exif_info = ImageBackend::extract_exif_lazy(&self.path);
+        self.exif_loaded = true;
+    }
+
     pub fn compute_histogram(&mut self) {
+        if self.histogram.is_some() {
+            return;
+        }
         if self.rgba_data.is_empty() {
             return;
         }
@@ -171,6 +184,7 @@ impl ImageBackend {
                                 frame_delay_ms: delay,
                                 exif_info: None,
                                 histogram: None,
+                                exif_loaded: false,
                             });
                         }
                         return Ok(results);
@@ -179,7 +193,7 @@ impl ImageBackend {
             }
         }
 
-        let exif_info = Self::extract_exif(path);
+        // Note: EXIF is now lazy-loaded on demand via load_exif()
 
         let (rgba_data, width, height) = match format {
             ImageFormatType::Heic | ImageFormatType::Avif => Self::load_heif(path)?,
@@ -190,6 +204,7 @@ impl ImageBackend {
             _ => Self::load_standard(path)?,
         };
 
+        // Note: EXIF is lazy-loaded on demand via load_exif()
         Ok(vec![ImageData {
             width,
             height,
@@ -198,13 +213,14 @@ impl ImageBackend {
             path: path.to_string_lossy().to_string(),
             file_size_bytes,
             frame_delay_ms: 0,
-            exif_info,
+            exif_info: None,
             histogram: None,
+            exif_loaded: false,
         }])
     }
 
-    /// Extract key EXIF fields as a formatted multi-line string
-    fn extract_exif(path: &Path) -> Option<String> {
+    fn extract_exif_lazy(path: &str) -> Option<String> {
+        let path = std::path::Path::new(path);
         let file = std::fs::File::open(path).ok()?;
         let mut bufreader = std::io::BufReader::new(&file);
         let exifreader = exif::Reader::new();
@@ -710,6 +726,7 @@ mod tests {
             frame_delay_ms: 0,
             exif_info: None,
             histogram: None,
+            exif_loaded: false,
         };
 
         assert_eq!(data.as_rgba().len(), 800 * 600 * 4);

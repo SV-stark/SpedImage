@@ -6,6 +6,9 @@ use crate::gpu_renderer::{Renderer, STRIP_HEIGHT_PX};
 use crate::image_backend::{ImageBackend, ImageData};
 use crate::ui::UiState;
 use anyhow::Result;
+use lru::LruCache;
+use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
+use rayon::ThreadPool;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -72,15 +75,16 @@ pub struct SpedImageApp {
     show_help: bool,
     // Sidebar overlay (file list)
     show_sidebar: bool,
-    // (6) Prefetch cache: (path → frames)
-    prefetch_cache: std::collections::HashMap<PathBuf, Vec<ImageData>>,
-    prefetch_cache_bytes: usize,
+    prefetch_cache: LruCache<PathBuf, Vec<ImageData>>,
     prefetch_active: Arc<AtomicUsize>,
     // (5) CLI / open-with initial file
     initial_path: Option<PathBuf>,
     // Keyboard modifier state (tracked via ModifiersChanged)
     ctrl_pressed: bool,
     shift_pressed: bool,
+    // Hold-to-advance tracking
+    held_navigation_key: Option<char>,
+    last_advance_time: Option<std::time::Instant>,
     // Thumbnail strip
     show_thumbnail_strip: bool,
     thumb_active: Arc<AtomicUsize>, // count of running thumbnail threads
@@ -96,6 +100,12 @@ pub struct SpedImageApp {
     alt_pressed: bool,
     // (10) Histogram panel
     show_histogram: bool,
+    // Thread pool for parallel image operations
+    #[allow(dead_code)]
+    thread_pool: Option<Arc<ThreadPool>>,
+    // File watcher for directory changes
+    #[allow(dead_code)]
+    file_watcher: Option<RecommendedWatcher>,
 }
 
 impl SpedImageApp {
@@ -118,11 +128,12 @@ impl SpedImageApp {
             last_cursor_pos: PhysicalPosition::new(0.0, 0.0),
             show_help: false,
             show_sidebar: false,
-            prefetch_cache: std::collections::HashMap::new(),
-            prefetch_cache_bytes: 0,
+            prefetch_cache: LruCache::new(std::num::NonZeroUsize::new(50).unwrap()), // LRU cache with 50 entries max
             prefetch_active: Arc::new(AtomicUsize::new(0)),
             initial_path: None,
             ctrl_pressed: false,
+            held_navigation_key: None,
+            last_advance_time: None,
             show_thumbnail_strip: true,
             thumb_active: Arc::new(AtomicUsize::new(0)),
             thumb_paths: Vec::new(),
@@ -132,6 +143,8 @@ impl SpedImageApp {
             alt_pressed: false,
             shift_pressed: false,
             show_histogram: false,
+            thread_pool: None,
+            file_watcher: None,
         }
     }
 
@@ -188,7 +201,12 @@ impl SpedImageApp {
                 return;
             }
             Key::Named(NamedKey::Delete) => {
-                self.delete_current_image();
+                if self.shift_pressed && !self.ui_state.selected_indices.is_empty() {
+                    // Shift+Delete: batch delete selected
+                    self.batch_delete_selected();
+                } else {
+                    self.delete_current_image();
+                }
                 return;
             }
             _ => {}
@@ -197,20 +215,47 @@ impl SpedImageApp {
         if let Some(c) = event.logical_key.to_text() {
             let ctrl = self.ctrl_pressed;
             match c {
-                "d" | "D" => self.next_image(),
-                "a" | "A" => self.prev_image(),
+                "d" | "D" => {
+                    if event.repeat {
+                        self.next_image();
+                    } else {
+                        self.next_image();
+                        self.held_navigation_key = Some('d');
+                        self.last_advance_time = Some(std::time::Instant::now());
+                    }
+                }
+                "a" | "A" => {
+                    if event.repeat {
+                        self.prev_image();
+                    } else {
+                        self.prev_image();
+                        self.held_navigation_key = Some('a');
+                        self.last_advance_time = Some(std::time::Instant::now());
+                    }
+                }
                 "w" | "W" => {
                     if ctrl {
                         self.set_as_wallpaper();
+                    } else if event.repeat {
+                        self.prev_image();
                     } else {
                         self.prev_image();
+                        self.held_navigation_key = Some('w');
+                        self.last_advance_time = Some(std::time::Instant::now());
                     }
                 }
                 "s" | "S" => {
-                    if ctrl {
+                    if ctrl && self.shift_pressed {
+                        // Ctrl+Shift+S: batch save selected
+                        self.batch_save_selected();
+                    } else if ctrl {
                         self.save_image();
+                    } else if event.repeat {
+                        self.next_image();
                     } else {
                         self.next_image();
+                        self.held_navigation_key = Some('s');
+                        self.last_advance_time = Some(std::time::Instant::now());
                     }
                 }
                 "r" | "R" => self.rotate_image(),
@@ -218,6 +263,18 @@ impl SpedImageApp {
                 "f" | "F" => self.toggle_sidebar(),
                 "t" | "T" => self.toggle_thumbnail_strip(),
                 "1" => self.reset_adjustments(),
+                "z" | "Z" => {
+                    self.ui_state.adjustments.pixel_perfect =
+                        !self.ui_state.adjustments.pixel_perfect;
+                    let state = if self.ui_state.adjustments.pixel_perfect {
+                        "ON"
+                    } else {
+                        "OFF"
+                    };
+                    self.ui_state
+                        .set_status(format!("Pixel-Perfect Zoom: {state}"));
+                    self.dirty = true;
+                }
                 "c" | "C" if ctrl => self.copy_to_clipboard(),
                 "c" | "C" => self.toggle_crop(),
                 "h" | "H" => {
@@ -226,6 +283,12 @@ impl SpedImageApp {
                     } else if self.shift_pressed {
                         self.show_histogram = !self.show_histogram;
                         let state = if self.show_histogram { "ON" } else { "OFF" };
+                        // Lazy compute histogram when turning on
+                        if self.show_histogram {
+                            if let Some(ref mut img) = self.current_image {
+                                img.compute_histogram();
+                            }
+                        }
                         self.ui_state.set_status(format!("Histogram: {state}"));
                         self.dirty = true;
                     } else {
@@ -302,10 +365,8 @@ impl SpedImageApp {
     }
 
     fn load_image(&mut self, path: PathBuf) {
-        // Check prefetch cache first
-        if let Some(cached_frames) = self.prefetch_cache.remove(&path) {
-            let cached_bytes: usize = cached_frames.iter().map(|f| f.rgba_data.len()).sum();
-            self.prefetch_cache_bytes = self.prefetch_cache_bytes.saturating_sub(cached_bytes);
+        // Check prefetch cache first (LRU cache handles eviction automatically)
+        if let Some(cached_frames) = self.prefetch_cache.pop(&path) {
             tracing::info!("Cache hit for {:?}", path);
             // Deliver from cache directly – still go through channel so process_events
             // handles it uniformly, and the proxy wakes the event loop.
@@ -381,7 +442,7 @@ impl SpedImageApp {
         };
 
         for path in neighbors {
-            if self.prefetch_cache.contains_key(&path) {
+            if self.prefetch_cache.contains(&path) {
                 continue;
             }
             // Limit concurrent prefetch threads
@@ -403,6 +464,47 @@ impl SpedImageApp {
                     }
                 }
             });
+        }
+    }
+
+    /// Set up a file watcher to monitor directory changes
+    fn setup_file_watcher(&mut self, dir: &Path) {
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+
+        // Create a new watcher
+        let watcher_result = RecommendedWatcher::new(
+            move |res: Result<Event, notify::Error>| {
+                if let Ok(event) = res {
+                    // Only react to file create/modify/remove events
+                    match event.kind {
+                        notify::EventKind::Create(_)
+                        | notify::EventKind::Modify(_)
+                        | notify::EventKind::Remove(_) => {
+                            // Signal that directory changed - we'll reload lazily
+                            if let Some(ref proxy) = proxy {
+                                send_event(
+                                    &tx,
+                                    proxy,
+                                    AppEvent::SetStatus(
+                                        "Directory changed - press R to refresh".to_string(),
+                                    ),
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            },
+            Config::default(),
+        );
+
+        if let Ok(mut watcher) = watcher_result {
+            // Watch the directory
+            if watcher.watch(dir, RecursiveMode::NonRecursive).is_ok() {
+                self.file_watcher = Some(watcher);
+                tracing::debug!("File watcher started for {:?}", dir);
+            }
         }
     }
 
@@ -600,6 +702,192 @@ impl SpedImageApp {
                 save_path.file_name().unwrap_or_default().to_string_lossy()
             ));
         }
+    }
+
+    /// Batch save: apply current adjustments to all selected images
+    fn batch_save_selected(&mut self) {
+        let selected: Vec<PathBuf> = self
+            .ui_state
+            .selected_indices
+            .iter()
+            .filter_map(|&i| self.ui_state.files.get(i).map(|f| f.path.clone()))
+            .collect();
+
+        if selected.is_empty() {
+            self.ui_state
+                .set_status("No images selected for batch save");
+            self.dirty = true;
+            return;
+        }
+
+        let adjustments = self.ui_state.adjustments;
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+
+        self.ui_state
+            .set_status(format!("Batch saving {} images...", selected.len()));
+        self.dirty = true;
+
+        std::thread::spawn(move || {
+            let mut saved_count = 0;
+            let mut errors = 0;
+
+            for path in &selected {
+                let result = (|| -> anyhow::Result<()> {
+                    let mut img = image::open(path)?;
+
+                    // Crop
+                    if adjustments.crop_rect != [0.0, 0.0, 1.0, 1.0] {
+                        let (w, h) = (img.width() as f32, img.height() as f32);
+                        let crop_x = (adjustments.crop_rect[0] * w) as u32;
+                        let crop_y = (adjustments.crop_rect[1] * h) as u32;
+                        let crop_w = (adjustments.crop_rect[2] * w) as u32;
+                        let crop_h = (adjustments.crop_rect[3] * h) as u32;
+                        img = img.crop_imm(crop_x, crop_y, crop_w, crop_h);
+                    }
+
+                    // Rotate
+                    let rot_deg = (adjustments.rotation.to_degrees() % 360.0).round() as i32;
+                    let rot_normalized = if rot_deg < 0 { rot_deg + 360 } else { rot_deg };
+                    match rot_normalized {
+                        90 => img = img.rotate90(),
+                        180 => img = img.rotate180(),
+                        270 => img = img.rotate270(),
+                        _ => {}
+                    }
+
+                    // Brightness & Contrast
+                    if (adjustments.brightness - 1.0).abs() > 0.01
+                        || (adjustments.contrast - 1.0).abs() > 0.01
+                    {
+                        let b = (adjustments.brightness - 1.0) * 255.0;
+                        let c = adjustments.contrast;
+                        img = img.adjust_contrast(c);
+                        if b != 0.0 {
+                            img = img.brighten(b as i32);
+                        }
+                    }
+
+                    // Saturation
+                    if (adjustments.saturation - 1.0).abs() > 0.01 {
+                        let sat = adjustments.saturation;
+                        let mut rgba = img.to_rgba8();
+                        for px in rgba.pixels_mut() {
+                            let r = px[0] as f32 / 255.0;
+                            let g = px[1] as f32 / 255.0;
+                            let b = px[2] as f32 / 255.0;
+                            let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                            px[0] = ((gray + (r - gray) * sat).clamp(0.0, 1.0) * 255.0) as u8;
+                            px[1] = ((gray + (g - gray) * sat).clamp(0.0, 1.0) * 255.0) as u8;
+                            px[2] = ((gray + (b - gray) * sat).clamp(0.0, 1.0) * 255.0) as u8;
+                        }
+                        img = image::DynamicImage::ImageRgba8(rgba);
+                    }
+
+                    // HDR Toning
+                    if adjustments.hdr_toning {
+                        let mut rgba = img.to_rgba8();
+                        for px in rgba.pixels_mut() {
+                            for c in 0..3 {
+                                let mut color = (px[c] as f32 / 255.0) * 1.6;
+                                color = color / (1.0 + color);
+                                color = color * color * (3.0 - 2.0 * color);
+                                px[c] = (color.clamp(0.0, 1.0) * 255.0) as u8;
+                            }
+                        }
+                        img = image::DynamicImage::ImageRgba8(rgba);
+                    }
+
+                    // Save with _edited suffix
+                    if let Some(stem) = path.file_stem() {
+                        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
+                        let stem_lossy = stem.to_string_lossy();
+                        let mut save_path = path.clone();
+                        save_path.set_file_name(format!("{stem_lossy}_edited.{ext}"));
+                        ImageBackend::save(&save_path, &img, 90)?;
+                    }
+                    Ok(())
+                })();
+
+                match result {
+                    Ok(()) => saved_count += 1,
+                    Err(e) => {
+                        tracing::warn!("Failed to batch save {:?}: {}", path, e);
+                        errors += 1;
+                    }
+                }
+            }
+
+            let msg = if errors > 0 {
+                format!("Batch save: {} saved, {} errors", saved_count, errors)
+            } else {
+                format!("Batch save complete: {} images saved", saved_count)
+            };
+
+            if let Some(ref proxy) = proxy {
+                send_event(&tx, proxy, AppEvent::SetStatus(msg));
+            }
+        });
+    }
+
+    /// Batch delete all selected images
+    fn batch_delete_selected(&mut self) {
+        let selected: Vec<PathBuf> = self
+            .ui_state
+            .selected_indices
+            .iter()
+            .filter_map(|&i| self.ui_state.files.get(i).map(|f| f.path.clone()))
+            .collect();
+
+        if selected.is_empty() {
+            self.ui_state
+                .set_status("No images selected for batch delete");
+            self.dirty = true;
+            return;
+        }
+
+        let count = selected.len();
+        let confirmed = rfd::MessageDialog::new()
+            .set_title("Delete Images")
+            .set_description(format!("Delete {} selected images?", count))
+            .set_buttons(rfd::MessageButtons::YesNo)
+            .show()
+            == rfd::MessageDialogResult::Yes;
+
+        if !confirmed {
+            return;
+        }
+
+        let mut deleted = 0;
+        let mut errors = 0;
+
+        for path in &selected {
+            match std::fs::remove_file(path) {
+                Ok(()) => deleted += 1,
+                Err(e) => {
+                    tracing::warn!("Failed to delete {:?}: {}", path, e);
+                    errors += 1;
+                }
+            }
+        }
+
+        let msg = if errors > 0 {
+            format!("Deleted {}, {} errors", deleted, errors)
+        } else {
+            format!("Deleted {} images", deleted)
+        };
+
+        self.ui_state.set_status(msg);
+        self.ui_state.selected_indices.clear();
+
+        // Reload directory
+        if let Some(current) = self.ui_state.current_file() {
+            if let Some(parent) = current.parent() {
+                self.ui_state.load_directory(parent.to_path_buf());
+            }
+        }
+
+        self.dirty = true;
     }
 
     fn next_image(&mut self) {
@@ -1192,23 +1480,9 @@ impl SpedImageApp {
                     self.ui_state.set_status(msg);
                 }
                 AppEvent::Prefetched(path, frames) => {
-                    // Memory-budget-based prefetch cache eviction (100 MB limit)
-                    const MAX_PREFETCH_BYTES: usize = 100 * 1024 * 1024;
-                    let new_bytes: usize = frames.iter().map(|f| f.rgba_data.len()).sum();
-                    while self.prefetch_cache_bytes + new_bytes > MAX_PREFETCH_BYTES
-                        && !self.prefetch_cache.is_empty()
-                    {
-                        if let Some(k) = self.prefetch_cache.keys().next().cloned() {
-                            if let Some(evicted) = self.prefetch_cache.remove(&k) {
-                                let evicted_bytes: usize =
-                                    evicted.iter().map(|f| f.rgba_data.len()).sum();
-                                self.prefetch_cache_bytes =
-                                    self.prefetch_cache_bytes.saturating_sub(evicted_bytes);
-                            }
-                        }
-                    }
-                    self.prefetch_cache_bytes += new_bytes;
-                    self.prefetch_cache.insert(path, frames);
+                    // LRU cache automatically evicts old entries when full
+                    // The cache is limited to 50 entries in the constructor
+                    self.prefetch_cache.push(path, frames);
                 }
                 AppEvent::ThumbnailLoaded(path, rgba, width, height) => {
                     if let Some(ref mut renderer) = self.renderer {
@@ -1254,6 +1528,10 @@ impl SpedImageApp {
                     // Reload thumbnails if we moved to a new directory
                     if new_dir != old_dir || self.thumb_paths.is_empty() {
                         self.load_thumbnails_for_dir();
+                        // Set up file watcher for the new directory
+                        if let Some(parent) = path.parent() {
+                            self.setup_file_watcher(parent);
+                        }
                     }
 
                     if let Some(ref mut renderer) = self.renderer {
@@ -1312,7 +1590,7 @@ impl SpedImageApp {
                         frame_info
                     ));
 
-                    first_frame.compute_histogram();
+                    // Histogram is computed lazily when histogram panel is shown
                     self.current_image = Some(first_frame);
                     self.current_frame_delays = frame_delays;
                     self.current_frame_idx = 0;
@@ -1344,8 +1622,8 @@ impl SpedImageApp {
                             break;
                         }
                     }
-                    if let Some(frames) = self.prefetch_cache.remove(&old_path) {
-                        self.prefetch_cache.insert(new_path.clone(), frames);
+                    if let Some(frames) = self.prefetch_cache.pop(&old_path) {
+                        self.prefetch_cache.push(new_path.clone(), frames);
                     }
                     self.ui_state.set_status(format!(
                         "Renamed to {}",
@@ -1451,6 +1729,15 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
                     self.handle_keyboard(event, event_loop);
+                } else {
+                    // Key released - clear hold-to-advance state
+                    if let Some(c) = event.logical_key.to_text() {
+                        let key = c.to_lowercase().chars().next().unwrap_or(' ');
+                        if self.held_navigation_key == Some(key) {
+                            self.held_navigation_key = None;
+                            self.last_advance_time = None;
+                        }
+                    }
                 }
             }
             WindowEvent::ModifiersChanged(mods) => {
@@ -1596,6 +1883,14 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let show_thumbnail_strip = self.show_thumbnail_strip;
                     let show_info = self.ui_state.show_info;
                     let active_thumb_idx = self.active_thumb_index();
+
+                    // Lazy load EXIF when info panel is first shown
+                    if show_info {
+                        if let Some(ref mut img) = self.current_image {
+                            img.load_exif();
+                        }
+                    }
+
                     let exif_text = if show_info {
                         self.current_image
                             .as_ref()
@@ -1725,6 +2020,22 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
         }
 
+        // Hold-to-advance: if navigation key is held, advance continuously
+        const HOLD_ADVANCE_INTERVAL_MS: u64 = 150;
+        if let (Some(key), Some(last_time)) = (self.held_navigation_key, self.last_advance_time) {
+            let now = std::time::Instant::now();
+            let elapsed = now.duration_since(last_time);
+            if elapsed.as_millis() >= HOLD_ADVANCE_INTERVAL_MS as u128 {
+                match key {
+                    'a' | 'w' => self.prev_image(),
+                    'd' | 's' => self.next_image(),
+                    _ => {}
+                }
+                self.last_advance_time = Some(now);
+                wait_until = Some(now + std::time::Duration::from_millis(HOLD_ADVANCE_INTERVAL_MS));
+            }
+        }
+
         if let Some(wu) = wait_until {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wu));
         } else {
@@ -1743,7 +2054,6 @@ impl Drop for SpedImageApp {
     fn drop(&mut self) {
         // Eagerly release prefetch cache memory
         self.prefetch_cache.clear();
-        self.prefetch_cache_bytes = 0;
         self.current_frame_delays.clear();
         self.current_image = None;
         // Clear thumbnail GPU resources

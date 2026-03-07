@@ -36,6 +36,7 @@ pub struct ImageAdjustments {
     pub crop_rect_target: [f32; 4], // Where we want to be
     pub crop_rect: [f32; 4],        // Where we currently are (rendered)
     pub hdr_toning: bool,
+    pub pixel_perfect: bool, // Nearest-neighbor sampling for pixel art
 }
 
 impl Default for ImageAdjustments {
@@ -48,6 +49,7 @@ impl Default for ImageAdjustments {
             crop_rect_target: [0.0, 0.0, 1.0, 1.0],
             crop_rect: [0.0, 0.0, 1.0, 1.0],
             hdr_toning: false,
+            pixel_perfect: false,
         }
     }
 }
@@ -213,8 +215,10 @@ pub struct Renderer {
     thumb_uniform_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
     sampler: Sampler,
+    sampler_nearest: Sampler,
     image_texture: Option<Texture>,
     image_bind_group: Option<Arc<BindGroup>>,
+    image_bind_group_nearest: Option<Arc<BindGroup>>, // For pixel-perfect mode
     pub gif_textures: Vec<(Texture, Arc<BindGroup>)>, // cached GPU textures for GIF frames
     config: SurfaceConfiguration,
     image_size: Option<(u32, u32)>,
@@ -320,6 +324,17 @@ impl Renderer {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+
+        // Nearest-neighbor sampler for pixel-perfect zoom mode
+        let sampler_nearest = device.create_sampler(&SamplerDescriptor {
+            label: Some("Image Sampler (Nearest)"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
@@ -478,8 +493,10 @@ impl Renderer {
             thumb_uniform_buffer,
             vertex_buffer,
             sampler,
+            sampler_nearest,
             image_texture: None,
             image_bind_group: None,
+            image_bind_group_nearest: None,
             gif_textures: Vec::new(),
             config,
             image_size: None,
@@ -506,6 +523,7 @@ impl Renderer {
             old_tex.destroy();
         }
         self.image_bind_group = None;
+        self.image_bind_group_nearest = None;
 
         let width = image_data.width;
         let height = image_data.height;
@@ -569,8 +587,31 @@ impl Renderer {
             ],
         }));
 
+        // Create pixel-perfect (nearest-neighbor) bind group
+        let bind_group_nearest = Arc::new(self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("Image Bind Group (Nearest)"),
+            layout: &bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(
+                        self.uniform_buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&self.sampler_nearest),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&view),
+                },
+            ],
+        }));
+
         self.image_texture = Some(texture);
         self.image_bind_group = Some(bind_group);
+        self.image_bind_group_nearest = Some(bind_group_nearest);
         self.image_size = Some((width, height));
 
         tracing::debug!("Loaded image into GPU: {width}x{height}");
@@ -716,7 +757,15 @@ impl Renderer {
         if let Some(bind_group) = &self.image_bind_group {
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_bind_group(0, bind_group.as_ref(), &[]);
+            
+            // Use nearest-neighbor sampler for pixel-perfect mode
+            if adjustments.pixel_perfect {
+                if let Some(bg) = &self.image_bind_group_nearest {
+                    render_pass.set_bind_group(0, bg.as_ref(), &[]);
+                }
+            } else {
+                render_pass.set_bind_group(0, bind_group.as_ref(), &[]);
+            }
             render_pass.draw(0..6, 0..1);
         }
     }

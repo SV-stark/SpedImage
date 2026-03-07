@@ -52,6 +52,15 @@ fast_image_resize = "3"
 # For GPU data types
 bytemuck = { version = "1", features = ["derive"] }
 
+# LRU cache for prefetch
+lru = "0.12"
+
+# File watching for directory changes
+notify = "7"
+
+# Thread pool for async operations
+rayon = "1.10"
+
 # RAW camera format decoding
 rawler = { version = "0.7", optional = true }
 
