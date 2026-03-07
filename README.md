@@ -1,12 +1,23 @@
-# 🖼️ SpedImage
-**Ultra-Lightweight, GPU-Accelerated Image Viewer with Native Performance.**
+<p align="center">
+  <img src="assets/icons/icon.png" width="128" height="128" alt="SpedImage Icon">
+</p>
 
-[![Version: 2.0.0](https://img.shields.io/badge/Version-2.0.0-blue)](#)
-[![Rust: 1.82+](https://img.shields.io/badge/Rust-1.82+-orange)](#)
-[![Platform: Windows | Linux | macOS](https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey)](#)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<h1 align="center">🖼️ SpedImage</h1>
 
-SpedImage is a high-performance, cross-platform image viewer rebuilt in **Rust** with **WGPU** for GPU-accelerated rendering. It provides memory-safe, zero-copy image processing with real-time adjustments.
+<p align="center">
+  <strong>Ultra-Lightweight, GPU-Accelerated Image Viewer with Native Performance.</strong>
+</p>
+
+<p align="center">
+  <a href="#"><img src="https://img.shields.io/badge/Version-2.0.0-blue" alt="Version: 2.0.0"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Rust-1.82+-orange" alt="Rust: 1.82+"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  SpedImage is a high-performance, cross-platform image viewer rebuilt in <strong>Rust</strong> with <strong>WGPU</strong> for GPU-accelerated rendering. It provides memory-safe, zero-copy image processing with real-time adjustments.
+</p>
 
 ## 📋 Table of Contents
 - [Key Features](#-key-features)
@@ -19,7 +30,7 @@ SpedImage is a high-performance, cross-platform image viewer rebuilt in **Rust**
 
 ---
 
-## 🚀 Key Features
+<h2 align="center">🚀 Key Features</h2>
 
 ### ⚡ High-Performance Image Loading
 - **Memory Efficient**: Zero-copy GPU texture loading ensures minimal RAM usage.
@@ -35,7 +46,9 @@ All adjustments are applied in real-time using **WGPU Shaders**—no CPU process
 
 ---
 
-## 🖼️ Format Support
+<h2 align="center">🖼️ Format Support</h2>
+
+<div align="center">
 
 | Format | Decoding Engine | OS Support |
 |--------|-----------------|------------|
@@ -46,11 +59,17 @@ All adjustments are applied in real-time using **WGPU Shaders**—no CPU process
 
 *\* On Windows, HEIC/AVIF requires the appropriate HEVC/HEIF extensions installed from the Microsoft Store.*
 
+</div>
+
 ---
 
-## ⚡ Performance Benchmarks
+<h2 align="center">⚡ Performance Benchmarks</h2>
 
-Based on a typical consumer system (e.g., Apple M1 or Intel i7 + mid-range GPU). Times and memory usage are approximate and depend heavily on image resolution.
+<p align="center">
+  Based on a typical consumer system (e.g., Apple M1 or Intel i7 + mid-range GPU). Times and memory usage are approximate and depend heavily on image resolution.
+</p>
+
+<div align="center">
 
 | Operation | Typical Latency | CPU Usage | Memory Impact | 
 |-----------|-----------------|-----------|---------------|
@@ -60,6 +79,8 @@ Based on a typical consumer system (e.g., Apple M1 or Intel i7 + mid-range GPU).
 | **HDR Toning (Filmic)** | 0.0ms (0 CPU) | Zero | None |
 | **Smooth Crop/Zoom Animation** | 60 FPS | Nominal (< 2%) | None |
 | **Brightness/Contrast Adjust** | 0.0ms (0 CPU) | Zero | None |
+
+</div>
 
 ---
 
@@ -103,9 +124,13 @@ spedimage /path/to/image.jpg
 
 ---
 
-## 📐 Project Architecture
+<h2 align="center">📐 Project Architecture</h2>
 
-Built with a state-of-the-art native stack emphasizing **Memory Safety** and **Performance**.
+<p align="center">
+  Built with a state-of-the-art native stack emphasizing <strong>Memory Safety</strong> and <strong>Performance</strong>.
+</p>
+
+<div align="center">
 
 | Component | Technology | Description |
 |-----------|------------|-------------|
@@ -115,9 +140,13 @@ Built with a state-of-the-art native stack emphasizing **Memory Safety** and **P
 | **Image Decoding**| `image` / OS codecs | Hybrid approach for maximum format compatibility. |
 | **Shaders** | WGSL | Highly optimized GPU processing blocks. |
 
+</div>
+
 ---
 
-## ⌨️ Keyboard Shortcuts
+<h2 align="center">⌨️ Keyboard Shortcuts</h2>
+
+<div align="center">
 
 | Key | Action |
 |-----|--------|
@@ -140,7 +169,17 @@ Built with a state-of-the-art native stack emphasizing **Memory Safety** and **P
 | `Esc` | Cancel crop / Quit |
 | `?` | Toggle help overlay |
 
+</div>
+
 ---
+
+---
+
+<h2 align="center">📈 Codebase Health</h2>
+
+<p align="center">
+  <img src="scorecard.png" width="100%" alt="Desloppify Scorecard">
+</p>
 
 ## 🤝 Contributing
 Contributions, issues, and feature requests are welcome! Feel free to check out the [issues page](https://github.com/SV-stark/SpedImage/issues) if you want to contribute.
