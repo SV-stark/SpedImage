@@ -1,0 +1,576 @@
+{
+  "version": 8,
+  "created": "2026-03-07T10:48:28+00:00",
+  "updated": "2026-03-07T10:48:28+00:00",
+  "queue_order": [
+    "subjective::abstraction_fitness",
+    "subjective::ai_generated_debt",
+    "subjective::api_surface_coherence",
+    "subjective::authorization_consistency",
+    "subjective::contract_coherence",
+    "subjective::convention_outlier",
+    "subjective::cross_module_architecture",
+    "subjective::dependency_health",
+    "subjective::design_coherence",
+    "subjective::error_consistency",
+    "subjective::high_level_elegance",
+    "subjective::incomplete_migration",
+    "subjective::initialization_coupling",
+    "subjective::logic_clarity",
+    "subjective::low_level_elegance",
+    "subjective::mid_level_elegance",
+    "subjective::naming_quality",
+    "subjective::package_organization",
+    "subjective::test_strategy",
+    "subjective::type_safety"
+  ],
+  "deferred": [],
+  "skipped": {},
+  "active_cluster": null,
+  "overrides": {
+    "unused::src/app.rs::unused_import::5": {
+      "issue_id": "unused::src/app.rs::unused_import::5",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::6": {
+      "issue_id": "unused::src/app.rs::unused_import::6",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::10": {
+      "issue_id": "unused::src/app.rs::unused_import::10",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::13": {
+      "issue_id": "unused::src/app.rs::unused_import::13",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/gpu_renderer.rs::unused_import::3": {
+      "issue_id": "unused::src/gpu_renderer.rs::unused_import::3",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/gpu_renderer.rs::unused_import::5": {
+      "issue_id": "unused::src/gpu_renderer.rs::unused_import::5",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/gpu_renderer.rs::unused_import::6": {
+      "issue_id": "unused::src/gpu_renderer.rs::unused_import::6",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/gpu_renderer.rs::unused_import::17": {
+      "issue_id": "unused::src/gpu_renderer.rs::unused_import::17",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/image_backend.rs::unused_import::6": {
+      "issue_id": "unused::src/image_backend.rs::unused_import::6",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/image_backend.rs::unused_import::7": {
+      "issue_id": "unused::src/image_backend.rs::unused_import::7",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/lib.rs::unused_import::11": {
+      "issue_id": "unused::src/lib.rs::unused_import::11",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/lib.rs::unused_import::12": {
+      "issue_id": "unused::src/lib.rs::unused_import::12",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/lib.rs::unused_import::13": {
+      "issue_id": "unused::src/lib.rs::unused_import::13",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/main.rs::unused_import::6": {
+      "issue_id": "unused::src/main.rs::unused_import::6",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/main.rs::unused_import::10": {
+      "issue_id": "unused::src/main.rs::unused_import::10",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/ui.rs::unused_import::175": {
+      "issue_id": "unused::src/ui.rs::unused_import::175",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::12": {
+      "issue_id": "unused::src/app.rs::unused_import::12",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::14": {
+      "issue_id": "unused::src/app.rs::unused_import::14",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::16": {
+      "issue_id": "unused::src/app.rs::unused_import::16",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::1063": {
+      "issue_id": "unused::src/app.rs::unused_import::1063",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::1106": {
+      "issue_id": "unused::src/app.rs::unused_import::1106",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::1136": {
+      "issue_id": "unused::src/app.rs::unused_import::1136",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::1333": {
+      "issue_id": "unused::src/app.rs::unused_import::1333",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::1334": {
+      "issue_id": "unused::src/app.rs::unused_import::1334",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/app.rs::unused_import::1337": {
+      "issue_id": "unused::src/app.rs::unused_import::1337",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/gpu_renderer.rs::unused_import::1546": {
+      "issue_id": "unused::src/gpu_renderer.rs::unused_import::1546",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/image_backend.rs::unused_import::168": {
+      "issue_id": "unused::src/image_backend.rs::unused_import::168",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/image_backend.rs::unused_import::292": {
+      "issue_id": "unused::src/image_backend.rs::unused_import::292",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/image_backend.rs::unused_import::353": {
+      "issue_id": "unused::src/image_backend.rs::unused_import::353",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/image_backend.rs::unused_import::354": {
+      "issue_id": "unused::src/image_backend.rs::unused_import::354",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/image_backend.rs::unused_import::637": {
+      "issue_id": "unused::src/image_backend.rs::unused_import::637",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "unused::src/main.rs::unused_import::64": {
+      "issue_id": "unused::src/main.rs::unused_import::64",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "orphaned::src/app.rs": {
+      "issue_id": "orphaned::src/app.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/orphaned",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "orphaned::src/gpu_renderer.rs": {
+      "issue_id": "orphaned::src/gpu_renderer.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/orphaned",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "orphaned::src/image_backend.rs": {
+      "issue_id": "orphaned::src/image_backend.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/orphaned",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "orphaned::src/ui.rs": {
+      "issue_id": "orphaned::src/ui.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/orphaned",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "orphaned::src/main.rs": {
+      "issue_id": "orphaned::src/main.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/orphaned",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "orphaned::src/lib.rs": {
+      "issue_id": "orphaned::src/lib.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/orphaned",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "test_coverage::src/app.rs": {
+      "issue_id": "test_coverage::src/app.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/test_coverage",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "test_coverage::src/gpu_renderer.rs": {
+      "issue_id": "test_coverage::src/gpu_renderer.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/test_coverage",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "test_coverage::src/image_backend.rs": {
+      "issue_id": "test_coverage::src/image_backend.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/test_coverage",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "test_coverage::src/ui.rs": {
+      "issue_id": "test_coverage::src/ui.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/test_coverage",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "test_coverage::src/main.rs": {
+      "issue_id": "test_coverage::src/main.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/test_coverage",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "test_coverage::src/lib.rs": {
+      "issue_id": "test_coverage::src/lib.rs",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/test_coverage",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::abstraction_fitness": {
+      "issue_id": "subjective::abstraction_fitness",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::ai_generated_debt": {
+      "issue_id": "subjective::ai_generated_debt",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::api_surface_coherence": {
+      "issue_id": "subjective::api_surface_coherence",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::authorization_consistency": {
+      "issue_id": "subjective::authorization_consistency",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::contract_coherence": {
+      "issue_id": "subjective::contract_coherence",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::convention_outlier": {
+      "issue_id": "subjective::convention_outlier",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::cross_module_architecture": {
+      "issue_id": "subjective::cross_module_architecture",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::dependency_health": {
+      "issue_id": "subjective::dependency_health",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::design_coherence": {
+      "issue_id": "subjective::design_coherence",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::error_consistency": {
+      "issue_id": "subjective::error_consistency",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::high_level_elegance": {
+      "issue_id": "subjective::high_level_elegance",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::incomplete_migration": {
+      "issue_id": "subjective::incomplete_migration",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::initialization_coupling": {
+      "issue_id": "subjective::initialization_coupling",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::logic_clarity": {
+      "issue_id": "subjective::logic_clarity",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::low_level_elegance": {
+      "issue_id": "subjective::low_level_elegance",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::mid_level_elegance": {
+      "issue_id": "subjective::mid_level_elegance",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::naming_quality": {
+      "issue_id": "subjective::naming_quality",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::package_organization": {
+      "issue_id": "subjective::package_organization",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::test_strategy": {
+      "issue_id": "subjective::test_strategy",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    },
+    "subjective::type_safety": {
+      "issue_id": "subjective::type_safety",
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "cluster": "auto/initial-review",
+      "updated_at": "2026-03-07T10:48:28+00:00"
+    }
+  },
+  "clusters": {
+    "auto/unused": {
+      "name": "auto/unused",
+      "description": "Remove 32 unused issues",
+      "issue_ids": [
+        "unused::src/app.rs::unused_import::5",
+        "unused::src/app.rs::unused_import::6",
+        "unused::src/app.rs::unused_import::10",
+        "unused::src/app.rs::unused_import::13",
+        "unused::src/gpu_renderer.rs::unused_import::3",
+        "unused::src/gpu_renderer.rs::unused_import::5",
+        "unused::src/gpu_renderer.rs::unused_import::6",
+        "unused::src/gpu_renderer.rs::unused_import::17",
+        "unused::src/image_backend.rs::unused_import::6",
+        "unused::src/image_backend.rs::unused_import::7",
+        "unused::src/lib.rs::unused_import::11",
+        "unused::src/lib.rs::unused_import::12",
+        "unused::src/lib.rs::unused_import::13",
+        "unused::src/main.rs::unused_import::6",
+        "unused::src/main.rs::unused_import::10",
+        "unused::src/ui.rs::unused_import::175",
+        "unused::src/app.rs::unused_import::12",
+        "unused::src/app.rs::unused_import::14",
+        "unused::src/app.rs::unused_import::16",
+        "unused::src/app.rs::unused_import::1063",
+        "unused::src/app.rs::unused_import::1106",
+        "unused::src/app.rs::unused_import::1136",
+        "unused::src/app.rs::unused_import::1333",
+        "unused::src/app.rs::unused_import::1334",
+        "unused::src/app.rs::unused_import::1337",
+        "unused::src/gpu_renderer.rs::unused_import::1546",
+        "unused::src/image_backend.rs::unused_import::168",
+        "unused::src/image_backend.rs::unused_import::292",
+        "unused::src/image_backend.rs::unused_import::353",
+        "unused::src/image_backend.rs::unused_import::354",
+        "unused::src/image_backend.rs::unused_import::637",
+        "unused::src/main.rs::unused_import::64"
+      ],
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "updated_at": "2026-03-07T10:48:28+00:00",
+      "auto": true,
+      "cluster_key": "auto::unused",
+      "action": "desloppify autofix unused-imports --dry-run",
+      "user_modified": false
+    },
+    "auto/orphaned": {
+      "name": "auto/orphaned",
+      "description": "Fix 6 orphaned issues",
+      "issue_ids": [
+        "orphaned::src/app.rs",
+        "orphaned::src/gpu_renderer.rs",
+        "orphaned::src/image_backend.rs",
+        "orphaned::src/ui.rs",
+        "orphaned::src/main.rs",
+        "orphaned::src/lib.rs"
+      ],
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "updated_at": "2026-03-07T10:48:28+00:00",
+      "auto": true,
+      "cluster_key": "detector::orphaned",
+      "action": "desloppify move",
+      "user_modified": false
+    },
+    "auto/test_coverage": {
+      "name": "auto/test_coverage",
+      "description": "Fix 6 test coverage issues",
+      "issue_ids": [
+        "test_coverage::src/app.rs",
+        "test_coverage::src/gpu_renderer.rs",
+        "test_coverage::src/image_backend.rs",
+        "test_coverage::src/ui.rs",
+        "test_coverage::src/main.rs",
+        "test_coverage::src/lib.rs"
+      ],
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "updated_at": "2026-03-07T10:48:28+00:00",
+      "auto": true,
+      "cluster_key": "detector::test_coverage",
+      "action": "add tests for untested production modules \u2014 prioritize by import count",
+      "user_modified": false
+    },
+    "auto/initial-review": {
+      "name": "auto/initial-review",
+      "description": "Initial review of 20 unscored subjective dimensions",
+      "issue_ids": [
+        "subjective::abstraction_fitness",
+        "subjective::ai_generated_debt",
+        "subjective::api_surface_coherence",
+        "subjective::authorization_consistency",
+        "subjective::contract_coherence",
+        "subjective::convention_outlier",
+        "subjective::cross_module_architecture",
+        "subjective::dependency_health",
+        "subjective::design_coherence",
+        "subjective::error_consistency",
+        "subjective::high_level_elegance",
+        "subjective::incomplete_migration",
+        "subjective::initialization_coupling",
+        "subjective::logic_clarity",
+        "subjective::low_level_elegance",
+        "subjective::mid_level_elegance",
+        "subjective::naming_quality",
+        "subjective::package_organization",
+        "subjective::test_strategy",
+        "subjective::type_safety"
+      ],
+      "created_at": "2026-03-07T10:48:28+00:00",
+      "updated_at": "2026-03-07T10:48:28+00:00",
+      "auto": true,
+      "cluster_key": "subjective::unscored",
+      "action": "desloppify review --prepare --dimensions abstraction_fitness,ai_generated_debt,api_surface_coherence,authorization_consistency,contract_coherence,convention_outlier,cross_module_architecture,dependency_health,design_coherence,error_consistency,high_level_elegance,incomplete_migration,initialization_coupling,logic_clarity,low_level_elegance,mid_level_elegance,naming_quality,package_organization,test_strategy,type_safety",
+      "user_modified": false
+    }
+  },
+  "superseded": {},
+  "promoted_ids": [],
+  "plan_start_scores": {
+    "strict": 19.0,
+    "overall": 19.0,
+    "objective": 47.4,
+    "verified": 47.4
+  },
+  "execution_log": [
+    {
+      "timestamp": "2026-03-07T10:48:28+00:00",
+      "action": "sync_unscored",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "changes": true
+      }
+    },
+    {
+      "timestamp": "2026-03-07T10:48:28+00:00",
+      "action": "auto_cluster",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "changes": true
+      }
+    },
+    {
+      "timestamp": "2026-03-07T10:48:28+00:00",
+      "action": "seed_start_scores",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {}
+    }
+  ],
+  "epic_triage_meta": {},
+  "commit_log": [],
+  "uncommitted_issues": [],
+  "commit_tracking_branch": null,
+  "scan_count_at_plan_start": 2
+}
