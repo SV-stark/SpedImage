@@ -757,7 +757,7 @@ impl Renderer {
         if let Some(bind_group) = &self.image_bind_group {
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            
+
             // Use nearest-neighbor sampler for pixel-perfect mode
             if adjustments.pixel_perfect {
                 if let Some(bg) = &self.image_bind_group_nearest {
