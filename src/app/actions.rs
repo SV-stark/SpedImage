@@ -8,11 +8,7 @@ use winit::dpi::PhysicalPosition;
 use winit::event::{KeyEvent, MouseScrollDelta};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
-use winit::raw_window_handle::HasWindowHandle;
 use winit::window::Fullscreen;
-
-#[cfg(windows)]
-use std::os::windows::ffi::OsStrExt;
 
 impl SpedImageApp {
     pub(crate) fn handle_keyboard(&mut self, event: KeyEvent, event_loop: &ActiveEventLoop) {
@@ -21,8 +17,8 @@ impl SpedImageApp {
             Key::Named(NamedKey::Escape) => {
                 if self.ui_state.is_cropping {
                     self.cancel_crop();
-                } else if self.show_help {
-                    self.show_help = false;
+                } else if self.ui_state.show_help {
+                    self.ui_state.show_help = false;
                     self.dirty = true;
                 } else {
                     event_loop.exit();
@@ -38,7 +34,7 @@ impl SpedImageApp {
                 return;
             }
             Key::Named(NamedKey::F1) => {
-                self.show_help = !self.show_help;
+                self.ui_state.show_help = !self.ui_state.show_help;
                 self.dirty = true;
                 return;
             }
@@ -58,7 +54,7 @@ impl SpedImageApp {
                 return;
             }
             Key::Named(NamedKey::Delete) => {
-                if self.shift_pressed && !self.ui_state.selected_indices.is_empty() {
+                if self.modifiers.shift && !self.ui_state.selected_indices.is_empty() {
                     // Shift+Delete: batch delete selected
                     self.batch_delete_selected();
                 } else {
@@ -70,7 +66,7 @@ impl SpedImageApp {
         }
 
         if let Some(c) = event.logical_key.to_text() {
-            let ctrl = self.ctrl_pressed;
+            let ctrl = self.modifiers.ctrl;
             match c {
                 "d" | "D" => {
                     if event.repeat {
@@ -102,7 +98,7 @@ impl SpedImageApp {
                     }
                 }
                 "s" | "S" => {
-                    if ctrl && self.shift_pressed {
+                    if ctrl && self.modifiers.shift {
                         // Ctrl+Shift+S: batch save selected
                         self.batch_save_selected();
                     } else if ctrl {
@@ -135,13 +131,13 @@ impl SpedImageApp {
                 "c" | "C" if ctrl => self.copy_to_clipboard(),
                 "c" | "C" => self.toggle_crop(),
                 "h" | "H" => {
-                    if self.alt_pressed {
+                    if self.modifiers.alt {
                         // do nothing; alt+h is reserved
-                    } else if self.shift_pressed {
-                        self.show_histogram = !self.show_histogram;
-                        let state = if self.show_histogram { "ON" } else { "OFF" };
+                    } else if self.modifiers.shift {
+                        self.ui_state.show_histogram = !self.ui_state.show_histogram;
+                        let state = if self.ui_state.show_histogram { "ON" } else { "OFF" };
                         // Lazy compute histogram when turning on
-                        if self.show_histogram {
+                        if self.ui_state.show_histogram {
                             if let Some(ref mut img) = self.current_image {
                                 img.compute_histogram();
                             }
@@ -635,7 +631,7 @@ impl SpedImageApp {
             return;
         }
 
-        let available_h = if self.show_thumbnail_strip {
+        let available_h = if self.ui_state.show_thumbnail_strip {
             (size.height as i32 - STRIP_HEIGHT_PX as i32).max(1) as f64
         } else {
             size.height as f64
@@ -695,12 +691,12 @@ impl SpedImageApp {
     }
 
     pub(crate) fn toggle_sidebar(&mut self) {
-        self.show_sidebar = !self.show_sidebar;
+        self.ui_state.show_sidebar = !self.ui_state.show_sidebar;
         self.dirty = true;
     }
 
     pub(crate) fn toggle_thumbnail_strip(&mut self) {
-        self.show_thumbnail_strip = !self.show_thumbnail_strip;
+        self.ui_state.show_thumbnail_strip = !self.ui_state.show_thumbnail_strip;
         self.dirty = true;
     }
 
@@ -778,76 +774,79 @@ impl SpedImageApp {
 
     pub(crate) fn show_context_menu(&mut self) {
         #[cfg(windows)]
-        {
-            if let Some(ref w) = self.window {
-                use std::os::windows::ffi::OsStrExt;
-                use windows::core::PCWSTR;
-                use windows::Win32::Foundation::HWND;
-                use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
-                use windows::Win32::UI::WindowsAndMessaging::{
-                    AppendMenuW, CreatePopupMenu, TrackPopupMenu, MF_STRING, TPM_NONOTIFY,
-                    TPM_RETURNCMD,
+        self.show_context_menu_windows();
+    }
+
+    #[cfg(windows)]
+    fn show_context_menu_windows(&mut self) {
+        if let Some(ref w) = self.window {
+            use std::os::windows::ffi::OsStrExt;
+            use windows::core::PCWSTR;
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+            use windows::Win32::UI::WindowsAndMessaging::{
+                AppendMenuW, CreatePopupMenu, TrackPopupMenu, MF_STRING, TPM_NONOTIFY,
+                TPM_RETURNCMD,
+            };
+
+            unsafe {
+                let hmenu = CreatePopupMenu().unwrap_or_default();
+                if hmenu.is_invalid() {
+                    return;
+                }
+
+                let mut id = 1;
+                let items = [
+                    "Open in Explorer",
+                    "Copy (Ctrl+C)",
+                    "Rename (F2)",
+                    "Delete (Del)",
+                    "Set as Wallpaper (Ctrl+W)",
+                ];
+
+                for item in &items {
+                    let mut wide: Vec<u16> = std::ffi::OsStr::new(item).encode_wide().collect();
+                    wide.push(0);
+                    let _ = AppendMenuW(hmenu, MF_STRING, id, PCWSTR(wide.as_ptr()));
+                    id += 1;
+                }
+
+                let mut pt = windows::Win32::Foundation::POINT::default();
+                let _ = GetCursorPos(&mut pt);
+
+                use winit::raw_window_handle::RawWindowHandle;
+                let hwnd = if let Ok(handle) = w.window_handle() {
+                    match handle.as_raw() {
+                        RawWindowHandle::Win32(h) => HWND(h.hwnd.get() as *mut _),
+                        _ => HWND::default(),
+                    }
+                } else {
+                    HWND::default()
                 };
 
-                unsafe {
-                    let hmenu = CreatePopupMenu().unwrap_or_default();
-                    if hmenu.is_invalid() {
-                        return;
+                let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
+
+                let cmd = TrackPopupMenu(
+                    hmenu,
+                    TPM_RETURNCMD | TPM_NONOTIFY,
+                    pt.x,
+                    pt.y,
+                    0,
+                    hwnd,
+                    None,
+                );
+
+                let _ = windows::Win32::UI::WindowsAndMessaging::DestroyMenu(hmenu);
+
+                match cmd.0 {
+                    1 => self.open_in_explorer(),
+                    2 => self.copy_to_clipboard(),
+                    3 => self.rename_current_image(),
+                    4 => self.delete_current_image(),
+                    5 => {
+                        self.set_as_wallpaper();
                     }
-
-                    let mut id = 1;
-                    let items = [
-                        "Open in Explorer",
-                        "Copy (Ctrl+C)",
-                        "Rename (F2)",
-                        "Delete (Del)",
-                        "Set as Wallpaper (Ctrl+W)",
-                    ];
-
-                    for item in &items {
-                        let mut wide: Vec<u16> = std::ffi::OsStr::new(item).encode_wide().collect();
-                        wide.push(0);
-                        let _ = AppendMenuW(hmenu, MF_STRING, id, PCWSTR(wide.as_ptr()));
-                        id += 1;
-                    }
-
-                    let mut pt = windows::Win32::Foundation::POINT::default();
-                    let _ = GetCursorPos(&mut pt);
-
-                    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-                    let hwnd = if let Ok(handle) = w.window_handle() {
-                        match handle.as_raw() {
-                            RawWindowHandle::Win32(h) => HWND(h.hwnd.get() as *mut _),
-                            _ => HWND::default(),
-                        }
-                    } else {
-                        HWND::default()
-                    };
-
-                    let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
-
-                    let cmd = TrackPopupMenu(
-                        hmenu,
-                        TPM_RETURNCMD | TPM_NONOTIFY,
-                        pt.x,
-                        pt.y,
-                        0,
-                        hwnd,
-                        None,
-                    );
-
-                    let _ = windows::Win32::UI::WindowsAndMessaging::DestroyMenu(hmenu);
-
-                    match cmd.0 {
-                        1 => self.open_in_explorer(),
-                        2 => self.copy_to_clipboard(),
-                        3 => self.rename_current_image(),
-                        4 => self.delete_current_image(),
-                        5 => {
-                            self.set_as_wallpaper();
-                        }
-                        _ => {}
-                    }
+                    _ => {}
                 }
             }
         }
@@ -1008,68 +1007,73 @@ impl SpedImageApp {
 
         #[cfg(target_os = "windows")]
         {
-            use windows::Win32::Foundation::HANDLE;
-            use windows::Win32::Graphics::Gdi::{BITMAPINFOHEADER, BI_RGB};
-            use windows::Win32::System::DataExchange::{
-                CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
-            };
-            use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GHND};
-
-            let rgba = img.into_rgba8();
-            let (width, height) = rgba.dimensions();
-            let mut bgra = rgba.into_raw();
-            for chunk in bgra.chunks_exact_mut(4) {
-                chunk.swap(0, 2); // RGBA -> BGRA
-            }
-
-            let stride = (width * 4) as usize;
-            let mut flipped = vec![0u8; bgra.len()];
-            for (y, row) in bgra.chunks_exact(stride).enumerate() {
-                let flipped_y = (height as usize - 1) - y;
-                flipped[flipped_y * stride..(flipped_y + 1) * stride].copy_from_slice(row);
-            }
-
-            let header_size = std::mem::size_of::<BITMAPINFOHEADER>();
-            let size = header_size + flipped.len();
-
-            unsafe {
-                let hmem = GlobalAlloc(GHND, size)?;
-                let ptr = GlobalLock(hmem) as *mut u8;
-
-                let header = BITMAPINFOHEADER {
-                    biSize: header_size as u32,
-                    biWidth: width as i32,
-                    biHeight: height as i32,
-                    biPlanes: 1,
-                    biBitCount: 32,
-                    biCompression: BI_RGB.0,
-                    biSizeImage: flipped.len() as u32,
-                    ..Default::default()
-                };
-
-                std::ptr::copy_nonoverlapping(&header as *const _ as *const u8, ptr, header_size);
-                std::ptr::copy_nonoverlapping(
-                    flipped.as_ptr(),
-                    ptr.add(header_size),
-                    flipped.len(),
-                );
-                let _ = GlobalUnlock(hmem);
-
-                if OpenClipboard(None).is_ok() {
-                    let _ = EmptyClipboard();
-                    let _ = SetClipboardData(8, HANDLE(hmem.0 as *mut _)); // 8 is CF_DIB
-                    let _ = CloseClipboard();
-                } else {
-                    anyhow::bail!("Failed to open clipboard");
-                }
-            }
-            Ok(())
+            return Self::do_copy_to_clipboard_windows(&img);
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         {
             anyhow::bail!("Native clipboard not implemented on this OS");
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn do_copy_to_clipboard_windows(img: &image::DynamicImage) -> Result<()> {
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Graphics::Gdi::{BITMAPINFOHEADER, BI_RGB};
+        use windows::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GHND};
+
+        let rgba = img.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        let mut bgra = rgba.into_raw();
+        for chunk in bgra.chunks_exact_mut(4) {
+            chunk.swap(0, 2); // RGBA -> BGRA
+        }
+
+        let stride = (width * 4) as usize;
+        let mut flipped = vec![0u8; bgra.len()];
+        for (y, row) in bgra.chunks_exact(stride).enumerate() {
+            let flipped_y = (height as usize - 1) - y;
+            flipped[flipped_y * stride..(flipped_y + 1) * stride].copy_from_slice(row);
+        }
+
+        let header_size = std::mem::size_of::<BITMAPINFOHEADER>();
+        let size = header_size + flipped.len();
+
+        unsafe {
+            let hmem = GlobalAlloc(GHND, size)?;
+            let ptr = GlobalLock(hmem) as *mut u8;
+
+            let header = BITMAPINFOHEADER {
+                biSize: header_size as u32,
+                biWidth: width as i32,
+                biHeight: height as i32,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                biSizeImage: flipped.len() as u32,
+                ..Default::default()
+            };
+
+            std::ptr::copy_nonoverlapping(&header as *const _ as *const u8, ptr, header_size);
+            std::ptr::copy_nonoverlapping(
+                flipped.as_ptr(),
+                ptr.add(header_size),
+                flipped.len(),
+            );
+            let _ = GlobalUnlock(hmem);
+
+            if OpenClipboard(None).is_ok() {
+                let _ = EmptyClipboard();
+                let _ = SetClipboardData(8, HANDLE(hmem.0 as *mut _)); // 8 is CF_DIB
+                let _ = CloseClipboard();
+            } else {
+                anyhow::bail!("Failed to open clipboard");
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn open_file_dialog(&mut self) {
@@ -1169,5 +1173,41 @@ mod tests {
             app.slideshow_interval,
             initial - std::time::Duration::from_secs(1)
         );
+    }
+
+    #[test]
+    fn test_zoom_by_clamping() {
+        let mut app = SpedImageApp::new();
+        // Initial crop rect is [0.0, 0.0, 1.0, 1.0] by default in ImageAdjustments
+        assert_eq!(app.ui_state.adjustments.crop_rect[2], 1.0);
+        
+        // Zooming out further should clamp at 1.0
+        app.zoom_by(1.5, None);
+        assert_eq!(app.ui_state.adjustments.crop_rect[2], 1.0);
+
+        // Zooming in heavily should clamp at 0.05
+        app.zoom_by(0.01, None);
+        assert_eq!(app.ui_state.adjustments.crop_rect[2], 0.05);
+    }
+
+    #[test]
+    fn test_active_thumb_index() {
+        let mut app = SpedImageApp::new();
+        // No current file -> None
+        assert_eq!(app.active_thumb_index(), None);
+
+        let path = std::path::PathBuf::from("test.jpg");
+        app.ui_state.files.push(crate::ui::FileEntry { 
+            path: path.clone(), 
+            name: "test.jpg".to_string(), 
+            is_image: true 
+        });
+        app.ui_state.current_file_index = Some(0);
+        
+        // thumb_paths doesn't have it -> None
+        assert_eq!(app.active_thumb_index(), None);
+
+        app.thumb_paths.push(path);
+        assert_eq!(app.active_thumb_index(), Some(0));
     }
 }

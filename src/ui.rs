@@ -33,7 +33,7 @@ impl FileEntry {
 }
 
 /// Application state for UI
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct UiState {
     pub files: Vec<FileEntry>,
     pub current_file_index: Option<usize>,
@@ -42,12 +42,36 @@ pub struct UiState {
     pub show_file_dialog: bool,
     pub show_help: bool,
     pub show_info: bool,
+    pub show_sidebar: bool,
+    pub show_thumbnail_strip: bool,
+    pub show_histogram: bool,
     pub status_message: Option<String>,
     /// Set of file indices that are currently selected in the thumbnail strip.
     pub selected_indices: std::collections::HashSet<usize>,
 }
 
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            files: Vec::new(),
+            current_file_index: None,
+            adjustments: ImageAdjustments::default(),
+            is_cropping: false,
+            show_file_dialog: false,
+            show_help: false,
+            show_info: false,
+            show_sidebar: false,
+            show_thumbnail_strip: true,
+            show_histogram: false,
+            status_message: None,
+            selected_indices: std::collections::HashSet::new(),
+        }
+    }
+}
+
 impl UiState {
+    // --- File Navigation --- //
+
     /// Get the current file path if any
     pub fn current_file(&self) -> Option<&PathBuf> {
         self.current_file_index
@@ -131,6 +155,8 @@ impl UiState {
         }
     }
 
+    // --- Image Adjustments --- //
+
     /// Reset all adjustments to default
     pub fn reset_adjustments(&mut self) {
         self.adjustments = ImageAdjustments::default();
@@ -140,6 +166,8 @@ impl UiState {
     pub fn rotate_90(&mut self) {
         self.adjustments.rotation += std::f32::consts::FRAC_PI_2;
     }
+
+    // --- Status Bar --- //
 
     /// Set status message
     pub fn set_status(&mut self, message: impl Into<String>) {
@@ -155,6 +183,8 @@ impl UiState {
     pub fn get_status(&self) -> &str {
         self.status_message.as_deref().unwrap_or("")
     }
+
+    // --- UI Toggles --- //
 
     /// Toggle help overlay
     pub fn toggle_help(&mut self) {
@@ -362,5 +392,41 @@ mod tests {
 
         state.toggle_help();
         assert!(!state.show_help);
+    }
+
+    #[test]
+    fn test_ui_state_default_flags() {
+        let state = UiState::default();
+        assert!(state.show_thumbnail_strip);
+        assert!(!state.show_sidebar);
+        assert!(!state.show_histogram);
+        assert!(!state.show_help);
+        assert!(!state.show_info);
+    }
+
+    #[test]
+    fn test_current_file_none() {
+        let state = UiState::default();
+        assert!(state.current_file().is_none());
+    }
+
+    #[test]
+    fn test_navigation_wrapping() {
+        let mut state = UiState::default();
+        // Setup 3 dummy files
+        state.files = vec![
+            FileEntry { path: "1".into(), name: "1".into(), is_image: true },
+            FileEntry { path: "2".into(), name: "2".into(), is_image: true },
+            FileEntry { path: "3".into(), name: "3".into(), is_image: true },
+        ];
+        state.current_file_index = Some(0);
+
+        // prev should wrap to last
+        state.prev();
+        assert_eq!(state.current_file_index, Some(2));
+        
+        // next should wrap to first
+        state.next();
+        assert_eq!(state.current_file_index, Some(0));
     }
 }

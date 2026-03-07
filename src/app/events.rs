@@ -277,9 +277,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 }
             }
             WindowEvent::ModifiersChanged(mods) => {
-                self.ctrl_pressed = mods.state().control_key();
-                self.alt_pressed = mods.state().alt_key();
-                self.shift_pressed = mods.state().shift_key();
+                self.modifiers.ctrl = mods.state().control_key();
+                self.modifiers.alt = mods.state().alt_key();
+                self.modifiers.shift = mods.state().shift_key();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.handle_mouse_wheel(delta, self.last_cursor_pos);
@@ -303,68 +303,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
             WindowEvent::MouseInput { state, button, .. } => match (button, state) {
                 (MouseButton::Left, ElementState::Pressed) => {
-                    let pos = self.last_cursor_pos;
-
-                    if self.show_thumbnail_strip {
-                        if let Some(ref renderer) = self.renderer {
-                            if let Some(thumb_slot) = renderer.thumbnail_index_at(pos.x, pos.y) {
-                                if let Some(path) = self.thumb_paths.get(thumb_slot).cloned() {
-                                    if let Some(file_idx) =
-                                        self.ui_state.files.iter().position(|f| f.path == path)
-                                    {
-                                        if self.ctrl_pressed {
-                                            if self.ui_state.selected_indices.contains(&file_idx) {
-                                                self.ui_state.selected_indices.remove(&file_idx);
-                                            } else {
-                                                self.ui_state.selected_indices.insert(file_idx);
-                                            }
-                                            let sel_count = self.ui_state.selected_indices.len();
-                                            self.ui_state.set_status(format!(
-                                                "{} item(s) selected",
-                                                sel_count
-                                            ));
-                                            self.dirty = true;
-                                        } else {
-                                            self.ui_state.selected_indices.clear();
-                                            self.ui_state.current_file_index = Some(file_idx);
-                                            self.load_image(path);
-                                        }
-                                    }
-                                }
-                                return;
-                            }
-                        }
-                    }
-
-                    if self.alt_pressed {
-                        self.pick_color_at(self.last_cursor_pos);
-                        return;
-                    }
-
-                    if let Some(ref w) = self.window {
-                        let win_h = w.inner_size().height as f64;
-                        if self.show_thumbnail_strip && pos.y > win_h - STRIP_HEIGHT_PX as f64 {
-                            return;
-                        }
-                    }
-
-                    if let Some(ref w) = self.window {
-                        let size = w.inner_size();
-                        if size.width > 0 {
-                            let mouse_x_ratio = self.last_cursor_pos.x / size.width as f64;
-                            if mouse_x_ratio < 0.1 {
-                                self.prev_image();
-                                return;
-                            } else if mouse_x_ratio > 0.9 {
-                                self.next_image();
-                                return;
-                            }
-                        }
-                    }
-
-                    if !self.ui_state.is_cropping {
-                        self.mouse_drag_start = Some(self.last_cursor_pos);
-                    }
+                    self.handle_left_click();
                 }
                 (MouseButton::Back, ElementState::Released) => {
                     self.prev_image();
@@ -402,8 +341,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let is_cropping = self.ui_state.is_cropping;
                     let crop_rect = self.ui_state.adjustments.crop_rect;
                     let show_help = self.ui_state.show_help;
-                    let show_sidebar = self.show_sidebar;
-                    let show_thumbnail_strip = self.show_thumbnail_strip;
+                    let show_sidebar = self.ui_state.show_sidebar;
+                    let show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
                     let show_info = self.ui_state.show_info;
                     let active_thumb_idx = self.active_thumb_index();
 
@@ -445,7 +384,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                                 active_thumb_idx,
                                 &self.ui_state.selected_indices,
                                 exif_text,
-                                self.show_histogram,
+                                self.ui_state.show_histogram,
                                 self.current_image
                                     .as_ref()
                                     .and_then(|img| img.histogram.as_ref()),
@@ -562,6 +501,73 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
+        }
+    }
+
+    fn handle_left_click(&mut self) {
+        let pos = self.last_cursor_pos;
+
+        if self.ui_state.show_thumbnail_strip {
+            if let Some(renderer) = &self.renderer {
+                if let Some(thumb_slot) = renderer.thumbnail_index_at(pos.x, pos.y) {
+                    self.handle_thumbnail_click(thumb_slot);
+                    return;
+                }
+            }
+        }
+
+        if self.modifiers.alt {
+            self.pick_color_at(self.last_cursor_pos);
+            return;
+        }
+
+        if let Some(ref w) = self.window {
+            let win_h = w.inner_size().height as f64;
+            if self.ui_state.show_thumbnail_strip && pos.y > win_h - STRIP_HEIGHT_PX as f64 {
+                return;
+            }
+
+            let size = w.inner_size();
+            if size.width > 0 {
+                let mouse_x_ratio = self.last_cursor_pos.x / size.width as f64;
+                if mouse_x_ratio < 0.1 {
+                    self.prev_image();
+                    return;
+                } else if mouse_x_ratio > 0.9 {
+                    self.next_image();
+                    return;
+                }
+            }
+        }
+
+        if !self.ui_state.is_cropping {
+            self.mouse_drag_start = Some(self.last_cursor_pos);
+        }
+    }
+
+    fn handle_thumbnail_click(&mut self, thumb_slot: usize) {
+        let path = match self.thumb_paths.get(thumb_slot) {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let file_idx = match self.ui_state.files.iter().position(|f| f.path == path) {
+            Some(idx) => idx,
+            None => return,
+        };
+
+        if self.modifiers.ctrl {
+            if self.ui_state.selected_indices.contains(&file_idx) {
+                self.ui_state.selected_indices.remove(&file_idx);
+            } else {
+                self.ui_state.selected_indices.insert(file_idx);
+            }
+            let sel_count = self.ui_state.selected_indices.len();
+            self.ui_state.set_status(format!("{} item(s) selected", sel_count));
+            self.dirty = true;
+        } else {
+            self.ui_state.selected_indices.clear();
+            self.ui_state.current_file_index = Some(file_idx);
+            self.load_image(path);
         }
     }
 }

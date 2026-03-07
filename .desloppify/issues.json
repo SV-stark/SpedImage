@@ -1,0 +1,918 @@
+[
+  {
+    "batch": "test_strategy",
+    "batch_index": 1,
+    "assessments": {
+      "test_strategy": 28.0
+    },
+    "dimension_notes": {
+      "test_strategy": {
+        "evidence": [
+          "services.rs (143 LOC) contains the entire background thumbnail loading and prefetch concurrency loop — no tests.",
+          "gpu_renderer.rs (1560 LOC, complexity 623) has no test block — pure math helpers like thumbnail_index_at are untested.",
+          "events.rs (567 LOC) processes all AppEvent dispatch and animation loops — no tests.",
+          "image_backend.rs has reasonable unit tests following recent additions.",
+          "state.rs and actions.rs now have basic tests added in last session."
+        ],
+        "impact_scope": "subsystem",
+        "fix_scope": "multi_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "test_strategy",
+        "identifier": "services_zero_coverage",
+        "summary": "services.rs background thumbnail-load and prefetch logic has no tests",
+        "related_files": ["src/app/services.rs"],
+        "evidence": [
+          "No #[cfg(test)] block in services.rs. load_thumbnails_for_dir contains non-trivial AtomicUsize throttle logic (spin-wait loop, concurrent thread spawn) that is entirely untested.",
+          "prefetch_adjacent also unverified — a bug in the cache interaction or concurrency throttle would be invisible to CI."
+        ],
+        "suggestion": "Add unit tests for prefetch_adjacent (mock event channel) and load_thumbnails_for_dir (verify AtomicUsize never exceeds MAX_THUMB_THREADS).",
+        "confidence": "high",
+        "impact_scope": "module",
+        "fix_scope": "test_addition"
+      },
+      {
+        "dimension": "test_strategy",
+        "identifier": "gpu_renderer_zero_coverage",
+        "summary": "gpu_renderer.rs has no unit tests — thumbnail_index_at and encode helpers are untested",
+        "related_files": ["src/gpu_renderer.rs"],
+        "evidence": [
+          "No #[cfg(test)] block in gpu_renderer.rs.",
+          "thumbnail_index_at is pure math that could carry a fence-post error undetected.",
+          "encode_image and encode_thumbnail_strip contain conditional rendering paths with no coverage."
+        ],
+        "suggestion": "Extract thumbnail_index_at as a testable free function and add unit tests for it. Add smoke tests for load_image and upload_thumbnail using a mock wgpu instance or the existing test helpers.",
+        "confidence": "high",
+        "impact_scope": "module",
+        "fix_scope": "test_addition"
+      },
+      {
+        "dimension": "test_strategy",
+        "identifier": "events_dispatch_zero_coverage",
+        "summary": "events.rs process_events dispatch loop has no tests",
+        "related_files": ["src/app/events.rs"],
+        "evidence": [
+          "No #[cfg(test)] block in events.rs.",
+          "process_events drains the mpsc channel and is the main AppEvent dispatcher — a regression would be hard to pinpoint without tests."
+        ],
+        "suggestion": "Write unit tests for process_events that push events through the mpsc channel and verify state changes (e.g. ImageLoaded sets current_image, SetStatus sets status_message).",
+        "confidence": "medium",
+        "impact_scope": "module",
+        "fix_scope": "test_addition"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Test additions focused on state.rs and actions.rs but missed the concurrency-heavy services module and the UI rendering pipeline."],
+      "likely_symptoms": ["Silent regressions in thumbnail loading and background file watching."]
+    }
+  },
+  {
+    "batch": "design_coherence",
+    "batch_index": 2,
+    "assessments": {
+      "design_coherence": 42.0
+    },
+    "dimension_notes": {
+      "design_coherence": {
+        "evidence": [
+          "SpedImageApp has 23 pub(crate) fields mixing 6 concerns: window/renderer, image data, event channel, navigation, thumbnail concurrency, and slideshow.",
+          "Renderer::new() is a 270-line async monolith combining device setup, pipeline creation, and font loading.",
+          "handle_keyboard dispatches 20+ distinct actions from one flat match block."
+        ],
+        "impact_scope": "subsystem",
+        "fix_scope": "multi_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "design_coherence",
+        "identifier": "app_god_struct",
+        "summary": "SpedImageApp is a 23-field god-struct mixing 6 unrelated concerns",
+        "related_files": ["src/app/state.rs"],
+        "evidence": [
+          "Fields span: window/renderer handles, image animation state (current_frame_delays, current_frame_idx), event channel (event_tx, event_rx, event_proxy), navigation (prefetch_cache, held_navigation_key, last_advance_time), thumbnail loading concurrency (thumb_active, thumb_paths), and slideshow timing.",
+          "All 5 impl blocks (actions, events, services, state, ui) mutate this single struct making targeted borrowing impossibleDifficult."
+        ],
+        "suggestion": "Extract NavigationState, SlideshowState, and ThumbnailLoadState into focused sub-structs within SpedImageApp, following the same pattern used for UiState and KeyModifiers.",
+        "confidence": "high",
+        "impact_scope": "subsystem",
+        "fix_scope": "multi_file_refactor"
+      },
+      {
+        "dimension": "design_coherence",
+        "identifier": "renderer_monolithic_new",
+        "summary": "Renderer::new() is a 270-line async monolith with 7 distinct initialization phases",
+        "related_files": ["src/gpu_renderer.rs"],
+        "evidence": [
+          "Single function handles: WGPU instance+adapter+device, surface config, two shader module compilations, two pipeline layout+pipeline creations, two uniform buffers, two sampler creates, font loading from OS path with fallback, and glyph brush setup."
+        ],
+        "suggestion": "Extract create_image_pipeline(), create_crop_pipeline(), and load_font() as private helpers called from Renderer::new() to give each phase a named, testable entry point.",
+        "confidence": "high",
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor"
+      },
+      {
+        "dimension": "design_coherence",
+        "identifier": "keyboard_flat_dispatch",
+        "summary": "handle_keyboard dispatches 20+ distinct action categories in one flat match",
+        "related_files": ["src/app/actions.rs"],
+        "evidence": [
+          "Single function handles navigation (with hold-key tracking), file operations, UI toggles, zoom, crop, slideshow control, and clipboard in one two-phase match block.",
+          "Adding a new key category requires reading the entire 155-line function."
+        ],
+        "suggestion": "Extract handle_navigation_key(), handle_file_key(), handle_ui_toggle_key() helpers called from handle_keyboard to give each concern a named boundary.",
+        "confidence": "medium",
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Iterative feature addition to a monolithic struct and monolithic function bodies."],
+      "likely_symptoms": ["Merge conflicts on SpedImageApp, difficulty isolating test surfaces."]
+    }
+  },
+  {
+    "batch": "high_level_elegance",
+    "batch_index": 3,
+    "assessments": {
+      "high_level_elegance": 52.0
+    },
+    "dimension_notes": {
+      "high_level_elegance": {
+        "evidence": [
+          "The src/app/ modularization is a clear positive: orchestration, state, events, services, and types are separated.",
+          "gpu_renderer.rs holds both GPU pipeline state and text/font rendering — two distinct subsystems.",
+          "The app module has no explicit public re-export surface (mod.rs only declares submodules)."
+        ],
+        "impact_scope": "subsystem",
+        "fix_scope": "multi_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "high_level_elegance",
+        "identifier": "font_rendering_in_gpu_module",
+        "summary": "Text rendering (GlyphBrush, font loading) lives inside the GPU image pipeline module",
+        "related_files": ["src/gpu_renderer.rs"],
+        "evidence": [
+          "Renderer carries text_brush: GlyphBrush and staging_belt alongside image pipeline fields.",
+          "Font loading hardcodes C:\\Windows\\Fonts\\segoeui.ttf at construction — a UI concern embedded in a GPU resource manager.",
+          "If the font rendering backend changes (e.g. switching to egui), the GPU image pipeline struct must be disrupted."
+        ],
+        "suggestion": "Extract a TextRenderer struct with its own lifecycle (GlyphBrush + StagingBelt) that Renderer holds as a field or that the main app orchestrates separately.",
+        "confidence": "high",
+        "impact_scope": "subsystem",
+        "fix_scope": "multi_file_refactor"
+      },
+      {
+        "dimension": "high_level_elegance",
+        "identifier": "app_module_no_reexports",
+        "summary": "src/app/mod.rs provides no public re-export surface — internal split is an exposed detail",
+        "related_files": ["src/app/mod.rs"],
+        "evidence": [
+          "mod.rs declares 5 pub mod blocks but re-exports nothing.",
+          "All callers use full paths: crate::app::state::SpedImageApp, crate::app::types::AppEvent — the internal file split is exposed to every consumer."
+        ],
+        "suggestion": "Add `pub use state::SpedImageApp; pub use types::{AppEvent, KeyModifiers, WakeUp};` to mod.rs so callers use crate::app::SpedImageApp.",
+        "confidence": "medium",
+        "impact_scope": "module",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["GPU file grew organically to include text rendering without a planned subsystem boundary."],
+      "likely_symptoms": ["Entanglement any time font or text rendering needs updating."]
+    }
+  },
+  {
+    "batch": "mid_level_elegance",
+    "batch_index": 4,
+    "assessments": {
+      "mid_level_elegance": 55.0
+    },
+    "dimension_notes": {
+      "mid_level_elegance": {
+        "evidence": [
+          "Event-channel pattern (mpsc + EventLoopProxy wakeup) is clean and consistently used across all cross-thread boundaries.",
+          "load_thumbnails_for_dir clones the full file list before applying the take() cap.",
+          "Slideshow next-time check reads slideshow_next_time twice in the same event polling loop."
+        ],
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "mid_level_elegance",
+        "identifier": "thumbnail_premature_full_clone",
+        "summary": "load_thumbnails_for_dir clones all file paths then takes only the first MAX_THUMBNAILS",
+        "related_files": ["src/app/services.rs"],
+        "evidence": [
+          "Line 98: `let files: Vec<PathBuf> = self.ui_state.files.iter().map(|f| f.path.clone()).collect()` — unconditional full clone.",
+          "Line 110: `files.into_iter().take(n)` — only n clones are ever used."
+        ],
+        "suggestion": "Bound first: `self.ui_state.files.iter().take(n).map(|f| f.path.clone()).collect::<Vec<_>>()`",
+        "confidence": "high",
+        "impact_scope": "function",
+        "fix_scope": "single_edit"
+      },
+      {
+        "dimension": "mid_level_elegance",
+        "identifier": "slideshow_double_read",
+        "summary": "slideshow_next_time is read twice in successive if-blocks in process_events",
+        "related_files": ["src/app/events.rs"],
+        "evidence": [
+          "Two separate if-let blocks reading slideshow_next_time within the same event loop iteration — one for advancing the slide, one for updating next wake time.",
+          "These two reads could be unified into a single helper that both advances and records next_time."
+        ],
+        "suggestion": "Combine the two slideshow_next_time reads into `if let Some(t) = self.slideshow_next_time { if now >= t { self.next_image(); self.slideshow_next_time = Some(now + self.slideshow_interval); wait_until = Some(now + self.slideshow_interval); } }`",
+        "confidence": "medium",
+        "impact_scope": "function",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Incrementally added fields without revisiting allocation patterns."],
+      "likely_symptoms": ["Unnecessary allocation pressure on directories with many images; subtle slideshow timing drift."]
+    }
+  },
+  {
+    "batch": "low_level_elegance",
+    "batch_index": 5,
+    "assessments": {
+      "low_level_elegance": 58.0
+    },
+    "dimension_notes": {
+      "low_level_elegance": {
+        "evidence": [
+          "Navigation key handling ('d'/'a'/'w'/'s') has structurally identical repeat/non-repeat branches.",
+          "load_and_downsample has an unreachable else branch creating misleading dead code.",
+          "KeyModifiers, UiState grouping is well executed."
+        ],
+        "impact_scope": "function",
+        "fix_scope": "single_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "low_level_elegance",
+        "identifier": "nav_key_repeat_duplication",
+        "summary": "Navigation key branches for 'd'/'a'/'w'/'s' contain structurally identical if/else repeat patterns",
+        "related_files": ["src/app/actions.rs"],
+        "evidence": [
+          "The 'd' arm (lines 74-82): `if event.repeat { self.next_image(); } else { self.next_image(); self.held_navigation_key = Some('d'); ... }`",
+          "The call to next_image() appears in BOTH branches — the repeat branch is purely a subset.",
+          "Same pattern for 'a', 'w', 's' — four parallel duplications."
+        ],
+        "suggestion": "Refactor to: `self.next_image(); if !event.repeat { self.held_navigation_key = Some('d'); self.last_advance_time = Some(Instant::now()); }` — eliminates the always-duplicated call.",
+        "confidence": "high",
+        "impact_scope": "function",
+        "fix_scope": "single_edit"
+      },
+      {
+        "dimension": "low_level_elegance",
+        "identifier": "load_downsample_unreachable_else",
+        "summary": "load_and_downsample has an unreachable else branch that misleads readers",
+        "related_files": ["src/image_backend.rs"],
+        "evidence": [
+          "Lines 283-290: `if let Some(first) = frames.first() { ... return early if small } else { return Ok(frames); }` — the else arm handles an empty Vec which load() never returns on success.",
+          "Creates false impression that load() might return Ok([]) causing downstream callers to defensively handle an impossible case."
+        ],
+        "suggestion": "Remove the else arm and add a comment: `// load() always returns at least one frame on Ok; this is unreachable`. Or use a stricter precondition check on the result of Self::load().",
+        "confidence": "high",
+        "impact_scope": "function",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Copy-paste expansion of navigation key branches; defensive else added for completeness."],
+      "likely_symptoms": ["Minor cognitive load when reading keyboard handler; false dead-code risk signals."]
+    }
+  },
+  {
+    "batch": "naming_quality",
+    "batch_index": 6,
+    "assessments": {
+      "naming_quality": 68.0
+    },
+    "dimension_notes": {
+      "naming_quality": {
+        "evidence": [
+          "Most names are clear and domain-aligned (next_image, zoom_in, show_thumbnail_strip, prefetch_adjacent).",
+          "setup_file_watcher silently swallows errors in both failure paths with no logging.",
+          "do_copy_to_clipboard is a non-idiomatic do_ prefixed method name."
+        ],
+        "impact_scope": "function",
+        "fix_scope": "single_edit",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "naming_quality",
+        "identifier": "do_copy_deprecated_prefix",
+        "summary": "`do_copy_to_clipboard` uses a non-idiomatic `do_` prefix alongside its `copy_to_clipboard` sibling",
+        "related_files": ["src/app/actions.rs"],
+        "evidence": [
+          "Both `copy_to_clipboard` (public) and `do_copy_to_clipboard` (Windows detail) exist as peer methods.",
+          "The `do_` prefix is a C/Java convention not idiomatic in Rust. Typical Rust patterns use `copy_to_clipboard_impl` or split via `#[cfg]` blocks."
+        ],
+        "suggestion": "Rename to `copy_to_clipboard_windows` (matching the existing `show_context_menu_windows` naming convention already established in this same file).",
+        "confidence": "high",
+        "impact_scope": "function",
+        "fix_scope": "single_edit"
+      },
+      {
+        "dimension": "naming_quality",
+        "identifier": "setup_file_watcher_silent_fail",
+        "summary": "`setup_file_watcher` silently discards both error cases with no logging",
+        "related_files": ["src/app/services.rs"],
+        "evidence": [
+          "watcher_result Err case has no logging branch.",
+          "watcher.watch() Err case also silent.",
+          "The function name implies setup was completed but may have done nothing — no way for callers to know."
+        ],
+        "suggestion": "Add `tracing::warn!(\"Failed to create file watcher: {:?}\", e)` in the Err arm, consistent with the tracing::debug! call on success at line 91.",
+        "confidence": "high",
+        "impact_scope": "function",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Naming convention established for context_menu was not applied to clipboard helper."],
+      "likely_symptoms": ["Confusing file watching failure diagnosis in production."]
+    }
+  },
+  {
+    "batch": "error_consistency",
+    "batch_index": 7,
+    "assessments": {
+      "error_consistency": 55.0
+    },
+    "dimension_notes": {
+      "error_consistency": {
+        "evidence": [
+          "Most app-level errors surface through AppEvent::ImageError / AppEvent::SaveError — consistent pattern.",
+          "thumbnail loading uses a spin-wait loop inconsistent with the mpsc channel pattern used elsewhere.",
+          "Silent error swallowing in setup_file_watcher."
+        ],
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "error_consistency",
+        "identifier": "thumbnail_spinwait_inconsistency",
+        "summary": "load_thumbnails_for_dir uses a spin-wait sleep loop — inconsistent with mpsc channel pattern used everywhere else",
+        "related_files": ["src/app/services.rs"],
+        "evidence": [
+          "Lines 111-113: `while active.load(Ordering::Relaxed) >= MAX_THUMB_THREADS { std::thread::sleep(Duration::from_millis(5)); }` — busy-wait on main thread.",
+          "All other cross-thread coordination in the codebase uses mpsc channels (event_tx/event_rx) without blocking sleeps."
+        ],
+        "suggestion": "Use a bounded semaphore (std Mutex+Condvar or a tokio Semaphore if async context is available) or move the thumbnail emit pattern to a dedicated worker pool, eliminating the sleep loop.",
+        "confidence": "high",
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Quick implementation used sleep-based throttling instead of a proper synchronization primitive."],
+      "likely_symptoms": ["5ms overhead per thumbnail batch slot; jitter in thumbnail load time."]
+    }
+  },
+  {
+    "batch": "abstraction_fitness",
+    "batch_index": 8,
+    "assessments": {
+      "abstraction_fitness": 60.0
+    },
+    "dimension_notes": {
+      "abstraction_fitness": {
+        "evidence": [
+          "The event channel abstraction (send_event helper) is clean and adds real value.",
+          "ImageData.path as String forces a lossy round-trip at every boundary.",
+          "Bind group creation is triplicated with only the sampler/buffer parameter varying."
+        ],
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "abstraction_fitness",
+        "identifier": "imagepath_string_not_pathbuf",
+        "summary": "ImageData.path is a String causing lossy round-trips at every creation and consumption site",
+        "related_files": ["src/image_backend.rs"],
+        "evidence": [
+          "Line 91: `pub path: String` — all creation sites call `path.to_string_lossy().to_string()`.",
+          "Line 223: `extract_exif_lazy` immediately re-parses it via `Path::new(path)` — two unnecessary conversions per load."
+        ],
+        "suggestion": "Change ImageData.path to `pub path: std::path::PathBuf`. Update all creation sites to `.to_path_buf()` and all consumption sites to use the PathBuf directly.",
+        "confidence": "high",
+        "impact_scope": "subsystem",
+        "fix_scope": "multi_file_refactor"
+      },
+      {
+        "dimension": "abstraction_fitness",
+        "identifier": "bind_group_triplication",
+        "summary": "Bind group descriptor assembly is triplicated across three load/upload methods",
+        "related_files": ["src/gpu_renderer.rs"],
+        "evidence": [
+          "Lines 569-588 (linear bind group), 591-610 (nearest bind group), 668-687 (thumbnail bind group) share identical 3-entry BindGroupDescriptor structure.",
+          "Only the uniform_buffer ref and sampler ref differ between them."
+        ],
+        "suggestion": "Extract `fn make_image_bind_group(&self, uniform_buf: &wgpu::Buffer, sampler: &Sampler, view: &wgpu::TextureView) -> Arc<BindGroup>` and call it from all three sites.",
+        "confidence": "high",
+        "impact_scope": "function",
+        "fix_scope": "single_file_refactor"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["String path was simpler at project inception; bind group code was copy-pasted during feature addition."],
+      "likely_symptoms": ["Silent data loss on non-UTF-8 paths; bind group setup drift if layout changes."]
+    }
+  },
+  {
+    "batch": "type_safety",
+    "batch_index": 9,
+    "assessments": {
+      "type_safety": 65.0
+    },
+    "dimension_notes": {
+      "type_safety": {
+        "evidence": [
+          "Rust's type system handles most safety automatically via Result and Option.",
+          "ImageData.path: String allows non-UTF-8 paths to silently lose data.",
+          "load() can return Ok(Vec<>) from the GIF path if no frames decode successfully — callers may panic on [0] access."
+        ],
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "type_safety",
+        "identifier": "load_may_return_empty_vec",
+        "summary": "ImageBackend::load() may return Ok([]) via the GIF branch — callers assume non-empty",
+        "related_files": ["src/image_backend.rs"],
+        "evidence": [
+          "Lines 164-194: GIF branch builds results from frames, guarded by `if !frames.is_empty()`. If empty, it falls through to load_standard which may succeed.",
+          "Caller in events.rs indexes frames[0] on ImageLoaded — a GIF with zero decodeable frames could reach this code path and panic."
+        ],
+        "suggestion": "Change the return type contract: either validate `!frames.is_empty()` before returning Ok, or define a `NonEmptyVec<ImageData>` newtype to enforce the invariant at the type level.",
+        "confidence": "medium",
+        "impact_scope": "module",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["GIF fallthrough was added without considering the zero-frame case."],
+      "likely_symptoms": ["Panic on corrupted or empty GIF files."]
+    }
+  },
+  {
+    "batch": "contract_coherence",
+    "batch_index": 10,
+    "assessments": {
+      "contract_coherence": 62.0
+    },
+    "dimension_notes": {
+      "contract_coherence": {
+        "evidence": [
+          "Most method names accurately describe their behavior.",
+          "SpedImageApp::drop() performs manual clearing that is semantically implied by ownership — misleads readers.",
+          "UiState exposes both direct field access and method accessors for status_message."
+        ],
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "contract_coherence",
+        "identifier": "drop_impl_misleading_manual_clear",
+        "summary": "SpedImageApp::Drop impl manually clears fields that Rust drops automatically — creates false ordering contract",
+        "related_files": ["src/app/state.rs"],
+        "evidence": [
+          "Lines 89-97: Drop impl clears prefetch_cache, current_frame_delays, current_image, and calls renderer.clear_thumbnails().",
+          "In Rust, all fields are dropped automatically in reverse declaration order. The manual impl implies a specific drop-order dependency that does not exist (SpedImageApp is not behind Arc).",
+          "Readers infer 'order matters here' and may incorrectly propagate this pattern."
+        ],
+        "suggestion": "Remove the Drop impl unless there is a documented reason for explicit ordering (e.g. if Renderer must outlive thumbnails in the GPU). Add a comment explaining why if kept.",
+        "confidence": "medium",
+        "impact_scope": "function",
+        "fix_scope": "single_edit"
+      },
+      {
+        "dimension": "contract_coherence",
+        "identifier": "ui_state_mixed_status_access",
+        "summary": "UiState exposes both pub status_message field and set_status()/get_status() accessors — inconsistent write contract",
+        "related_files": ["src/ui.rs"],
+        "evidence": [
+          "status_message is pub (direct write possible).",
+          "set_status(), clear_status(), get_status() methods also exist.",
+          "Some callers in actions.rs use self.ui_state.set_status(...) while others may assign directly — no single authoritative path."
+        ],
+        "suggestion": "Make status_message pub(crate) or private and route all writes through set_status(). This makes the accessor the single contract for status changes.",
+        "confidence": "medium",
+        "impact_scope": "module",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Drop impl carried over from defensive C++ habits; status field made pub for convenience."],
+      "likely_symptoms": ["Subtle status message bugs when both access paths are used inconsistently."]
+    }
+  },
+  {
+    "batch": "cross_module_architecture",
+    "batch_index": 11,
+    "assessments": {
+      "cross_module_architecture": 68.0
+    },
+    "dimension_notes": {
+      "cross_module_architecture": {
+        "evidence": [
+          "src/app/ modularization is a clear architectural win improving boundary clarity.",
+          "STRIP_HEIGHT_PX is a GPU layout constant imported by events.rs for hit-testing — cross-layer dependency.",
+          "Two large hub files remain: gpu_renderer.rs (1560 LOC) and image_backend.rs (846 LOC)."
+        ],
+        "impact_scope": "subsystem",
+        "fix_scope": "multi_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "cross_module_architecture",
+        "identifier": "gpu_constant_in_event_layer",
+        "summary": "STRIP_HEIGHT_PX GPU layout constant is imported by event handler for mouse hit-testing",
+        "related_files": ["src/app/actions.rs", "src/gpu_renderer.rs"],
+        "evidence": [
+          "src/app/actions.rs line 3: `use crate::gpu_renderer::STRIP_HEIGHT_PX;` — an event handler importing a GPU pipeline constant.",
+          "This creates a hard dependency from the event layer on the GPU renderer's internal layout decisions."
+        ],
+        "suggestion": "Move STRIP_HEIGHT_PX to src/app/types.rs or expose it via a Renderer::strip_height() accessor so the event layer doesn't directly import GPU module internals.",
+        "confidence": "high",
+        "impact_scope": "module",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Constant placed in the most convenient module rather than the most appropriate boundary."],
+      "likely_symptoms": ["Forced import of gpu_renderer in any module that needs hit-testing layout."]
+    }
+  },
+  {
+    "batch": "dependency_health",
+    "batch_index": 12,
+    "assessments": {
+      "dependency_health": 70.0
+    },
+    "dimension_notes": {
+      "dependency_health": {
+        "evidence": [
+          "rayon is listed as a dependency but only the ThreadPool type is used as a dead field behind #[allow(dead_code)].",
+          "All actual parallelism uses std::thread::spawn.",
+          "Other dependencies (lru, notify, fast_image_resize, wgpu_glyph, bytemuck) all appear actively used."
+        ],
+        "impact_scope": "project",
+        "fix_scope": "single_edit",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "dependency_health",
+        "identifier": "rayon_unused_dependency",
+        "summary": "rayon crate is declared as a dependency but the ThreadPool field is dead and never instantiated",
+        "related_files": ["src/app/state.rs", "Cargo.toml"],
+        "evidence": [
+          "src/app/state.rs lines 42-43: `#[allow(dead_code)] pub(crate) thread_pool: Option<Arc<ThreadPool>>` — initialized to None on line 77, never set.",
+          "rayon is imported at the top of state.rs but no rayon parallel iterators or thread pool calls occur anywhere in the codebase."
+        ],
+        "suggestion": "Remove the thread_pool field and the rayon dependency from Cargo.toml. If parallel image processing is planned, add a TODO comment in services.rs instead.",
+        "confidence": "high",
+        "impact_scope": "project",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["rayon was added in anticipation of performance work that was never implemented."],
+      "likely_symptoms": ["Unnecessary compile time and binary size from unused crate."]
+    }
+  },
+  {
+    "batch": "convention_outlier",
+    "batch_index": 13,
+    "assessments": {
+      "convention_outlier": 65.0
+    },
+    "dimension_notes": {
+      "convention_outlier": {
+        "evidence": [
+          "Shader strings are inline const &str in gpu_renderer.rs while the font asset uses include_bytes! — inconsistent embed strategy.",
+          "show_context_menu_windows naming convention exists but do_copy_to_clipboard doesn't follow it."
+        ],
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor",
+        "confidence": "medium"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "convention_outlier",
+        "identifier": "inline_wgsl_vs_include_bytes",
+        "summary": "WGSL shaders are inline string constants while the font uses include_bytes! — mixed embed convention",
+        "related_files": ["src/gpu_renderer.rs"],
+        "evidence": [
+          "SHADER (lines 74-157) and CROP_SHADER (lines 159-193) are inline const &str literals.",
+          "Line 472: `const EMBEDDED_FONT: &[u8] = include_bytes!(\"../assets/Inter-Regular.ttf\")` — external file via include_bytes!.",
+          "The Rust convention for embedded GPU shaders is include_str!(\"shader.wgsl\") for syntax-highlight support and independent editability."
+        ],
+        "suggestion": "Extract shaders to src/shaders/image.wgsl and src/shaders/crop.wgsl, load with `include_str!(\"../shaders/image.wgsl\")`.",
+        "confidence": "medium",
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["WGSL shaders were small initially and inlined for convenience; never extracted as they grew."],
+      "likely_symptoms": ["No syntax highlighting or shader linting in IDE for the WGSL source."]
+    }
+  },
+  {
+    "batch": "ai_generated_debt",
+    "batch_index": 14,
+    "assessments": {
+      "ai_generated_debt": 72.0
+    },
+    "dimension_notes": {
+      "ai_generated_debt": {
+        "evidence": [
+          "lib.rs comment ratio is 0.31 vs codebase avg 0.092 — high comment density.",
+          "aspect_ratio() and pixel_count() are trivial one-liner methods with no callers outside tests.",
+          "Overall, restating comments are minimal in the main codebase."
+        ],
+        "impact_scope": "function",
+        "fix_scope": "single_edit",
+        "confidence": "medium"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "ai_generated_debt",
+        "identifier": "imagdata_trivial_oneliners",
+        "summary": "ImageData.aspect_ratio() and pixel_count() are trivial one-liners with no production callers",
+        "related_files": ["src/image_backend.rs"],
+        "evidence": [
+          "aspect_ratio() (lines 135-137): `self.width as f32 / self.height as f32` — never called outside tests.",
+          "pixel_count() (lines 140-142): `self.width * self.height` — never called outside tests.",
+          "Both methods add docstring overhead to trivial calculations that callers compute inline at the two places needed."
+        ],
+        "suggestion": "Remove both methods or keep them only if there are plans to use them in production rendering logic. Callers do the math inline at two spots; no DRY benefit justifies the method existence.",
+        "confidence": "medium",
+        "impact_scope": "function",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Boilerplate-style helper generation for every data struct field combination."],
+      "likely_symptoms": ["False sense of comprehensive API; minor API surface bloat."]
+    }
+  },
+  {
+    "batch": "initialization_coupling",
+    "batch_index": 15,
+    "assessments": {
+      "initialization_coupling": 60.0
+    },
+    "dimension_notes": {
+      "initialization_coupling": {
+        "evidence": [
+          "Renderer::new does file I/O at construction (font file read).",
+          "Font path is a hardcoded absolute Windows path.",
+          "No module-level side effects at import time."
+        ],
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "initialization_coupling",
+        "identifier": "hardcoded_font_path_construction",
+        "summary": "Renderer::new hardcodes C:\\Windows\\Fonts\\segoeui.ttf as an absolute path read at construction time",
+        "related_files": ["src/gpu_renderer.rs"],
+        "evidence": [
+          "Line 473: `std::fs::read(\"C:\\\\Windows\\\\Fonts\\\\segoeui.ttf\")` — absolute OS-specific path baked into constructor.",
+          "Fails silently on non-Windows or Windows Server without Segoe UI, falling back to embedded font with no diagnostic message.",
+          "Cannot be overridden via configuration or environment variable."
+        ],
+        "suggestion": "Accept an optional font path parameter in Renderer::new(), or read from an env var (SPEDIMAGE_FONT_PATH), with the embedded Inter as documented fallback. Add a tracing::info! when falling back.",
+        "confidence": "high",
+        "impact_scope": "module",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Font path was hardcoded as a quick Windows-first implementation."],
+      "likely_symptoms": ["Silent font fallback with no user feedback; fragile on non-standard Windows installs."]
+    }
+  },
+  {
+    "batch": "incomplete_migration",
+    "batch_index": 16,
+    "assessments": {
+      "incomplete_migration": 55.0
+    },
+    "dimension_notes": {
+      "incomplete_migration": {
+        "evidence": [
+          "CROP_SHADER defines CropUniforms struct with x/y/w/h but the fragment shader never reads them.",
+          "The crop overlay renders a flat 50% black regardless of the actual crop rect.",
+          "No stale TODO markers for migration tasks."
+        ],
+        "impact_scope": "subsystem",
+        "fix_scope": "single_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "incomplete_migration",
+        "identifier": "crop_shader_uniforms_unused",
+        "summary": "CROP_SHADER defines CropUniforms with x/y/w/h but the fragment shader ignores them entirely",
+        "related_files": ["src/gpu_renderer.rs"],
+        "evidence": [
+          "CROP_SHADER struct (lines 164-169): `struct CropUniforms { x: f32, y: f32, w: f32, h: f32 }` — bound at group 0 binding 0.",
+          "Fragment shader (lines 185-192): returns `vec4(0.0, 0.0, 0.0, 0.5)` unconditionally — crop rect values are never read.",
+          "The crop pipeline layout is also empty (`push_constant_ranges: &[]`, `bind_group_layouts: &[]` at line 433) — the CropUniforms binding in the shader is dead."
+        ],
+        "suggestion": "Either complete the crop overlay shader (use crop rect to darken only the areas outside the crop box) or remove the CropUniforms struct from the WGSL and document that the pipeline uses scissor rects instead.",
+        "confidence": "high",
+        "impact_scope": "module",
+        "fix_scope": "single_file_refactor"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Crop pipeline was scaffolded with placeholder shader before the overlay logic was implemented."],
+      "likely_symptoms": ["Visually broken crop overlay — user cannot see the actual crop boundaries."]
+    }
+  },
+  {
+    "batch": "package_organization",
+    "batch_index": 17,
+    "assessments": {
+      "package_organization": 60.0
+    },
+    "dimension_notes": {
+      "package_organization": {
+        "evidence": [
+          "src/app/ split is well-organized.",
+          "gpu_renderer.rs and image_backend.rs are large monoliths that could each become a subdirectory.",
+          "ThumbnailEntry lives between shader constants and the Renderer struct with no grouping."
+        ],
+        "impact_scope": "subsystem",
+        "fix_scope": "multi_file_refactor",
+        "confidence": "medium"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "package_organization",
+        "identifier": "gpu_renderer_needs_subpackage",
+        "summary": "gpu_renderer.rs (1560 LOC) should be decomposed into a src/render/ package like app/ was",
+        "related_files": ["src/gpu_renderer.rs"],
+        "evidence": [
+          "1560 LOC complexity score 623 — the largest file by both metrics.",
+          "Contains: WGSL shader sources, vertex/uniform type definitions, ThumbnailEntry, Renderer struct, image pipeline, crop pipeline, thumbnail strip rendering, text rendering.",
+          "Each of these is a distinct deliverable that would benefit from isolation."
+        ],
+        "suggestion": "Create src/render/mod.rs, src/render/pipeline.rs (image+crop pipeline setup), src/render/thumbnails.rs (ThumbnailEntry + thumbnail strip encoding), src/render/text.rs (GlyphBrush + font loading). Follow the src/app/ decomposition pattern.",
+        "confidence": "medium",
+        "impact_scope": "subsystem",
+        "fix_scope": "multi_file_refactor"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["gpu_renderer.rs grew organically without applying the modularization lesson from src/app/."],
+      "likely_symptoms": ["High merge conflict rate on gpu_renderer.rs; difficulty onboarding new contributors."]
+    }
+  },
+  {
+    "batch": "api_surface_coherence",
+    "batch_index": 18,
+    "assessments": {
+      "api_surface_coherence": 65.0
+    },
+    "dimension_notes": {
+      "api_surface_coherence": {
+        "evidence": [
+          "AppEvent is a clean sealed enum with well-typed variants.",
+          "UiState mixes pub field access and method accessors for status_message.",
+          "Most public functions have clear parameter signatures."
+        ],
+        "impact_scope": "module",
+        "fix_scope": "single_edit",
+        "confidence": "medium"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "api_surface_coherence",
+        "identifier": "ui_state_dual_status_api",
+        "summary": "UiState has both a pub status_message field and set_status()/get_status() methods — two write paths for the same data",
+        "related_files": ["src/ui.rs"],
+        "evidence": [
+          "status_message: pub — callers can assign directly.",
+          "set_status(), clear_status(), get_status() methods in UiState impl also exist.",
+          "Dual write contract means callers may bypass the method (which could contain additional logic in future) without any compiler warning."
+        ],
+        "suggestion": "Narrow status_message to pub(crate) or private and enforce all writes via set_status(). This makes the accessor the single, stable contract.",
+        "confidence": "medium",
+        "impact_scope": "module",
+        "fix_scope": "single_edit"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["status_message was made pub for convenience before accessor methods were added."],
+      "likely_symptoms": ["Status update logic bypassed; future set_status() enhancements silently skipped by direct-write callers."]
+    }
+  },
+  {
+    "batch": "logic_clarity",
+    "batch_index": 19,
+    "assessments": {
+      "logic_clarity": 58.0
+    },
+    "dimension_notes": {
+      "logic_clarity": {
+        "evidence": [
+          "Most control flow is explicit and well-structured.",
+          "Crop shader uniform bindings are disconnected from the pipeline layout (empty bind_group_layouts) — the shader declares bindings that can never be satisfied.",
+          "Navigation key repeat/non-repeat branches duplicate the nav function call."
+        ],
+        "impact_scope": "function",
+        "fix_scope": "single_file_refactor",
+        "confidence": "high"
+      }
+    },
+    "issues": [
+      {
+        "dimension": "logic_clarity",
+        "identifier": "crop_pipeline_layout_binding_mismatch",
+        "summary": "CROP_SHADER declares a uniform binding but the crop_pipeline_layout has no bind group layouts",
+        "related_files": ["src/gpu_renderer.rs"],
+        "evidence": [
+          "CROP_SHADER (line 171): `@group(0) @binding(0) var<uniform> crop: CropUniforms;` — declares a uniform requirement.",
+          "crop_pipeline_layout (line 431-435): `bind_group_layouts: &[]` — no layouts registered.",
+          "This means the shader declares a binding that the pipeline layout doesn't satisfy — a structural lie that wgpu may catch at runtime or silently allow (as the fragment shader never reads the value)."
+        ],
+        "suggestion": "Either register a CropUniforms bind group layout in the crop_pipeline_layout (and actually pass the crop rect), or remove the uniform declaration from CROP_SHADER and use a push constant or pass data via vertex buffers.",
+        "confidence": "high",
+        "impact_scope": "function",
+        "fix_scope": "single_file_refactor"
+      }
+    ],
+    "retrospective": {
+      "root_causes": ["Crop shader was scaffolded with bindings before the pipeline layout was finalized."],
+      "likely_symptoms": ["Potential wgpu validation error at runtime on strict backends; invisible crop overlay."]
+    }
+  },
+  {
+    "batch": "authorization_consistency",
+    "batch_index": 20,
+    "assessments": {
+      "authorization_consistency": 100.0
+    },
+    "dimension_notes": {
+      "authorization_consistency": {
+        "evidence": [
+          "SpedImage is a native desktop image viewer. No authentication, authorization, route handlers, or permission model applies."
+        ],
+        "impact_scope": "none",
+        "fix_scope": "none",
+        "confidence": "high"
+      }
+    },
+    "issues": [],
+    "retrospective": {
+      "root_causes": [],
+      "likely_symptoms": []
+    }
+  }
+]

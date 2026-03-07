@@ -1,4 +1,4 @@
-use crate::app::types::{AppEvent, WakeUp};
+use crate::app::types::{AppEvent, WakeUp, KeyModifiers};
 use crate::gpu_renderer::Renderer;
 use crate::image_backend::ImageData;
 use crate::ui::UiState;
@@ -28,23 +28,17 @@ pub struct SpedImageApp {
     pub(crate) event_proxy: Option<EventLoopProxy<WakeUp>>,
     pub(crate) mouse_drag_start: Option<PhysicalPosition<f64>>,
     pub(crate) last_cursor_pos: PhysicalPosition<f64>,
-    pub(crate) show_help: bool,
-    pub(crate) show_sidebar: bool,
     pub(crate) prefetch_cache: LruCache<PathBuf, Vec<ImageData>>,
     pub(crate) prefetch_active: Arc<AtomicUsize>,
     pub(crate) initial_path: Option<PathBuf>,
-    pub(crate) ctrl_pressed: bool,
-    pub(crate) shift_pressed: bool,
     pub(crate) held_navigation_key: Option<char>,
     pub(crate) last_advance_time: Option<std::time::Instant>,
-    pub(crate) show_thumbnail_strip: bool,
     pub(crate) thumb_active: Arc<AtomicUsize>,
     pub(crate) thumb_paths: Vec<PathBuf>,
     pub(crate) slideshow_active: bool,
     pub(crate) slideshow_interval: std::time::Duration,
     pub(crate) slideshow_next_time: Option<std::time::Instant>,
-    pub(crate) alt_pressed: bool,
-    pub(crate) show_histogram: bool,
+    pub(crate) modifiers: KeyModifiers,
     #[allow(dead_code)]
     pub(crate) thread_pool: Option<Arc<ThreadPool>>,
     #[allow(dead_code)]
@@ -69,23 +63,17 @@ impl SpedImageApp {
             event_proxy: None,
             mouse_drag_start: None,
             last_cursor_pos: PhysicalPosition::new(0.0, 0.0),
-            show_help: false,
-            show_sidebar: false,
             prefetch_cache: LruCache::new(std::num::NonZeroUsize::new(50).unwrap()),
             prefetch_active: Arc::new(AtomicUsize::new(0)),
             initial_path: None,
-            ctrl_pressed: false,
             held_navigation_key: None,
             last_advance_time: None,
-            show_thumbnail_strip: true,
             thumb_active: Arc::new(AtomicUsize::new(0)),
             thumb_paths: Vec::new(),
             slideshow_active: false,
             slideshow_interval: std::time::Duration::from_secs(5),
             slideshow_next_time: None,
-            alt_pressed: false,
-            shift_pressed: false,
-            show_histogram: false,
+            modifiers: KeyModifiers::default(),
             thread_pool: None,
             file_watcher: None,
         }
@@ -120,6 +108,25 @@ mod tests {
         assert!(app.renderer.is_none());
         assert!(!app.loading);
         assert!(app.dirty);
-        assert!(!app.show_help);
+        assert!(!app.ui_state.show_help);
+    }
+
+    #[test]
+    fn test_app_default() {
+        let app1 = SpedImageApp::new();
+        let app2 = SpedImageApp::default();
+        // Just verify some key fields to ensure default() behaves like new()
+        assert_eq!(app1.loading, app2.loading);
+        assert_eq!(app1.dirty, app2.dirty);
+        assert_eq!(app1.ui_state.show_help, app2.ui_state.show_help);
+        assert_eq!(app1.slideshow_interval, app2.slideshow_interval);
+    }
+
+    #[test]
+    fn test_key_modifiers_default() {
+        let mods = KeyModifiers::default();
+        assert!(!mods.ctrl);
+        assert!(!mods.shift);
+        assert!(!mods.alt);
     }
 }
