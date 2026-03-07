@@ -1,0 +1,46 @@
+{
+  "batch": "initialization_coupling",
+  "batch_index": 15,
+  "assessments": {
+    "initialization_coupling": 60.0
+  },
+  "dimension_notes": {
+    "initialization_coupling": {
+      "evidence": [
+        "Renderer::new does file I/O at construction (font file read).",
+        "Font path is a hardcoded absolute Windows path.",
+        "No module-level side effects at import time."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "initialization_coupling",
+      "identifier": "hardcoded_font_path_construction",
+      "summary": "Renderer::new hardcodes C:\\Windows\\Fonts\\segoeui.ttf as an absolute path read at construction time",
+      "related_files": [
+        "src/gpu_renderer.rs"
+      ],
+      "evidence": [
+        "Line 473: `std::fs::read(\"C:\\\\Windows\\\\Fonts\\\\segoeui.ttf\")` — absolute OS-specific path baked into constructor.",
+        "Fails silently on non-Windows or Windows Server without Segoe UI, falling back to embedded font with no diagnostic message.",
+        "Cannot be overridden via configuration or environment variable."
+      ],
+      "suggestion": "Accept an optional font path parameter in Renderer::new(), or read from an env var (SPEDIMAGE_FONT_PATH), with the embedded Inter as documented fallback. Add a tracing::info! when falling back.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Font path was hardcoded as a quick Windows-first implementation."
+    ],
+    "likely_symptoms": [
+      "Silent font fallback with no user feedback; fragile on non-standard Windows installs."
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "batch": "incomplete_migration",
+  "batch_index": 16,
+  "assessments": {
+    "incomplete_migration": 55.0
+  },
+  "dimension_notes": {
+    "incomplete_migration": {
+      "evidence": [
+        "CROP_SHADER defines CropUniforms struct with x/y/w/h but the fragment shader never reads them.",
+        "The crop overlay renders a flat 50% black regardless of the actual crop rect.",
+        "No stale TODO markers for migration tasks."
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "single_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "incomplete_migration",
+      "identifier": "crop_shader_uniforms_unused",
+      "summary": "CROP_SHADER defines CropUniforms with x/y/w/h but the fragment shader ignores them entirely",
+      "related_files": [
+        "src/gpu_renderer.rs"
+      ],
+      "evidence": [
+        "CROP_SHADER struct (lines 164-169): `struct CropUniforms { x: f32, y: f32, w: f32, h: f32 }` — bound at group 0 binding 0.",
+        "Fragment shader (lines 185-192): returns `vec4(0.0, 0.0, 0.0, 0.5)` unconditionally — crop rect values are never read.",
+        "The crop pipeline layout is also empty (`push_constant_ranges: &[]`, `bind_group_layouts: &[]` at line 433) — the CropUniforms binding in the shader is dead."
+      ],
+      "suggestion": "Either complete the crop overlay shader (use crop rect to darken only the areas outside the crop box) or remove the CropUniforms struct from the WGSL and document that the pipeline uses scissor rects instead.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Crop pipeline was scaffolded with placeholder shader before the overlay logic was implemented."
+    ],
+    "likely_symptoms": [
+      "Visually broken crop overlay — user cannot see the actual crop boundaries."
+    ]
+  }
+}

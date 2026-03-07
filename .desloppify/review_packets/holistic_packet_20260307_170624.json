@@ -458,9 +458,9 @@
           "cyclomatic_hotspots": 0
         },
         {
-          "file": "src/app/actions.rs",
-          "loc": 1216.0,
-          "complexity_score": 319.0,
+          "file": "src/app/events.rs",
+          "loc": 567.0,
+          "complexity_score": 508.0,
           "signals": [],
           "component_count": 0,
           "function_count": 0,
@@ -468,9 +468,9 @@
           "cyclomatic_hotspots": 0
         },
         {
-          "file": "src/app/events.rs",
-          "loc": 573.0,
-          "complexity_score": 308.0,
+          "file": "src/app/actions.rs",
+          "loc": 1172.0,
+          "complexity_score": 319.0,
           "signals": [],
           "component_count": 0,
           "function_count": 0,
@@ -559,9 +559,9 @@
           "cyclomatic_hotspots": 0
         },
         {
-          "file": "src/app/actions.rs",
-          "loc": 1216.0,
-          "complexity_score": 319.0,
+          "file": "src/app/events.rs",
+          "loc": 567.0,
+          "complexity_score": 508.0,
           "signals": [],
           "component_count": 0,
           "function_count": 0,
@@ -569,9 +569,9 @@
           "cyclomatic_hotspots": 0
         },
         {
-          "file": "src/app/events.rs",
-          "loc": 573.0,
-          "complexity_score": 308.0,
+          "file": "src/app/actions.rs",
+          "loc": 1172.0,
+          "complexity_score": 319.0,
           "signals": [],
           "component_count": 0,
           "function_count": 0,
@@ -603,7 +603,7 @@
         {
           "file": "src/ui.rs",
           "kind": "orphaned",
-          "loc": 432
+          "loc": 388
         },
         {
           "file": "src/main.rs",
@@ -618,12 +618,12 @@
         {
           "file": "src/app/actions.rs",
           "kind": "orphaned",
-          "loc": 1216
+          "loc": 1172
         },
         {
           "file": "src/app/events.rs",
           "kind": "orphaned",
-          "loc": 573
+          "loc": 567
         },
         {
           "file": "src/app/services.rs",
@@ -633,7 +633,7 @@
         {
           "file": "src/app/state.rs",
           "kind": "orphaned",
-          "loc": 132
+          "loc": 113
         },
         {
           "file": "src/app/types.rs",
@@ -643,7 +643,7 @@
       ],
       "large_file_distribution": {
         "count": 4,
-        "median_loc": 1216,
+        "median_loc": 1172,
         "p90_loc": 1560,
         "p99_loc": 1560
       },
@@ -757,7 +757,7 @@
       "package_size_census": [
         {
           "package": "src",
-          "loc": 4202,
+          "loc": 4152,
           "pct_of_total": 100.0,
           "disproportionate": true
         }
@@ -805,8 +805,8 @@
       ],
       "src/ui.rs": [
         "responsibility_cohesion: 6 disconnected function clusters (23 functions) \u2014 likely mixed responsibilities",
-        "orphaned: Orphaned file (432 LOC): zero importers, not an entry point",
-        "test_coverage: Untested module (432 LOC, 0 importers) \u2014 no test files found",
+        "orphaned: Orphaned file (388 LOC): zero importers, not an entry point",
+        "test_coverage: Untested module (388 LOC, 0 importers) \u2014 no test files found",
         "unused: Unused import: *"
       ],
       "src/lib.rs": [
@@ -824,29 +824,29 @@
         "unused: Unused import: {SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST}"
       ],
       "src/app/actions.rs": [
-        "structural: Large file: large (1216 LOC) / complexity score 319",
+        "structural: Large file: large (1172 LOC) / complexity score 319",
         "unused: Unused import: {send_event, AppEvent}",
         "unused: Unused import: {Path, PathBuf}",
         "unused: Unused import: {KeyEvent, MouseScrollDelta}",
         "unused: Unused import: {Key, NamedKey}",
-        "orphaned: Orphaned file (1216 LOC): zero importers, not an entry point",
-        "test_coverage: Untested module (1216 LOC, 0 importers) \u2014 no test files found",
+        "unused: Unused import: {\r\n                CloseClipboard, EmptyClipboard, OpenClipboard,",
+        "orphaned: Orphaned file (1172 LOC): zero importers, not an entry point",
+        "test_coverage: Untested module (1172 LOC, 0 importers) \u2014 no test files found",
         "unused: Unused import: {\r\n                    SystemParametersInfoW, SPIF_SENDWININICHAN",
-        "unused: Unused import: {\r\n                AppendMenuW, CreatePopupMenu, TrackPopupMenu, ",
+        "unused: Unused import: {\r\n                    AppendMenuW, CreatePopupMenu, TrackPopupMe",
         "unused: Unused import: {BITMAPINFOHEADER, BI_RGB}",
-        "unused: Unused import: {\r\n            CloseClipboard, EmptyClipboard, OpenClipboard, Set",
         "unused: Unused import: {GlobalAlloc, GlobalLock, GlobalUnlock, GHND}",
         "unused: Unused import: *"
       ],
       "src/app/events.rs": [
-        "structural: Large file: large (573 LOC) / complexity score 308",
+        "structural: Large file: large (567 LOC) / complexity score 508",
         "unused: Unused import: {AppEvent, WakeUp, APP_ICON}",
         "unused: Unused import: {Renderer, STRIP_HEIGHT_PX}",
         "unused: Unused import: {ElementState, MouseButton, WindowEvent}",
         "unused: Unused import: {ActiveEventLoop, EventLoop}",
         "unused: Unused import: {Icon, Window, WindowId}",
-        "orphaned: Orphaned file (573 LOC): zero importers, not an entry point",
-        "test_coverage: Untested module (573 LOC, 0 importers) \u2014 no test files found"
+        "orphaned: Orphaned file (567 LOC): zero importers, not an entry point",
+        "test_coverage: Untested module (567 LOC, 0 importers) \u2014 no test files found"
       ],
       "src/app/mod.rs": [
         "unused: Unused import: SpedImageApp",
@@ -863,8 +863,8 @@
         "unused: Unused import: {AppEvent, WakeUp, KeyModifiers}",
         "unused: Unused import: {self, Receiver, Sender}",
         "signature: 'new' has 3 different signatures across 3 files",
-        "orphaned: Orphaned file (132 LOC): zero importers, not an entry point",
-        "test_coverage: Untested module (132 LOC, 0 importers) \u2014 no test files found",
+        "orphaned: Orphaned file (113 LOC): zero importers, not an entry point",
+        "test_coverage: Untested module (113 LOC, 0 importers) \u2014 no test files found",
         "unused: Unused import: *"
       ],
       "src/app/types.rs": [
@@ -1054,8 +1054,8 @@
       ],
       "files_to_read": [
         "src/gpu_renderer.rs",
-        "src/app/actions.rs",
         "src/app/events.rs",
+        "src/app/actions.rs",
         "src/image_backend.rs",
         "src/app/state.rs",
         "src/ui.rs",
@@ -1074,8 +1074,8 @@
       ],
       "files_to_read": [
         "src/gpu_renderer.rs",
-        "src/app/actions.rs",
         "src/app/events.rs",
+        "src/app/actions.rs",
         "src/image_backend.rs",
         "src/app/state.rs",
         "src/ui.rs",
@@ -1104,7 +1104,7 @@
           "evidence": [
             "Flagged by: orphaned, signature",
             "[signature] 'new' has 3 different signatures across 3 files",
-            "[orphaned] Orphaned file (132 LOC): zero importers, not an entry point"
+            "[orphaned] Orphaned file (113 LOC): zero importers, not an entry point"
           ]
         },
         {
@@ -1147,7 +1147,7 @@
           "evidence": [
             "Flagged by: orphaned, responsibility_cohesion",
             "[responsibility_cohesion] 6 disconnected function clusters (23 functions) \u2014 likely mixed responsibilities",
-            "[orphaned] Orphaned file (432 LOC): zero importers, not an entry point"
+            "[orphaned] Orphaned file (388 LOC): zero importers, not an entry point"
           ]
         },
         {
@@ -1157,21 +1157,21 @@
           "question": "Can the nesting be reduced with early returns, guard clauses, or extraction into helper functions? Is this file truly dead, or is it used via a non-import mechanism (dynamic import, CLI entry point, plugin)?",
           "evidence": [
             "Flagged by: orphaned, structural",
-            "File size: 1216 lines",
+            "File size: 1172 lines",
             "Max nesting depth: 9",
-            "[structural] Large file: large (1216 LOC) / complexity score 319"
+            "[structural] Large file: large (1172 LOC) / complexity score 319"
           ]
         },
         {
           "type": "structural_complexity",
           "file": "src/app/events.rs",
-          "summary": "Structural complexity: nesting depth 8",
+          "summary": "Structural complexity: nesting depth 12",
           "question": "Can the nesting be reduced with early returns, guard clauses, or extraction into helper functions? Is this file truly dead, or is it used via a non-import mechanism (dynamic import, CLI entry point, plugin)?",
           "evidence": [
             "Flagged by: orphaned, structural",
-            "File size: 573 lines",
-            "Max nesting depth: 8",
-            "[structural] Large file: large (573 LOC) / complexity score 308"
+            "File size: 567 lines",
+            "Max nesting depth: 12",
+            "[structural] Large file: large (567 LOC) / complexity score 508"
           ]
         },
         {
@@ -1401,5 +1401,323 @@
     "commit_pr": 0,
     "commit_default_branch": "",
     "commit_message_template": "desloppify: {status} {count} issue(s) \u2014 {summary}"
-  }
+  },
+  "narrative": {
+    "phase": "stagnation",
+    "headline": "All T1 items cleared!",
+    "dimensions": {
+      "lowest_dimensions": [
+        {
+          "name": "Naming quality",
+          "strict": 0.0,
+          "failing": 0,
+          "impact": 0.0,
+          "subjective": true,
+          "impact_description": "re-review to improve"
+        },
+        {
+          "name": "Logic clarity",
+          "strict": 0.0,
+          "failing": 0,
+          "impact": 0.0,
+          "subjective": true,
+          "impact_description": "re-review to improve"
+        },
+        {
+          "name": "Type safety",
+          "strict": 0.0,
+          "failing": 0,
+          "impact": 0.0,
+          "subjective": true,
+          "impact_description": "re-review to improve"
+        }
+      ],
+      "biggest_gap_dimensions": [],
+      "stagnant_dimensions": [
+        {
+          "name": "Security",
+          "strict": 100.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "File health",
+          "strict": 74.5,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Duplication",
+          "strict": 100.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Test health",
+          "strict": 0.3,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Naming quality",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Logic clarity",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Type safety",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Contracts",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Error consistency",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Abstraction fit",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "AI generated debt",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "High elegance",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Mid elegance",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Low elegance",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Cross-module arch",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Init coupling",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Convention drift",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Dep health",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Test strategy",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "API coherence",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Auth consistency",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Stale migration",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Structure nav",
+          "strict": 0.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Design coherence",
+          "strict": 0.0,
+          "stuck_scans": 5
+        }
+      ]
+    },
+    "actions": [
+      {
+        "type": "reorganize",
+        "detector": "orphaned",
+        "count": 10,
+        "description": "10 orphaned issues \u2014 delete dead files or relocate with `desloppify move`",
+        "command": "desloppify show orphaned --status open",
+        "impact": 0.0,
+        "dimension": "Code quality",
+        "priority": 1,
+        "lane": "restructure"
+      },
+      {
+        "type": "refactor",
+        "detector": "structural",
+        "count": 4,
+        "description": "4 structural issues \u2014 review large files \u2014 split only when responsibilities are clearly separable",
+        "command": "desloppify show structural --status open",
+        "impact": 0.0,
+        "dimension": "File health",
+        "priority": 2,
+        "lane": "refactor"
+      },
+      {
+        "type": "refactor",
+        "detector": "test_coverage",
+        "count": 10,
+        "description": "10 test_coverage issues \u2014 add tests for untested production modules \u2014 prioritize by import count",
+        "command": "desloppify show test_coverage --status open",
+        "impact": 0.0,
+        "dimension": "Test health",
+        "priority": 3,
+        "lane": "test_coverage"
+      },
+      {
+        "type": "refactor",
+        "detector": "signature",
+        "count": 1,
+        "description": "1 signature issues \u2014 consolidate inconsistent function signatures",
+        "command": "desloppify show signature --status open",
+        "impact": 0.0,
+        "dimension": "Unknown",
+        "priority": 4,
+        "lane": "refactor"
+      },
+      {
+        "type": "refactor",
+        "detector": "responsibility_cohesion",
+        "count": 1,
+        "description": "1 responsibility_cohesion issues \u2014 split modules with too many responsibilities \u2014 extract focused sub-modules",
+        "command": "desloppify show responsibility_cohesion --status open",
+        "impact": 0.0,
+        "dimension": "Code quality",
+        "priority": 5,
+        "lane": "refactor"
+      },
+      {
+        "type": "manual_fix",
+        "detector": "unused",
+        "count": 42,
+        "description": "42 unused issues \u2014 inspect with `desloppify next` and fix manually",
+        "command": "desloppify show unused --status open",
+        "impact": 0.0,
+        "dimension": "Code quality",
+        "priority": 6,
+        "lane": "refactor"
+      }
+    ],
+    "strategy": {
+      "fixer_leverage": {
+        "auto_fixable_count": 0,
+        "total_count": 68,
+        "coverage": 0.0,
+        "impact_ratio": 0.0,
+        "recommendation": "none"
+      },
+      "lanes": {
+        "restructure": {
+          "actions": [
+            1
+          ],
+          "file_count": 10,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "refactor": {
+          "actions": [
+            2,
+            4,
+            5,
+            6
+          ],
+          "file_count": 10,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "test_coverage": {
+          "actions": [
+            3
+          ],
+          "file_count": 10,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        }
+      },
+      "can_parallelize": true,
+      "hint": "3 independent workstreams, safe to parallelize. Rescan after each phase to verify."
+    },
+    "tools": {
+      "fixers": [],
+      "move": {
+        "available": true,
+        "relevant": true,
+        "reason": "10 orphaned files",
+        "usage": "desloppify move <source> <dest> [--dry-run]"
+      },
+      "plan": {
+        "command": "desloppify plan",
+        "description": "Generate prioritized markdown cleanup plan"
+      },
+      "badge": {
+        "generated": true,
+        "in_readme": true,
+        "path": "scorecard.png",
+        "recommendation": null
+      }
+    },
+    "debt": {
+      "overall_gap": 0.0,
+      "wontfix_count": 0,
+      "worst_dimension": null,
+      "worst_gap": 0.0,
+      "trend": "stable"
+    },
+    "milestone": "All T1 items cleared!",
+    "primary_action": {
+      "command": "desloppify show orphaned --status open",
+      "description": "10 orphaned issues \u2014 delete dead files or relocate with `desloppify move`"
+    },
+    "why_now": "3 independent workstreams, safe to parallelize. Rescan after each phase to verify.",
+    "verification_step": {
+      "command": "desloppify scan",
+      "reason": "revalidate after changes"
+    },
+    "risk_flags": [],
+    "strict_target": {
+      "target": 95.0,
+      "current": 18.1,
+      "gap": 76.9,
+      "state": "below",
+      "warning": null
+    },
+    "reminders": [],
+    "reminder_history": {
+      "report_scores": 14,
+      "feedback_nudge": 3,
+      "review_issues_pending": 3,
+      "stagnant_nudge": 24
+    }
+  },
+  "next_command": "desloppify review --prepare"
 }

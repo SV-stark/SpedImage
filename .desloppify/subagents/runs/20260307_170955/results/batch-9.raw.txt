@@ -1,0 +1,45 @@
+{
+  "batch": "type_safety",
+  "batch_index": 9,
+  "assessments": {
+    "type_safety": 65.0
+  },
+  "dimension_notes": {
+    "type_safety": {
+      "evidence": [
+        "Rust's type system handles most safety automatically via Result and Option.",
+        "ImageData.path: String allows non-UTF-8 paths to silently lose data.",
+        "load() can return Ok(Vec<>) from the GIF path if no frames decode successfully — callers may panic on [0] access."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "type_safety",
+      "identifier": "load_may_return_empty_vec",
+      "summary": "ImageBackend::load() may return Ok([]) via the GIF branch — callers assume non-empty",
+      "related_files": [
+        "src/image_backend.rs"
+      ],
+      "evidence": [
+        "Lines 164-194: GIF branch builds results from frames, guarded by `if !frames.is_empty()`. If empty, it falls through to load_standard which may succeed.",
+        "Caller in events.rs indexes frames[0] on ImageLoaded — a GIF with zero decodeable frames could reach this code path and panic."
+      ],
+      "suggestion": "Change the return type contract: either validate `!frames.is_empty()` before returning Ok, or define a `NonEmptyVec<ImageData>` newtype to enforce the invariant at the type level.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "GIF fallthrough was added without considering the zero-frame case."
+    ],
+    "likely_symptoms": [
+      "Panic on corrupted or empty GIF files."
+    ]
+  }
+}

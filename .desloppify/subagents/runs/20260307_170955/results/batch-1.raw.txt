@@ -1,0 +1,80 @@
+{
+  "batch": "test_strategy",
+  "batch_index": 1,
+  "assessments": {
+    "test_strategy": 28.0
+  },
+  "dimension_notes": {
+    "test_strategy": {
+      "evidence": [
+        "services.rs (143 LOC) contains the entire background thumbnail loading and prefetch concurrency loop — no tests.",
+        "gpu_renderer.rs (1560 LOC, complexity 623) has no test block — pure math helpers like thumbnail_index_at are untested.",
+        "events.rs (567 LOC) processes all AppEvent dispatch and animation loops — no tests.",
+        "image_backend.rs has reasonable unit tests following recent additions.",
+        "state.rs and actions.rs now have basic tests added in last session."
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "test_strategy",
+      "identifier": "services_zero_coverage",
+      "summary": "services.rs background thumbnail-load and prefetch logic has no tests",
+      "related_files": [
+        "src/app/services.rs"
+      ],
+      "evidence": [
+        "No #[cfg(test)] block in services.rs. load_thumbnails_for_dir contains non-trivial AtomicUsize throttle logic (spin-wait loop, concurrent thread spawn) that is entirely untested.",
+        "prefetch_adjacent also unverified — a bug in the cache interaction or concurrency throttle would be invisible to CI."
+      ],
+      "suggestion": "Add unit tests for prefetch_adjacent (mock event channel) and load_thumbnails_for_dir (verify AtomicUsize never exceeds MAX_THUMB_THREADS).",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "test_addition"
+    },
+    {
+      "dimension": "test_strategy",
+      "identifier": "gpu_renderer_zero_coverage",
+      "summary": "gpu_renderer.rs has no unit tests — thumbnail_index_at and encode helpers are untested",
+      "related_files": [
+        "src/gpu_renderer.rs"
+      ],
+      "evidence": [
+        "No #[cfg(test)] block in gpu_renderer.rs.",
+        "thumbnail_index_at is pure math that could carry a fence-post error undetected.",
+        "encode_image and encode_thumbnail_strip contain conditional rendering paths with no coverage."
+      ],
+      "suggestion": "Extract thumbnail_index_at as a testable free function and add unit tests for it. Add smoke tests for load_image and upload_thumbnail using a mock wgpu instance or the existing test helpers.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "test_addition"
+    },
+    {
+      "dimension": "test_strategy",
+      "identifier": "events_dispatch_zero_coverage",
+      "summary": "events.rs process_events dispatch loop has no tests",
+      "related_files": [
+        "src/app/events.rs"
+      ],
+      "evidence": [
+        "No #[cfg(test)] block in events.rs.",
+        "process_events drains the mpsc channel and is the main AppEvent dispatcher — a regression would be hard to pinpoint without tests."
+      ],
+      "suggestion": "Write unit tests for process_events that push events through the mpsc channel and verify state changes (e.g. ImageLoaded sets current_image, SetStatus sets status_message).",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "test_addition"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Test additions focused on state.rs and actions.rs but missed the concurrency-heavy services module and the UI rendering pipeline."
+    ],
+    "likely_symptoms": [
+      "Silent regressions in thumbnail loading and background file watching."
+    ]
+  }
+}

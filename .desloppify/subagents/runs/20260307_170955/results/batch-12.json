@@ -1,0 +1,46 @@
+{
+  "batch": "dependency_health",
+  "batch_index": 12,
+  "assessments": {
+    "dependency_health": 70.0
+  },
+  "dimension_notes": {
+    "dependency_health": {
+      "evidence": [
+        "rayon is listed as a dependency but only the ThreadPool type is used as a dead field behind #[allow(dead_code)].",
+        "All actual parallelism uses std::thread::spawn.",
+        "Other dependencies (lru, notify, fast_image_resize, wgpu_glyph, bytemuck) all appear actively used."
+      ],
+      "impact_scope": "project",
+      "fix_scope": "single_edit",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "dependency_health",
+      "identifier": "rayon_unused_dependency",
+      "summary": "rayon crate is declared as a dependency but the ThreadPool field is dead and never instantiated",
+      "related_files": [
+        "src/app/state.rs",
+        "Cargo.toml"
+      ],
+      "evidence": [
+        "src/app/state.rs lines 42-43: `#[allow(dead_code)] pub(crate) thread_pool: Option<Arc<ThreadPool>>` — initialized to None on line 77, never set.",
+        "rayon is imported at the top of state.rs but no rayon parallel iterators or thread pool calls occur anywhere in the codebase."
+      ],
+      "suggestion": "Remove the thread_pool field and the rayon dependency from Cargo.toml. If parallel image processing is planned, add a TODO comment in services.rs instead.",
+      "confidence": "high",
+      "impact_scope": "project",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "rayon was added in anticipation of performance work that was never implemented."
+    ],
+    "likely_symptoms": [
+      "Unnecessary compile time and binary size from unused crate."
+    ]
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "batch": "abstraction_fitness",
+  "batch_index": 8,
+  "assessments": {
+    "abstraction_fitness": 60.0
+  },
+  "dimension_notes": {
+    "abstraction_fitness": {
+      "evidence": [
+        "The event channel abstraction (send_event helper) is clean and adds real value.",
+        "ImageData.path as String forces a lossy round-trip at every boundary.",
+        "Bind group creation is triplicated with only the sampler/buffer parameter varying."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "imagepath_string_not_pathbuf",
+      "summary": "ImageData.path is a String causing lossy round-trips at every creation and consumption site",
+      "related_files": [
+        "src/image_backend.rs"
+      ],
+      "evidence": [
+        "Line 91: `pub path: String` — all creation sites call `path.to_string_lossy().to_string()`.",
+        "Line 223: `extract_exif_lazy` immediately re-parses it via `Path::new(path)` — two unnecessary conversions per load."
+      ],
+      "suggestion": "Change ImageData.path to `pub path: std::path::PathBuf`. Update all creation sites to `.to_path_buf()` and all consumption sites to use the PathBuf directly.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "bind_group_triplication",
+      "summary": "Bind group descriptor assembly is triplicated across three load/upload methods",
+      "related_files": [
+        "src/gpu_renderer.rs"
+      ],
+      "evidence": [
+        "Lines 569-588 (linear bind group), 591-610 (nearest bind group), 668-687 (thumbnail bind group) share identical 3-entry BindGroupDescriptor structure.",
+        "Only the uniform_buffer ref and sampler ref differ between them."
+      ],
+      "suggestion": "Extract `fn make_image_bind_group(&self, uniform_buf: &wgpu::Buffer, sampler: &Sampler, view: &wgpu::TextureView) -> Arc<BindGroup>` and call it from all three sites.",
+      "confidence": "high",
+      "impact_scope": "function",
+      "fix_scope": "single_file_refactor"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "String path was simpler at project inception; bind group code was copy-pasted during feature addition."
+    ],
+    "likely_symptoms": [
+      "Silent data loss on non-UTF-8 paths; bind group setup drift if layout changes."
+    ]
+  }
+}

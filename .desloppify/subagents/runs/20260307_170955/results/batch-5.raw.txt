@@ -1,0 +1,62 @@
+{
+  "batch": "low_level_elegance",
+  "batch_index": 5,
+  "assessments": {
+    "low_level_elegance": 58.0
+  },
+  "dimension_notes": {
+    "low_level_elegance": {
+      "evidence": [
+        "Navigation key handling ('d'/'a'/'w'/'s') has structurally identical repeat/non-repeat branches.",
+        "load_and_downsample has an unreachable else branch creating misleading dead code.",
+        "KeyModifiers, UiState grouping is well executed."
+      ],
+      "impact_scope": "function",
+      "fix_scope": "single_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "nav_key_repeat_duplication",
+      "summary": "Navigation key branches for 'd'/'a'/'w'/'s' contain structurally identical if/else repeat patterns",
+      "related_files": [
+        "src/app/actions.rs"
+      ],
+      "evidence": [
+        "The 'd' arm (lines 74-82): `if event.repeat { self.next_image(); } else { self.next_image(); self.held_navigation_key = Some('d'); ... }`",
+        "The call to next_image() appears in BOTH branches — the repeat branch is purely a subset.",
+        "Same pattern for 'a', 'w', 's' — four parallel duplications."
+      ],
+      "suggestion": "Refactor to: `self.next_image(); if !event.repeat { self.held_navigation_key = Some('d'); self.last_advance_time = Some(Instant::now()); }` — eliminates the always-duplicated call.",
+      "confidence": "high",
+      "impact_scope": "function",
+      "fix_scope": "single_edit"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "load_downsample_unreachable_else",
+      "summary": "load_and_downsample has an unreachable else branch that misleads readers",
+      "related_files": [
+        "src/image_backend.rs"
+      ],
+      "evidence": [
+        "Lines 283-290: `if let Some(first) = frames.first() { ... return early if small } else { return Ok(frames); }` — the else arm handles an empty Vec which load() never returns on success.",
+        "Creates false impression that load() might return Ok([]) causing downstream callers to defensively handle an impossible case."
+      ],
+      "suggestion": "Remove the else arm and add a comment: `// load() always returns at least one frame on Ok; this is unreachable`. Or use a stricter precondition check on the result of Self::load().",
+      "confidence": "high",
+      "impact_scope": "function",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Copy-paste expansion of navigation key branches; defensive else added for completeness."
+    ],
+    "likely_symptoms": [
+      "Minor cognitive load when reading keyboard handler; false dead-code risk signals."
+    ]
+  }
+}

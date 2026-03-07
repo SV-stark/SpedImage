@@ -1,0 +1,76 @@
+{
+  "batch": "design_coherence",
+  "batch_index": 2,
+  "assessments": {
+    "design_coherence": 42.0
+  },
+  "dimension_notes": {
+    "design_coherence": {
+      "evidence": [
+        "SpedImageApp has 23 pub(crate) fields mixing 6 concerns: window/renderer, image data, event channel, navigation, thumbnail concurrency, and slideshow.",
+        "Renderer::new() is a 270-line async monolith combining device setup, pipeline creation, and font loading.",
+        "handle_keyboard dispatches 20+ distinct actions from one flat match block."
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "design_coherence",
+      "identifier": "app_god_struct",
+      "summary": "SpedImageApp is a 23-field god-struct mixing 6 unrelated concerns",
+      "related_files": [
+        "src/app/state.rs"
+      ],
+      "evidence": [
+        "Fields span: window/renderer handles, image animation state (current_frame_delays, current_frame_idx), event channel (event_tx, event_rx, event_proxy), navigation (prefetch_cache, held_navigation_key, last_advance_time), thumbnail loading concurrency (thumb_active, thumb_paths), and slideshow timing.",
+        "All 5 impl blocks (actions, events, services, state, ui) mutate this single struct making targeted borrowing impossibleDifficult."
+      ],
+      "suggestion": "Extract NavigationState, SlideshowState, and ThumbnailLoadState into focused sub-structs within SpedImageApp, following the same pattern used for UiState and KeyModifiers.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "renderer_monolithic_new",
+      "summary": "Renderer::new() is a 270-line async monolith with 7 distinct initialization phases",
+      "related_files": [
+        "src/gpu_renderer.rs"
+      ],
+      "evidence": [
+        "Single function handles: WGPU instance+adapter+device, surface config, two shader module compilations, two pipeline layout+pipeline creations, two uniform buffers, two sampler creates, font loading from OS path with fallback, and glyph brush setup."
+      ],
+      "suggestion": "Extract create_image_pipeline(), create_crop_pipeline(), and load_font() as private helpers called from Renderer::new() to give each phase a named, testable entry point.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "keyboard_flat_dispatch",
+      "summary": "handle_keyboard dispatches 20+ distinct action categories in one flat match",
+      "related_files": [
+        "src/app/actions.rs"
+      ],
+      "evidence": [
+        "Single function handles navigation (with hold-key tracking), file operations, UI toggles, zoom, crop, slideshow control, and clipboard in one two-phase match block.",
+        "Adding a new key category requires reading the entire 155-line function."
+      ],
+      "suggestion": "Extract handle_navigation_key(), handle_file_key(), handle_ui_toggle_key() helpers called from handle_keyboard to give each concern a named boundary.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Iterative feature addition to a monolithic struct and monolithic function bodies."
+    ],
+    "likely_symptoms": [
+      "Merge conflicts on SpedImageApp, difficulty isolating test surfaces."
+    ]
+  }
+}

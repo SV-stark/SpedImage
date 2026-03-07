@@ -1,0 +1,61 @@
+{
+  "batch": "mid_level_elegance",
+  "batch_index": 4,
+  "assessments": {
+    "mid_level_elegance": 55.0
+  },
+  "dimension_notes": {
+    "mid_level_elegance": {
+      "evidence": [
+        "Event-channel pattern (mpsc + EventLoopProxy wakeup) is clean and consistently used across all cross-thread boundaries.",
+        "load_thumbnails_for_dir clones the full file list before applying the take() cap.",
+        "Slideshow next-time check reads slideshow_next_time twice in the same event polling loop."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "thumbnail_premature_full_clone",
+      "summary": "load_thumbnails_for_dir clones all file paths then takes only the first MAX_THUMBNAILS",
+      "related_files": [
+        "src/app/services.rs"
+      ],
+      "evidence": [
+        "Line 98: `let files: Vec<PathBuf> = self.ui_state.files.iter().map(|f| f.path.clone()).collect()` — unconditional full clone.",
+        "Line 110: `files.into_iter().take(n)` — only n clones are ever used."
+      ],
+      "suggestion": "Bound first: `self.ui_state.files.iter().take(n).map(|f| f.path.clone()).collect::<Vec<_>>()`",
+      "confidence": "high",
+      "impact_scope": "function",
+      "fix_scope": "single_edit"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "slideshow_double_read",
+      "summary": "slideshow_next_time is read twice in successive if-blocks in process_events",
+      "related_files": [
+        "src/app/events.rs"
+      ],
+      "evidence": [
+        "Two separate if-let blocks reading slideshow_next_time within the same event loop iteration — one for advancing the slide, one for updating next wake time.",
+        "These two reads could be unified into a single helper that both advances and records next_time."
+      ],
+      "suggestion": "Combine the two slideshow_next_time reads into `if let Some(t) = self.slideshow_next_time { if now >= t { self.next_image(); self.slideshow_next_time = Some(now + self.slideshow_interval); wait_until = Some(now + self.slideshow_interval); } }`",
+      "confidence": "medium",
+      "impact_scope": "function",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Incrementally added fields without revisiting allocation patterns."
+    ],
+    "likely_symptoms": [
+      "Unnecessary allocation pressure on directories with many images; subtle slideshow timing drift."
+    ]
+  }
+}

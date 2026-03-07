@@ -1,0 +1,46 @@
+{
+  "batch": "logic_clarity",
+  "batch_index": 19,
+  "assessments": {
+    "logic_clarity": 58.0
+  },
+  "dimension_notes": {
+    "logic_clarity": {
+      "evidence": [
+        "Most control flow is explicit and well-structured.",
+        "Crop shader uniform bindings are disconnected from the pipeline layout (empty bind_group_layouts) — the shader declares bindings that can never be satisfied.",
+        "Navigation key repeat/non-repeat branches duplicate the nav function call."
+      ],
+      "impact_scope": "function",
+      "fix_scope": "single_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "logic_clarity",
+      "identifier": "crop_pipeline_layout_binding_mismatch",
+      "summary": "CROP_SHADER declares a uniform binding but the crop_pipeline_layout has no bind group layouts",
+      "related_files": [
+        "src/gpu_renderer.rs"
+      ],
+      "evidence": [
+        "CROP_SHADER (line 171): `@group(0) @binding(0) var<uniform> crop: CropUniforms;` — declares a uniform requirement.",
+        "crop_pipeline_layout (line 431-435): `bind_group_layouts: &[]` — no layouts registered.",
+        "This means the shader declares a binding that the pipeline layout doesn't satisfy — a structural lie that wgpu may catch at runtime or silently allow (as the fragment shader never reads the value)."
+      ],
+      "suggestion": "Either register a CropUniforms bind group layout in the crop_pipeline_layout (and actually pass the crop rect), or remove the uniform declaration from CROP_SHADER and use a push constant or pass data via vertex buffers.",
+      "confidence": "high",
+      "impact_scope": "function",
+      "fix_scope": "single_file_refactor"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Crop shader was scaffolded with bindings before the pipeline layout was finalized."
+    ],
+    "likely_symptoms": [
+      "Potential wgpu validation error at runtime on strict backends; invisible crop overlay."
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "batch": "package_organization",
+  "batch_index": 17,
+  "assessments": {
+    "package_organization": 60.0
+  },
+  "dimension_notes": {
+    "package_organization": {
+      "evidence": [
+        "src/app/ split is well-organized.",
+        "gpu_renderer.rs and image_backend.rs are large monoliths that could each become a subdirectory.",
+        "ThumbnailEntry lives between shader constants and the Renderer struct with no grouping."
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "medium"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "package_organization",
+      "identifier": "gpu_renderer_needs_subpackage",
+      "summary": "gpu_renderer.rs (1560 LOC) should be decomposed into a src/render/ package like app/ was",
+      "related_files": [
+        "src/gpu_renderer.rs"
+      ],
+      "evidence": [
+        "1560 LOC complexity score 623 — the largest file by both metrics.",
+        "Contains: WGSL shader sources, vertex/uniform type definitions, ThumbnailEntry, Renderer struct, image pipeline, crop pipeline, thumbnail strip rendering, text rendering.",
+        "Each of these is a distinct deliverable that would benefit from isolation."
+      ],
+      "suggestion": "Create src/render/mod.rs, src/render/pipeline.rs (image+crop pipeline setup), src/render/thumbnails.rs (ThumbnailEntry + thumbnail strip encoding), src/render/text.rs (GlyphBrush + font loading). Follow the src/app/ decomposition pattern.",
+      "confidence": "medium",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "gpu_renderer.rs grew organically without applying the modularization lesson from src/app/."
+    ],
+    "likely_symptoms": [
+      "High merge conflict rate on gpu_renderer.rs; difficulty onboarding new contributors."
+    ]
+  }
+}

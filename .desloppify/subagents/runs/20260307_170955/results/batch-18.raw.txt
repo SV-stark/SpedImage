@@ -1,0 +1,46 @@
+{
+  "batch": "api_surface_coherence",
+  "batch_index": 18,
+  "assessments": {
+    "api_surface_coherence": 65.0
+  },
+  "dimension_notes": {
+    "api_surface_coherence": {
+      "evidence": [
+        "AppEvent is a clean sealed enum with well-typed variants.",
+        "UiState mixes pub field access and method accessors for status_message.",
+        "Most public functions have clear parameter signatures."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "confidence": "medium"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "api_surface_coherence",
+      "identifier": "ui_state_dual_status_api",
+      "summary": "UiState has both a pub status_message field and set_status()/get_status() methods — two write paths for the same data",
+      "related_files": [
+        "src/ui.rs"
+      ],
+      "evidence": [
+        "status_message: pub — callers can assign directly.",
+        "set_status(), clear_status(), get_status() methods in UiState impl also exist.",
+        "Dual write contract means callers may bypass the method (which could contain additional logic in future) without any compiler warning."
+      ],
+      "suggestion": "Narrow status_message to pub(crate) or private and enforce all writes via set_status(). This makes the accessor the single, stable contract.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "status_message was made pub for convenience before accessor methods were added."
+    ],
+    "likely_symptoms": [
+      "Status update logic bypassed; future set_status() enhancements silently skipped by direct-write callers."
+    ]
+  }
+}

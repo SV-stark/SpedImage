@@ -1,0 +1,46 @@
+{
+  "batch": "ai_generated_debt",
+  "batch_index": 14,
+  "assessments": {
+    "ai_generated_debt": 72.0
+  },
+  "dimension_notes": {
+    "ai_generated_debt": {
+      "evidence": [
+        "lib.rs comment ratio is 0.31 vs codebase avg 0.092 — high comment density.",
+        "aspect_ratio() and pixel_count() are trivial one-liner methods with no callers outside tests.",
+        "Overall, restating comments are minimal in the main codebase."
+      ],
+      "impact_scope": "function",
+      "fix_scope": "single_edit",
+      "confidence": "medium"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "imagdata_trivial_oneliners",
+      "summary": "ImageData.aspect_ratio() and pixel_count() are trivial one-liners with no production callers",
+      "related_files": [
+        "src/image_backend.rs"
+      ],
+      "evidence": [
+        "aspect_ratio() (lines 135-137): `self.width as f32 / self.height as f32` — never called outside tests.",
+        "pixel_count() (lines 140-142): `self.width * self.height` — never called outside tests.",
+        "Both methods add docstring overhead to trivial calculations that callers compute inline at the two places needed."
+      ],
+      "suggestion": "Remove both methods or keep them only if there are plans to use them in production rendering logic. Callers do the math inline at two spots; no DRY benefit justifies the method existence.",
+      "confidence": "medium",
+      "impact_scope": "function",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Boilerplate-style helper generation for every data struct field combination."
+    ],
+    "likely_symptoms": [
+      "False sense of comprehensive API; minor API surface bloat."
+    ]
+  }
+}

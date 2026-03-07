@@ -1,0 +1,63 @@
+{
+  "batch": "contract_coherence",
+  "batch_index": 10,
+  "assessments": {
+    "contract_coherence": 62.0
+  },
+  "dimension_notes": {
+    "contract_coherence": {
+      "evidence": [
+        "Most method names accurately describe their behavior.",
+        "SpedImageApp::drop() performs manual clearing that is semantically implied by ownership — misleads readers.",
+        "UiState exposes both direct field access and method accessors for status_message."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "contract_coherence",
+      "identifier": "drop_impl_misleading_manual_clear",
+      "summary": "SpedImageApp::Drop impl manually clears fields that Rust drops automatically — creates false ordering contract",
+      "related_files": [
+        "src/app/state.rs"
+      ],
+      "evidence": [
+        "Lines 89-97: Drop impl clears prefetch_cache, current_frame_delays, current_image, and calls renderer.clear_thumbnails().",
+        "In Rust, all fields are dropped automatically in reverse declaration order. The manual impl implies a specific drop-order dependency that does not exist (SpedImageApp is not behind Arc).",
+        "Readers infer 'order matters here' and may incorrectly propagate this pattern."
+      ],
+      "suggestion": "Remove the Drop impl unless there is a documented reason for explicit ordering (e.g. if Renderer must outlive thumbnails in the GPU). Add a comment explaining why if kept.",
+      "confidence": "medium",
+      "impact_scope": "function",
+      "fix_scope": "single_edit"
+    },
+    {
+      "dimension": "contract_coherence",
+      "identifier": "ui_state_mixed_status_access",
+      "summary": "UiState exposes both pub status_message field and set_status()/get_status() accessors — inconsistent write contract",
+      "related_files": [
+        "src/ui.rs"
+      ],
+      "evidence": [
+        "status_message is pub (direct write possible).",
+        "set_status(), clear_status(), get_status() methods also exist.",
+        "Some callers in actions.rs use self.ui_state.set_status(...) while others may assign directly — no single authoritative path."
+      ],
+      "suggestion": "Make status_message pub(crate) or private and route all writes through set_status(). This makes the accessor the single contract for status changes.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Drop impl carried over from defensive C++ habits; status field made pub for convenience."
+    ],
+    "likely_symptoms": [
+      "Subtle status message bugs when both access paths are used inconsistently."
+    ]
+  }
+}

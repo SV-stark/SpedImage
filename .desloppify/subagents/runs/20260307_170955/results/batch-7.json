@@ -1,0 +1,45 @@
+{
+  "batch": "error_consistency",
+  "batch_index": 7,
+  "assessments": {
+    "error_consistency": 55.0
+  },
+  "dimension_notes": {
+    "error_consistency": {
+      "evidence": [
+        "Most app-level errors surface through AppEvent::ImageError / AppEvent::SaveError — consistent pattern.",
+        "thumbnail loading uses a spin-wait loop inconsistent with the mpsc channel pattern used elsewhere.",
+        "Silent error swallowing in setup_file_watcher."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "error_consistency",
+      "identifier": "thumbnail_spinwait_inconsistency",
+      "summary": "load_thumbnails_for_dir uses a spin-wait sleep loop — inconsistent with mpsc channel pattern used everywhere else",
+      "related_files": [
+        "src/app/services.rs"
+      ],
+      "evidence": [
+        "Lines 111-113: `while active.load(Ordering::Relaxed) >= MAX_THUMB_THREADS { std::thread::sleep(Duration::from_millis(5)); }` — busy-wait on main thread.",
+        "All other cross-thread coordination in the codebase uses mpsc channels (event_tx/event_rx) without blocking sleeps."
+      ],
+      "suggestion": "Use a bounded semaphore (std Mutex+Condvar or a tokio Semaphore if async context is available) or move the thumbnail emit pattern to a dedicated worker pool, eliminating the sleep loop.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Quick implementation used sleep-based throttling instead of a proper synchronization primitive."
+    ],
+    "likely_symptoms": [
+      "5ms overhead per thumbnail batch slot; jitter in thumbnail load time."
+    ]
+  }
+}

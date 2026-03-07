@@ -1,0 +1,62 @@
+{
+  "batch": "naming_quality",
+  "batch_index": 6,
+  "assessments": {
+    "naming_quality": 68.0
+  },
+  "dimension_notes": {
+    "naming_quality": {
+      "evidence": [
+        "Most names are clear and domain-aligned (next_image, zoom_in, show_thumbnail_strip, prefetch_adjacent).",
+        "setup_file_watcher silently swallows errors in both failure paths with no logging.",
+        "do_copy_to_clipboard is a non-idiomatic do_ prefixed method name."
+      ],
+      "impact_scope": "function",
+      "fix_scope": "single_edit",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "naming_quality",
+      "identifier": "do_copy_deprecated_prefix",
+      "summary": "`do_copy_to_clipboard` uses a non-idiomatic `do_` prefix alongside its `copy_to_clipboard` sibling",
+      "related_files": [
+        "src/app/actions.rs"
+      ],
+      "evidence": [
+        "Both `copy_to_clipboard` (public) and `do_copy_to_clipboard` (Windows detail) exist as peer methods.",
+        "The `do_` prefix is a C/Java convention not idiomatic in Rust. Typical Rust patterns use `copy_to_clipboard_impl` or split via `#[cfg]` blocks."
+      ],
+      "suggestion": "Rename to `copy_to_clipboard_windows` (matching the existing `show_context_menu_windows` naming convention already established in this same file).",
+      "confidence": "high",
+      "impact_scope": "function",
+      "fix_scope": "single_edit"
+    },
+    {
+      "dimension": "naming_quality",
+      "identifier": "setup_file_watcher_silent_fail",
+      "summary": "`setup_file_watcher` silently discards both error cases with no logging",
+      "related_files": [
+        "src/app/services.rs"
+      ],
+      "evidence": [
+        "watcher_result Err case has no logging branch.",
+        "watcher.watch() Err case also silent.",
+        "The function name implies setup was completed but may have done nothing — no way for callers to know."
+      ],
+      "suggestion": "Add `tracing::warn!(\"Failed to create file watcher: {:?}\", e)` in the Err arm, consistent with the tracing::debug! call on success at line 91.",
+      "confidence": "high",
+      "impact_scope": "function",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Naming convention established for context_menu was not applied to clipboard helper."
+    ],
+    "likely_symptoms": [
+      "Confusing file watching failure diagnosis in production."
+    ]
+  }
+}

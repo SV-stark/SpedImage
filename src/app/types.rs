@@ -8,6 +8,13 @@ use winit::event_loop::EventLoopProxy;
 #[derive(Debug)]
 pub struct WakeUp;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct KeyModifiers {
+    pub ctrl: bool,
+    pub shift: bool,
+    pub alt: bool,
+}
+
 pub const APP_ICON: &[u8] = include_bytes!("../../assets/icons/icon.png");
 
 /// Thumbnail size used for background loading (must match THUMB_SIZE in gpu_renderer).

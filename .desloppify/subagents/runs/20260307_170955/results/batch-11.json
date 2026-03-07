@@ -1,0 +1,46 @@
+{
+  "batch": "cross_module_architecture",
+  "batch_index": 11,
+  "assessments": {
+    "cross_module_architecture": 68.0
+  },
+  "dimension_notes": {
+    "cross_module_architecture": {
+      "evidence": [
+        "src/app/ modularization is a clear architectural win improving boundary clarity.",
+        "STRIP_HEIGHT_PX is a GPU layout constant imported by events.rs for hit-testing — cross-layer dependency.",
+        "Two large hub files remain: gpu_renderer.rs (1560 LOC) and image_backend.rs (846 LOC)."
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "gpu_constant_in_event_layer",
+      "summary": "STRIP_HEIGHT_PX GPU layout constant is imported by event handler for mouse hit-testing",
+      "related_files": [
+        "src/app/actions.rs",
+        "src/gpu_renderer.rs"
+      ],
+      "evidence": [
+        "src/app/actions.rs line 3: `use crate::gpu_renderer::STRIP_HEIGHT_PX;` — an event handler importing a GPU pipeline constant.",
+        "This creates a hard dependency from the event layer on the GPU renderer's internal layout decisions."
+      ],
+      "suggestion": "Move STRIP_HEIGHT_PX to src/app/types.rs or expose it via a Renderer::strip_height() accessor so the event layer doesn't directly import GPU module internals.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Constant placed in the most convenient module rather than the most appropriate boundary."
+    ],
+    "likely_symptoms": [
+      "Forced import of gpu_renderer in any module that needs hit-testing layout."
+    ]
+  }
+}

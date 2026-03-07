@@ -1,0 +1,45 @@
+{
+  "batch": "convention_outlier",
+  "batch_index": 13,
+  "assessments": {
+    "convention_outlier": 65.0
+  },
+  "dimension_notes": {
+    "convention_outlier": {
+      "evidence": [
+        "Shader strings are inline const &str in gpu_renderer.rs while the font asset uses include_bytes! — inconsistent embed strategy.",
+        "show_context_menu_windows naming convention exists but do_copy_to_clipboard doesn't follow it."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor",
+      "confidence": "medium"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "convention_outlier",
+      "identifier": "inline_wgsl_vs_include_bytes",
+      "summary": "WGSL shaders are inline string constants while the font uses include_bytes! — mixed embed convention",
+      "related_files": [
+        "src/gpu_renderer.rs"
+      ],
+      "evidence": [
+        "SHADER (lines 74-157) and CROP_SHADER (lines 159-193) are inline const &str literals.",
+        "Line 472: `const EMBEDDED_FONT: &[u8] = include_bytes!(\"../assets/Inter-Regular.ttf\")` — external file via include_bytes!.",
+        "The Rust convention for embedded GPU shaders is include_str!(\"shader.wgsl\") for syntax-highlight support and independent editability."
+      ],
+      "suggestion": "Extract shaders to src/shaders/image.wgsl and src/shaders/crop.wgsl, load with `include_str!(\"../shaders/image.wgsl\")`.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_file_refactor"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "WGSL shaders were small initially and inlined for convenience; never extracted as they grew."
+    ],
+    "likely_symptoms": [
+      "No syntax highlighting or shader linting in IDE for the WGSL source."
+    ]
+  }
+}

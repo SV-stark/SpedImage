@@ -1,26 +1,137 @@
 {
   "version": 8,
   "created": "2026-03-07T10:48:28+00:00",
-  "updated": "2026-03-07T13:03:58+00:00",
+  "updated": "2026-03-07T17:19:30+00:00",
   "queue_order": [
+    "workflow::score-checkpoint",
     "triage::observe",
     "triage::reflect",
     "triage::organize",
-    "triage::commit",
-    "subjective::abstraction_fitness",
-    "subjective::ai_generated_debt",
-    "subjective::contract_coherence",
-    "subjective::design_coherence",
-    "subjective::error_consistency",
-    "subjective::high_level_elegance",
-    "subjective::logic_clarity",
-    "subjective::low_level_elegance",
-    "subjective::naming_quality",
-    "subjective::package_organization",
-    "subjective::type_safety"
+    "triage::commit"
   ],
   "deferred": [],
-  "skipped": {},
+  "skipped": {
+    "subjective::abstraction_fitness": {
+      "issue_id": "subjective::abstraction_fitness",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::ai_generated_debt": {
+      "issue_id": "subjective::ai_generated_debt",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::contract_coherence": {
+      "issue_id": "subjective::contract_coherence",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::design_coherence": {
+      "issue_id": "subjective::design_coherence",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::error_consistency": {
+      "issue_id": "subjective::error_consistency",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::high_level_elegance": {
+      "issue_id": "subjective::high_level_elegance",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::logic_clarity": {
+      "issue_id": "subjective::logic_clarity",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::low_level_elegance": {
+      "issue_id": "subjective::low_level_elegance",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::mid_level_elegance": {
+      "issue_id": "subjective::mid_level_elegance",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::naming_quality": {
+      "issue_id": "subjective::naming_quality",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::package_organization": {
+      "issue_id": "subjective::package_organization",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    },
+    "subjective::type_safety": {
+      "issue_id": "subjective::type_safety",
+      "kind": "temporary",
+      "reason": "Addressing specific refactoring task.",
+      "note": null,
+      "attestation": null,
+      "created_at": "2026-03-07T16:46:16+00:00",
+      "review_after": null,
+      "skipped_at_scan": 12
+    }
+  },
   "active_cluster": null,
   "overrides": {
     "unused::src/app.rs::unused_import::5": {
@@ -51,73 +162,73 @@
       "issue_id": "unused::src/gpu_renderer.rs::unused_import::3",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/gpu_renderer.rs::unused_import::5": {
       "issue_id": "unused::src/gpu_renderer.rs::unused_import::5",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/gpu_renderer.rs::unused_import::6": {
       "issue_id": "unused::src/gpu_renderer.rs::unused_import::6",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/gpu_renderer.rs::unused_import::17": {
       "issue_id": "unused::src/gpu_renderer.rs::unused_import::17",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/image_backend.rs::unused_import::6": {
       "issue_id": "unused::src/image_backend.rs::unused_import::6",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/image_backend.rs::unused_import::7": {
       "issue_id": "unused::src/image_backend.rs::unused_import::7",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/lib.rs::unused_import::11": {
       "issue_id": "unused::src/lib.rs::unused_import::11",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/lib.rs::unused_import::12": {
       "issue_id": "unused::src/lib.rs::unused_import::12",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/lib.rs::unused_import::13": {
       "issue_id": "unused::src/lib.rs::unused_import::13",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/main.rs::unused_import::6": {
       "issue_id": "unused::src/main.rs::unused_import::6",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/main.rs::unused_import::10": {
       "issue_id": "unused::src/main.rs::unused_import::10",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/ui.rs::unused_import::175": {
       "issue_id": "unused::src/ui.rs::unused_import::175",
       "created_at": "2026-03-07T10:48:28+00:00",
-      "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "cluster": null,
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app.rs::unused_import::12": {
       "issue_id": "unused::src/app.rs::unused_import::12",
@@ -177,43 +288,43 @@
       "issue_id": "unused::src/gpu_renderer.rs::unused_import::1546",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/image_backend.rs::unused_import::168": {
       "issue_id": "unused::src/image_backend.rs::unused_import::168",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/image_backend.rs::unused_import::292": {
       "issue_id": "unused::src/image_backend.rs::unused_import::292",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/image_backend.rs::unused_import::353": {
       "issue_id": "unused::src/image_backend.rs::unused_import::353",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/image_backend.rs::unused_import::354": {
       "issue_id": "unused::src/image_backend.rs::unused_import::354",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/image_backend.rs::unused_import::637": {
       "issue_id": "unused::src/image_backend.rs::unused_import::637",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/main.rs::unused_import::64": {
       "issue_id": "unused::src/main.rs::unused_import::64",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/app.rs": {
       "issue_id": "orphaned::src/app.rs",
@@ -225,31 +336,31 @@
       "issue_id": "orphaned::src/gpu_renderer.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/image_backend.rs": {
       "issue_id": "orphaned::src/image_backend.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/ui.rs": {
       "issue_id": "orphaned::src/ui.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/main.rs": {
       "issue_id": "orphaned::src/main.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/lib.rs": {
       "issue_id": "orphaned::src/lib.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/app.rs": {
       "issue_id": "test_coverage::src/app.rs",
@@ -261,43 +372,43 @@
       "issue_id": "test_coverage::src/gpu_renderer.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/image_backend.rs": {
       "issue_id": "test_coverage::src/image_backend.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/ui.rs": {
       "issue_id": "test_coverage::src/ui.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/main.rs": {
       "issue_id": "test_coverage::src/main.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/lib.rs": {
       "issue_id": "test_coverage::src/lib.rs",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::abstraction_fitness": {
       "issue_id": "subjective::abstraction_fitness",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::ai_generated_debt": {
       "issue_id": "subjective::ai_generated_debt",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::api_surface_coherence": {
       "issue_id": "subjective::api_surface_coherence",
@@ -315,7 +426,7 @@
       "issue_id": "subjective::contract_coherence",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::convention_outlier": {
       "issue_id": "subjective::convention_outlier",
@@ -339,19 +450,19 @@
       "issue_id": "subjective::design_coherence",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::error_consistency": {
       "issue_id": "subjective::error_consistency",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::high_level_elegance": {
       "issue_id": "subjective::high_level_elegance",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::incomplete_migration": {
       "issue_id": "subjective::incomplete_migration",
@@ -369,31 +480,31 @@
       "issue_id": "subjective::logic_clarity",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::low_level_elegance": {
       "issue_id": "subjective::low_level_elegance",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::mid_level_elegance": {
       "issue_id": "subjective::mid_level_elegance",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T12:53:56+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::naming_quality": {
       "issue_id": "subjective::naming_quality",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::package_organization": {
       "issue_id": "subjective::package_organization",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "subjective::test_strategy": {
       "issue_id": "subjective::test_strategy",
@@ -405,7 +516,7 @@
       "issue_id": "subjective::type_safety",
       "created_at": "2026-03-07T10:48:28+00:00",
       "cluster": "auto/initial-review",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app.rs::unused_import::2068": {
       "issue_id": "unused::src/app.rs::unused_import::2068",
@@ -417,205 +528,223 @@
       "issue_id": "unused::src/app/actions.rs::unused_import::2",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::6": {
       "issue_id": "unused::src/app/actions.rs::unused_import::6",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::8": {
       "issue_id": "unused::src/app/actions.rs::unused_import::8",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::10": {
       "issue_id": "unused::src/app/actions.rs::unused_import::10",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::744": {
       "issue_id": "unused::src/app/actions.rs::unused_import::744",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::787": {
       "issue_id": "unused::src/app/actions.rs::unused_import::787",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::817": {
       "issue_id": "unused::src/app/actions.rs::unused_import::817",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::1012": {
       "issue_id": "unused::src/app/actions.rs::unused_import::1012",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::1013": {
       "issue_id": "unused::src/app/actions.rs::unused_import::1013",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::1016": {
       "issue_id": "unused::src/app/actions.rs::unused_import::1016",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/actions.rs::unused_import::1140": {
       "issue_id": "unused::src/app/actions.rs::unused_import::1140",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/events.rs::unused_import::2": {
       "issue_id": "unused::src/app/events.rs::unused_import::2",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/events.rs::unused_import::3": {
       "issue_id": "unused::src/app/events.rs::unused_import::3",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/events.rs::unused_import::8": {
       "issue_id": "unused::src/app/events.rs::unused_import::8",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/events.rs::unused_import::9": {
       "issue_id": "unused::src/app/events.rs::unused_import::9",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/events.rs::unused_import::10": {
       "issue_id": "unused::src/app/events.rs::unused_import::10",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/mod.rs::unused_import::7": {
       "issue_id": "unused::src/app/mod.rs::unused_import::7",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/mod.rs::unused_import::8": {
       "issue_id": "unused::src/app/mod.rs::unused_import::8",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/services.rs::unused_import::2": {
       "issue_id": "unused::src/app/services.rs::unused_import::2",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/services.rs::unused_import::4": {
       "issue_id": "unused::src/app/services.rs::unused_import::4",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/services.rs::unused_import::5": {
       "issue_id": "unused::src/app/services.rs::unused_import::5",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/state.rs::unused_import::1": {
       "issue_id": "unused::src/app/state.rs::unused_import::1",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/state.rs::unused_import::10": {
       "issue_id": "unused::src/app/state.rs::unused_import::10",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "unused::src/app/state.rs::unused_import::114": {
       "issue_id": "unused::src/app/state.rs::unused_import::114",
       "created_at": "2026-03-07T12:25:18+00:00",
-      "cluster": "auto/unused",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "cluster": null,
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/app/actions.rs": {
       "issue_id": "orphaned::src/app/actions.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/app/events.rs": {
       "issue_id": "orphaned::src/app/events.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/app/services.rs": {
       "issue_id": "orphaned::src/app/services.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/app/state.rs": {
       "issue_id": "orphaned::src/app/state.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "orphaned::src/app/types.rs": {
       "issue_id": "orphaned::src/app/types.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/orphaned",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/app/actions.rs": {
       "issue_id": "test_coverage::src/app/actions.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/app/events.rs": {
       "issue_id": "test_coverage::src/app/events.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/app/services.rs": {
       "issue_id": "test_coverage::src/app/services.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/app/state.rs": {
       "issue_id": "test_coverage::src/app/state.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
     },
     "test_coverage::src/app/types.rs": {
       "issue_id": "test_coverage::src/app/types.rs",
       "created_at": "2026-03-07T12:25:18+00:00",
       "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-07T13:03:58+00:00"
+      "updated_at": "2026-03-07T16:45:09+00:00"
+    },
+    "unused::src/app/state.rs::unused_import::102": {
+      "issue_id": "unused::src/app/state.rs::unused_import::102",
+      "created_at": "2026-03-07T16:45:09+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T16:45:09+00:00"
+    },
+    "unused::src/ui.rs::unused_import::197": {
+      "issue_id": "unused::src/ui.rs::unused_import::197",
+      "created_at": "2026-03-07T16:45:09+00:00",
+      "cluster": "auto/unused",
+      "updated_at": "2026-03-07T16:45:09+00:00"
+    },
+    "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a": {
+      "issue_id": "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a",
+      "created_at": "2026-03-07T16:50:30+00:00",
+      "cluster": null,
+      "updated_at": "2026-03-07T16:50:48+00:00"
     }
   },
   "clusters": {
@@ -634,7 +763,6 @@
         "unused::src/lib.rs::unused_import::13",
         "unused::src/main.rs::unused_import::6",
         "unused::src/main.rs::unused_import::10",
-        "unused::src/ui.rs::unused_import::175",
         "unused::src/gpu_renderer.rs::unused_import::1546",
         "unused::src/image_backend.rs::unused_import::168",
         "unused::src/image_backend.rs::unused_import::292",
@@ -665,10 +793,11 @@
         "unused::src/app/services.rs::unused_import::5",
         "unused::src/app/state.rs::unused_import::1",
         "unused::src/app/state.rs::unused_import::10",
-        "unused::src/app/state.rs::unused_import::114"
+        "unused::src/app/state.rs::unused_import::102",
+        "unused::src/ui.rs::unused_import::197"
       ],
       "created_at": "2026-03-07T10:48:28+00:00",
-      "updated_at": "2026-03-07T12:25:18+00:00",
+      "updated_at": "2026-03-07T16:45:09+00:00",
       "auto": true,
       "cluster_key": "auto::unused",
       "action": "desloppify autofix unused-imports --dry-run",
@@ -720,7 +849,7 @@
     },
     "auto/initial-review": {
       "name": "auto/initial-review",
-      "description": "Initial review of 11 unscored subjective dimensions",
+      "description": "Initial review of 12 unscored subjective dimensions",
       "issue_ids": [
         "subjective::abstraction_fitness",
         "subjective::ai_generated_debt",
@@ -730,15 +859,27 @@
         "subjective::high_level_elegance",
         "subjective::logic_clarity",
         "subjective::low_level_elegance",
+        "subjective::mid_level_elegance",
         "subjective::naming_quality",
         "subjective::package_organization",
         "subjective::type_safety"
       ],
       "created_at": "2026-03-07T10:48:28+00:00",
-      "updated_at": "2026-03-07T13:03:58+00:00",
+      "updated_at": "2026-03-07T16:29:28+00:00",
       "auto": true,
       "cluster_key": "subjective::unscored",
-      "action": "desloppify review --prepare --dimensions abstraction_fitness,ai_generated_debt,contract_coherence,design_coherence,error_consistency,high_level_elegance,logic_clarity,low_level_elegance,naming_quality,package_organization,type_safety",
+      "action": "desloppify review --prepare --dimensions abstraction_fitness,ai_generated_debt,contract_coherence,design_coherence,error_consistency,high_level_elegance,logic_clarity,low_level_elegance,mid_level_elegance,naming_quality,package_organization,type_safety",
+      "user_modified": false
+    },
+    "bool-fix": {
+      "name": "bool-fix",
+      "description": "Fixing boolean flag complexity",
+      "issue_ids": [],
+      "created_at": "2026-03-07T16:50:23+00:00",
+      "updated_at": "2026-03-07T16:50:30+00:00",
+      "auto": false,
+      "cluster_key": "",
+      "action": null,
       "user_modified": false
     }
   },
@@ -902,6 +1043,32 @@
       "superseded_at": "2026-03-07T12:25:18+00:00",
       "remapped_to": null,
       "candidates": []
+    },
+    "unused::src/app/state.rs::unused_import::114": {
+      "original_id": "unused::src/app/state.rs::unused_import::114",
+      "original_detector": "unused",
+      "original_file": "src/app/state.rs",
+      "original_summary": "Unused import: *",
+      "status": "superseded",
+      "superseded_at": "2026-03-07T16:45:09+00:00",
+      "remapped_to": null,
+      "candidates": [
+        "unused::src/app/state.rs::unused_import::1",
+        "unused::src/app/state.rs::unused_import::10",
+        "unused::src/app/state.rs::unused_import::102"
+      ]
+    },
+    "unused::src/ui.rs::unused_import::175": {
+      "original_id": "unused::src/ui.rs::unused_import::175",
+      "original_detector": "unused",
+      "original_file": "src/ui.rs",
+      "original_summary": "Unused import: *",
+      "status": "superseded",
+      "superseded_at": "2026-03-07T16:45:09+00:00",
+      "remapped_to": null,
+      "candidates": [
+        "unused::src/ui.rs::unused_import::197"
+      ]
     }
   },
   "promoted_ids": [],
@@ -1155,13 +1322,339 @@
       "actor": "system",
       "note": null,
       "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:29:28+00:00",
+      "action": "sync_unscored",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "changes": true
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:29:28+00:00",
+      "action": "auto_cluster",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "changes": true
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:29:28+00:00",
+      "action": "seed_start_scores",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:44:14+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Grouped boolean flags into KeyModifiers and UiState structs to reduce SpedImageApp complexity.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:44:24+00:00",
+      "action": "reorder",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "position": "top",
+        "target": null,
+        "offset": null
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:44:34+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Grouped boolean flags into KeyModifiers and UiState structs to reduce SpedImageApp complexity.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:45:09+00:00",
+      "action": "reconcile",
+      "issue_ids": [
+        "unused::src/app/state.rs::unused_import::114",
+        "unused::src/ui.rs::unused_import::175"
+      ],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "superseded_count": 2,
+        "pruned_count": 0,
+        "resurfaced_count": 0,
+        "clusters_completed_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:45:09+00:00",
+      "action": "auto_cluster",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "changes": true
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:45:09+00:00",
+      "action": "clear_start_scores",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:45:46+00:00",
+      "action": "reorder",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "position": "top",
+        "target": null,
+        "offset": null
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:45:57+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Grouped boolean flags into KeyModifiers and UiState structs to reduce SpedImageApp complexity.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:46:16+00:00",
+      "action": "skip",
+      "issue_ids": [
+        "subjective::abstraction_fitness",
+        "subjective::ai_generated_debt",
+        "subjective::contract_coherence",
+        "subjective::design_coherence",
+        "subjective::error_consistency",
+        "subjective::high_level_elegance",
+        "subjective::logic_clarity",
+        "subjective::low_level_elegance",
+        "subjective::mid_level_elegance",
+        "subjective::naming_quality",
+        "subjective::package_organization",
+        "subjective::type_safety"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "kind": "temporary",
+        "reason": "Addressing specific refactoring task."
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:46:24+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Grouped boolean flags into KeyModifiers and UiState structs to reduce SpedImageApp complexity.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:46:38+00:00",
+      "action": "reorder",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "position": "top",
+        "target": null,
+        "offset": null
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:48:14+00:00",
+      "action": "reorder",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "position": "top",
+        "target": null,
+        "offset": null
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:48:35+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Grouped boolean flags into KeyModifiers and UiState structs to reduce SpedImageApp complexity.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:49:35+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Grouped boolean flags into KeyModifiers and UiState structs to reduce SpedImageApp complexity.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:50:23+00:00",
+      "action": "cluster_create",
+      "issue_ids": [],
+      "cluster_name": "bool-fix",
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "description": "Fixing boolean flag complexity",
+        "action": null
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:50:30+00:00",
+      "action": "cluster_add",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": "bool-fix",
+      "actor": "user",
+      "note": null,
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:50:40+00:00",
+      "action": "focus",
+      "issue_ids": [],
+      "cluster_name": "bool-fix",
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "action": "set"
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:50:48+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Grouped boolean flags into KeyModifiers and UiState structs to reduce SpedImageApp complexity.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:50:48+00:00",
+      "action": "resolve",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Grouped boolean flags into KeyModifiers and UiState structs to reduce SpedImageApp complexity.",
+      "detail": {
+        "status": "fixed",
+        "attestation": "I have actually refactored the SpedImageApp struct and am not gaming the score."
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:50:48+00:00",
+      "action": "cluster_done",
+      "issue_ids": [
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": "bool-fix",
+      "actor": "user",
+      "note": null,
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-07T16:51:08+00:00",
+      "action": "focus",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "action": "clear",
+        "previous": "bool-fix"
+      }
+    },
+    {
+      "timestamp": "2026-03-07T16:51:45+00:00",
+      "action": "commit_record",
+      "issue_ids": [
+        "review::.::holistic::mid_level_elegance::app_rs_monolith::9a33b618",
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "sha": "697a749ac655",
+        "branch": "main"
+      }
     }
   ],
   "epic_triage_meta": {},
-  "commit_log": [],
-  "uncommitted_issues": [
-    "review::.::holistic::mid_level_elegance::app_rs_monolith::9a33b618"
+  "commit_log": [
+    {
+      "sha": "697a749ac655",
+      "branch": "main",
+      "issue_ids": [
+        "review::.::holistic::mid_level_elegance::app_rs_monolith::9a33b618",
+        "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a"
+      ],
+      "recorded_at": "2026-03-07T16:51:45+00:00",
+      "note": null,
+      "cluster_name": null
+    }
   ],
+  "uncommitted_issues": [],
   "commit_tracking_branch": null,
-  "scan_count_at_plan_start": 9
+  "scan_count_at_plan_start": 11
 }

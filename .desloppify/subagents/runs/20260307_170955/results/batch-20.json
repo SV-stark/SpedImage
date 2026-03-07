@@ -1,0 +1,22 @@
+{
+  "batch": "authorization_consistency",
+  "batch_index": 20,
+  "assessments": {
+    "authorization_consistency": 100.0
+  },
+  "dimension_notes": {
+    "authorization_consistency": {
+      "evidence": [
+        "SpedImage is a native desktop image viewer. No authentication, authorization, route handlers, or permission model applies."
+      ],
+      "impact_scope": "none",
+      "fix_scope": "none",
+      "confidence": "high"
+    }
+  },
+  "issues": [],
+  "retrospective": {
+    "root_causes": [],
+    "likely_symptoms": []
+  }
+}
