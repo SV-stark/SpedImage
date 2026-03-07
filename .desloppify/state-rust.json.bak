@@ -1,32 +1,39 @@
 {
   "version": 1,
   "created": "2026-03-05T17:58:49+00:00",
-  "last_scan": "2026-03-07T10:48:27+00:00",
-  "scan_count": 2,
-  "overall_score": 19.0,
-  "objective_score": 47.4,
-  "strict_score": 19.0,
-  "verified_strict_score": 47.4,
+  "last_scan": "2026-03-07T13:03:58+00:00",
+  "scan_count": 10,
+  "overall_score": 18.0,
+  "objective_score": 45.0,
+  "strict_score": 18.0,
+  "verified_strict_score": 45.0,
   "stats": {
-    "total": 65,
-    "auto_resolved": 16,
+    "total": 105,
+    "auto_resolved": 34,
     "false_positive": 0,
-    "fixed": 0,
-    "open": 49,
+    "fixed": 1,
+    "open": 70,
     "wontfix": 0,
     "by_tier": {
-      "2": {
+      "1": {
         "auto_resolved": 0,
         "false_positive": 0,
+        "fixed": 1,
+        "open": 0,
+        "wontfix": 0
+      },
+      "2": {
+        "auto_resolved": 1,
+        "false_positive": 0,
         "fixed": 0,
-        "open": 3,
+        "open": 5,
         "wontfix": 0
       },
       "3": {
-        "auto_resolved": 16,
+        "auto_resolved": 33,
         "false_positive": 0,
         "fixed": 0,
-        "open": 46,
+        "open": 65,
         "wontfix": 0
       }
     }
@@ -89,7 +96,7 @@
           "reason": "tool_not_found"
         }
       ],
-      "updated_at": "2026-03-07T10:48:27+00:00"
+      "updated_at": "2026-03-07T13:03:58+00:00"
     }
   },
   "score_confidence": {
@@ -126,7 +133,95 @@
     "matched_dimensions": [],
     "reset_dimensions": []
   },
-  "subjective_assessments": {},
+  "subjective_assessments": {
+    "abstraction_fitness": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "ai_generated_debt": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "contract_coherence": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "design_coherence": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "error_consistency": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "high_level_elegance": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "logic_clarity": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "low_level_elegance": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "mid_level_elegance": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true,
+      "needs_review_refresh": true,
+      "refresh_reason": "review_issue_fixed",
+      "stale_since": "2026-03-07T13:03:42+00:00"
+    },
+    "naming_quality": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "package_organization": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    },
+    "type_safety": {
+      "score": 0.0,
+      "source": "scan_reset_subjective",
+      "assessed_at": "2026-03-07T12:27:08+00:00",
+      "reset_by": "scan_reset_subjective",
+      "placeholder": true
+    }
+  },
   "lang_capabilities": {
     "rust": {
       "fixers": [
@@ -136,7 +231,7 @@
     }
   },
   "zone_distribution": {
-    "production": 6
+    "production": 11
   },
   "scan_history": [
     {
@@ -396,6 +491,1038 @@
           "strict": 0.0
         }
       }
+    },
+    {
+      "timestamp": "2026-03-07T11:27:25+00:00",
+      "lang": "rust",
+      "strict_score": 19.0,
+      "verified_strict_score": 47.4,
+      "objective_score": 47.4,
+      "overall_score": 19.0,
+      "open": 51,
+      "diff_new": 2,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_issues": 2,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "disabled",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": null
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 2,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "Code quality": {
+          "score": 38.7,
+          "strict": 38.7
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "File health": {
+          "score": 65.0,
+          "strict": 65.0
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-07T11:47:27+00:00",
+      "lang": "rust",
+      "strict_score": 19.2,
+      "verified_strict_score": 47.9,
+      "objective_score": 47.9,
+      "overall_score": 19.2,
+      "open": 52,
+      "diff_new": 1,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_issues": 50,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 2,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "Code quality": {
+          "score": 38.7,
+          "strict": 38.7
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "File health": {
+          "score": 65.0,
+          "strict": 65.0
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 0.2,
+          "strict": 0.2
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-07T12:25:18+00:00",
+      "lang": "rust",
+      "strict_score": 18.0,
+      "verified_strict_score": 45.0,
+      "objective_score": 45.0,
+      "overall_score": 18.0,
+      "open": 71,
+      "diff_new": 37,
+      "diff_resolved": 18,
+      "ignored": 0,
+      "raw_issues": 69,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 2,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "Code quality": {
+          "score": 45.0,
+          "strict": 45.0
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "File health": {
+          "score": 74.5,
+          "strict": 74.5
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-07T12:27:09+00:00",
+      "lang": "rust",
+      "strict_score": 18.0,
+      "verified_strict_score": 45.0,
+      "objective_score": 45.0,
+      "overall_score": 18.0,
+      "open": 71,
+      "diff_new": 0,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_issues": 69,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 2,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "Code quality": {
+          "score": 45.0,
+          "strict": 45.0
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "File health": {
+          "score": 74.5,
+          "strict": 74.5
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-07T12:50:55+00:00",
+      "lang": "rust",
+      "strict_score": 18.0,
+      "verified_strict_score": 45.0,
+      "objective_score": 45.0,
+      "overall_score": 18.0,
+      "open": 71,
+      "diff_new": 0,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_issues": 69,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 2,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "Code quality": {
+          "score": 45.0,
+          "strict": 45.0
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "File health": {
+          "score": 74.5,
+          "strict": 74.5
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-07T12:53:03+00:00",
+      "lang": "rust",
+      "strict_score": 18.0,
+      "verified_strict_score": 45.0,
+      "objective_score": 45.0,
+      "overall_score": 18.0,
+      "open": 71,
+      "diff_new": 0,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_issues": 69,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 2,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "Code quality": {
+          "score": 45.0,
+          "strict": 45.0
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "File health": {
+          "score": 74.5,
+          "strict": 74.5
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-07T12:53:55+00:00",
+      "lang": "rust",
+      "strict_score": 18.0,
+      "verified_strict_score": 45.0,
+      "objective_score": 45.0,
+      "overall_score": 18.0,
+      "open": 71,
+      "diff_new": 0,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_issues": 69,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 2,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "Code quality": {
+          "score": 45.0,
+          "strict": 45.0
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "File health": {
+          "score": 74.5,
+          "strict": 74.5
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
+    },
+    {
+      "timestamp": "2026-03-07T13:03:58+00:00",
+      "lang": "rust",
+      "strict_score": 18.0,
+      "verified_strict_score": 45.0,
+      "objective_score": 45.0,
+      "overall_score": 18.0,
+      "open": 70,
+      "diff_new": 0,
+      "diff_resolved": 0,
+      "ignored": 0,
+      "raw_issues": 69,
+      "suppressed_pct": 0.0,
+      "ignore_patterns": 0,
+      "subjective_integrity": {
+        "status": "pass",
+        "matched_count": 0,
+        "reset_count": 0,
+        "target_score": 95.0
+      },
+      "score_confidence": {
+        "status": "reduced",
+        "confidence": 0.0,
+        "detector_count": 2,
+        "dimension_count": 0
+      },
+      "dimension_scores": {
+        "Code quality": {
+          "score": 45.0,
+          "strict": 45.0
+        },
+        "Security": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "File health": {
+          "score": 74.5,
+          "strict": 74.5
+        },
+        "Duplication": {
+          "score": 100.0,
+          "strict": 100.0
+        },
+        "Test health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Naming quality": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Logic clarity": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Type safety": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Contracts": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Error consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Abstraction fit": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "AI generated debt": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "High elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Mid elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Low elegance": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Cross-module arch": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Init coupling": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Convention drift": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Dep health": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Test strategy": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "API coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Auth consistency": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Stale migration": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Structure nav": {
+          "score": 0.0,
+          "strict": 0.0
+        },
+        "Design coherence": {
+          "score": 0.0,
+          "strict": 0.0
+        }
+      }
     }
   ],
   "tool_hash": "8abd96c47193",
@@ -405,44 +1532,44 @@
   },
   "potentials": {
     "rust": {
-      "structural": 6,
-      "flat_dirs": 1,
+      "structural": 11,
+      "flat_dirs": 2,
       "responsibility_cohesion": 1,
-      "unused_imports": 32,
+      "unused_imports": 43,
       "signature": 1,
-      "security": 6,
+      "security": 11,
       "single_use": 0,
-      "cycles": 6,
-      "orphaned": 6,
-      "test_coverage": 147,
-      "dupes": 118,
+      "cycles": 11,
+      "orphaned": 11,
+      "test_coverage": 189,
+      "dupes": 121,
       "stale_wontfix": 0
     }
   },
   "codebase_metrics": {
     "rust": {
-      "total_files": 6,
-      "total_loc": 4957,
-      "total_directories": 1
+      "total_files": 11,
+      "total_loc": 4945,
+      "total_directories": 2
     }
   },
   "dimension_scores": {
     "Code quality": {
-      "score": 38.7,
-      "strict": 38.7,
-      "verified_strict_score": 38.7,
-      "checks": 8,
-      "failing": 7,
+      "score": 45.0,
+      "strict": 45.0,
+      "verified_strict_score": 45.0,
+      "checks": 14,
+      "failing": 11,
       "tier": 3,
       "detectors": {
         "orphaned": {
-          "potential": 6,
-          "pass_rate": 0.3,
-          "failing": 6,
-          "weighted_failures": 4.2
+          "potential": 11,
+          "pass_rate": 0.36363636363636354,
+          "failing": 10,
+          "weighted_failures": 7.000000000000001
         },
         "flat_dirs": {
-          "potential": 1,
+          "potential": 2,
           "pass_rate": 1.0,
           "failing": 0,
           "weighted_failures": 0.0
@@ -459,18 +1586,18 @@
       "score": 100.0,
       "strict": 100.0,
       "verified_strict_score": 100.0,
-      "checks": 12,
+      "checks": 22,
       "failing": 0,
       "tier": 4,
       "detectors": {
         "cycles": {
-          "potential": 6,
+          "potential": 11,
           "pass_rate": 1.0,
           "failing": 0,
           "weighted_failures": 0.0
         },
         "security": {
-          "potential": 6,
+          "potential": 11,
           "pass_rate": 1.0,
           "failing": 0,
           "weighted_failures": 0.0
@@ -478,18 +1605,18 @@
       }
     },
     "File health": {
-      "score": 65.0,
-      "strict": 65.0,
-      "verified_strict_score": 65.0,
-      "checks": 6,
-      "failing": 3,
+      "score": 74.5,
+      "strict": 74.5,
+      "verified_strict_score": 74.5,
+      "checks": 11,
+      "failing": 4,
       "tier": 3,
       "detectors": {
         "structural": {
-          "potential": 6,
-          "pass_rate": 0.65,
-          "failing": 3,
-          "weighted_failures": 2.0999999999999996
+          "potential": 11,
+          "pass_rate": 0.7454545454545454,
+          "failing": 4,
+          "weighted_failures": 2.8
         }
       }
     },
@@ -497,12 +1624,12 @@
       "score": 100.0,
       "strict": 100.0,
       "verified_strict_score": 100.0,
-      "checks": 118,
+      "checks": 121,
       "failing": 0,
       "tier": 3,
       "detectors": {
         "dupes": {
-          "potential": 118,
+          "potential": 121,
           "pass_rate": 1.0,
           "failing": 0,
           "weighted_failures": 0.0
@@ -513,15 +1640,15 @@
       "score": 0.0,
       "strict": 0.0,
       "verified_strict_score": 0.0,
-      "checks": 147,
-      "failing": 6,
+      "checks": 189,
+      "failing": 10,
       "tier": 4,
       "detectors": {
         "test_coverage": {
-          "potential": 147,
-          "pass_rate": 0.0,
-          "failing": 6,
-          "weighted_failures": 147.1431638177494
+          "potential": 189,
+          "pass_rate": 0.0002527823511846756,
+          "failing": 10,
+          "weighted_failures": 188.9522241356261
         }
       }
     },
@@ -572,13 +1699,13 @@
       "strict": 0.0,
       "verified_strict_score": 0.0,
       "checks": 10,
-      "failing": 0,
+      "failing": 1,
       "tier": 4,
       "detectors": {
         "subjective_assessment": {
           "potential": 10,
           "pass_rate": 0.0,
-          "failing": 0,
+          "failing": 1,
           "weighted_failures": 10.0,
           "assessment_score": 0.0,
           "placeholder": true,
@@ -947,7 +2074,10 @@
     }
   },
   "reminder_history": {
-    "report_scores": 1
+    "report_scores": 9,
+    "feedback_nudge": 3,
+    "review_issues_pending": 3,
+    "stagnant_nudge": 24
   },
   "issues": {
     "structural::src/app.rs": {
@@ -956,9 +2086,9 @@
       "file": "src/app.rs",
       "tier": 3,
       "confidence": "medium",
-      "summary": "Large file: large (2064 LOC) / complexity score 568",
+      "summary": "Large file: large (2111 LOC) / complexity score 568",
       "detail": {
-        "loc": 2064,
+        "loc": 2111,
         "complexity_score": 568,
         "complexity_signals": [
           "nesting depth 12",
@@ -968,17 +2098,23 @@
           "callback depth 3"
         ]
       },
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "structural::src/gpu_renderer.rs": {
       "id": "structural::src/gpu_renderer.rs",
@@ -1001,7 +2137,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1031,7 +2167,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1073,11 +2209,11 @@
       "tier": 3,
       "confidence": "medium",
       "summary": "6 disconnected function clusters (23 functions) \u2014 likely mixed responsibilities",
-      "detail": "Clusters: test_ui_state_load_directory, get_status, test_ui_state_toggle_help, test_ui_state_reset_adjustments",
+      "detail": "Clusters: test_ui_state_load_directory, test_ui_state_set_status, toggle_help, reset_adjustments",
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1094,17 +2230,23 @@
       "confidence": "medium",
       "summary": "Unused import: {Renderer, STRIP_HEIGHT_PX}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::6": {
       "id": "unused::src/app.rs::unused_import::6",
@@ -1114,17 +2256,23 @@
       "confidence": "medium",
       "summary": "Unused import: {ImageBackend, ImageData}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::9": {
       "id": "unused::src/app.rs::unused_import::9",
@@ -1160,17 +2308,23 @@
       "confidence": "medium",
       "summary": "Unused import: {Config, Event, RecommendedWatcher, RecursiveMode, Watcher}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::11": {
       "id": "unused::src/app.rs::unused_import::11",
@@ -1206,17 +2360,23 @@
       "confidence": "medium",
       "summary": "Unused import: {AtomicUsize, Ordering}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::760": {
       "id": "unused::src/app.rs::unused_import::760",
@@ -1385,7 +2545,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1405,7 +2565,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1425,7 +2585,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1445,7 +2605,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1491,7 +2651,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1511,7 +2671,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1661,7 +2821,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1681,7 +2841,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1701,7 +2861,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1721,7 +2881,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1741,7 +2901,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1787,7 +2947,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1804,17 +2964,23 @@
       "confidence": "medium",
       "summary": "'new' has 3 different signatures across 3 files",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "orphaned::src/app.rs": {
       "id": "orphaned::src/app.rs",
@@ -1822,21 +2988,27 @@
       "file": "src/app.rs",
       "tier": 3,
       "confidence": "medium",
-      "summary": "Orphaned file (2064 LOC): zero importers, not an entry point",
+      "summary": "Orphaned file (2111 LOC): zero importers, not an entry point",
       "detail": {
-        "loc": 2064
+        "loc": 2111
       },
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "orphaned::src/gpu_renderer.rs": {
       "id": "orphaned::src/gpu_renderer.rs",
@@ -1851,7 +3023,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1873,7 +3045,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1895,7 +3067,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1917,7 +3089,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1939,7 +3111,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -1954,25 +3126,31 @@
       "file": "src/app.rs",
       "tier": 2,
       "confidence": "high",
-      "summary": "Untested module (2064 LOC, 0 importers) \u2014 no test files found",
+      "summary": "Untested module (2111 LOC, 0 importers) \u2014 no test files found",
       "detail": {
         "kind": "untested_critical",
-        "loc": 2064,
+        "loc": 2111,
         "importer_count": 0,
-        "loc_weight": 45.43126676640219,
+        "loc_weight": 45.94562003064057,
         "complexity_score": 568
       },
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "test_coverage::src/gpu_renderer.rs": {
       "id": "test_coverage::src/gpu_renderer.rs",
@@ -1991,7 +3169,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2017,7 +3195,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2042,7 +3220,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2067,7 +3245,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2092,7 +3270,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-05T17:58:50+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2109,17 +3287,23 @@
       "confidence": "medium",
       "summary": "Unused import: {Path, PathBuf}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::14": {
       "id": "unused::src/app.rs::unused_import::14",
@@ -2129,17 +3313,23 @@
       "confidence": "medium",
       "summary": "Unused import: {self, Receiver, Sender}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::16": {
       "id": "unused::src/app.rs::unused_import::16",
@@ -2149,17 +3339,23 @@
       "confidence": "medium",
       "summary": "Unused import: {Fullscreen, Icon, Window, WindowId},\n}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::1063": {
       "id": "unused::src/app.rs::unused_import::1063",
@@ -2169,17 +3365,23 @@
       "confidence": "medium",
       "summary": "Unused import: {\n                    SystemParametersInfoW, SPIF_SENDWININICHANGE, SPIF_UPDATEINIFILE,\n                    SPI_SETDESKWALLPAPER,\n                }",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::1106": {
       "id": "unused::src/app.rs::unused_import::1106",
@@ -2189,17 +3391,23 @@
       "confidence": "medium",
       "summary": "Unused import: {\n                    AppendMenuW, CreatePopupMenu, TrackPopupMenu, MF_STRING, TPM_NONOTIFY,\n                    TPM_RETURNCMD,\n                }",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::1136": {
       "id": "unused::src/app.rs::unused_import::1136",
@@ -2209,17 +3417,23 @@
       "confidence": "medium",
       "summary": "Unused import: {HasWindowHandle, RawWindowHandle}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::1333": {
       "id": "unused::src/app.rs::unused_import::1333",
@@ -2229,17 +3443,23 @@
       "confidence": "medium",
       "summary": "Unused import: {BITMAPINFOHEADER, BI_RGB}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::1334": {
       "id": "unused::src/app.rs::unused_import::1334",
@@ -2249,17 +3469,23 @@
       "confidence": "medium",
       "summary": "Unused import: {\n                CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,\n            }",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/app.rs::unused_import::1337": {
       "id": "unused::src/app.rs::unused_import::1337",
@@ -2269,17 +3495,23 @@
       "confidence": "medium",
       "summary": "Unused import: {GlobalAlloc, GlobalLock, GlobalUnlock, GHND}",
       "detail": {},
-      "status": "open",
-      "note": null,
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
-      "resolved_at": null,
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "zone": "production",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
     },
     "unused::src/gpu_renderer.rs::unused_import::1546": {
       "id": "unused::src/gpu_renderer.rs::unused_import::1546",
@@ -2292,7 +3524,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2312,7 +3544,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2332,7 +3564,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2352,7 +3584,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2372,7 +3604,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2392,7 +3624,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2412,7 +3644,7 @@
       "status": "open",
       "note": null,
       "first_seen": "2026-03-07T10:48:27+00:00",
-      "last_seen": "2026-03-07T10:48:27+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
       "resolved_at": null,
       "reopen_count": 0,
       "lang": "rust",
@@ -2420,6 +3652,903 @@
       "suppressed": false,
       "suppressed_at": null,
       "suppression_pattern": null
+    },
+    "review::.::holistic::mid_level_elegance::app_rs_monolith::9a33b618": {
+      "id": "review::.::holistic::mid_level_elegance::app_rs_monolith::9a33b618",
+      "detector": "review",
+      "file": ".",
+      "tier": 1,
+      "confidence": "high",
+      "summary": "src/app.rs is a 2000+ line monolith coordinating many concerns.",
+      "detail": {
+        "holistic": true,
+        "dimension": "mid_level_elegance",
+        "related_files": [
+          "src/app.rs"
+        ],
+        "evidence": [
+          "Coordinate WGPU renderer, image backend, and UI components in a single file."
+        ],
+        "suggestion": "Split SpedImageApp into smaller components (e.g., EventManager, ThumbnailService).",
+        "reasoning": ""
+      },
+      "status": "fixed",
+      "note": "modularized app.rs into small bits for easy control",
+      "first_seen": "2026-03-07T11:27:25+00:00",
+      "last_seen": "2026-03-07T11:27:25+00:00",
+      "resolved_at": "2026-03-07T13:03:42+00:00",
+      "reopen_count": 0,
+      "lang": "rust",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "manual",
+        "text": "I have actually modularized and I am not gaming the score by resolving without fixing.",
+        "attested_at": "2026-03-07T13:03:42+00:00",
+        "scan_verified": false
+      }
+    },
+    "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a": {
+      "id": "review::.::holistic::type_safety::bool_flag_complexity::5cfca22a",
+      "detector": "review",
+      "file": ".",
+      "tier": 2,
+      "confidence": "medium",
+      "summary": "Excessive use of individual bool flags in SpedImageApp.",
+      "detail": {
+        "holistic": true,
+        "dimension": "type_safety",
+        "related_files": [
+          "src/app.rs"
+        ],
+        "evidence": [
+          "ctrl_pressed, shift_pressed, alt_pressed, loading, dirty, show_help, etc. as individual fields."
+        ],
+        "suggestion": "Group UI and modifier state into sub-structs or BitFlags.",
+        "reasoning": ""
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T11:27:25+00:00",
+      "last_seen": "2026-03-07T11:27:25+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app.rs::unused_import::2068": {
+      "id": "unused::src/app.rs::unused_import::2068",
+      "detector": "unused",
+      "file": "src/app.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: *",
+      "detail": {},
+      "status": "auto_resolved",
+      "note": "Disappeared from scan \u2014 likely fixed",
+      "first_seen": "2026-03-07T11:47:27+00:00",
+      "last_seen": "2026-03-07T11:47:27+00:00",
+      "resolved_at": "2026-03-07T12:25:18+00:00",
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "scan_verified",
+        "text": "Disappeared from detector output",
+        "attested_at": "2026-03-07T12:25:18+00:00",
+        "scan_verified": true
+      }
+    },
+    "structural::src/app/actions.rs": {
+      "id": "structural::src/app/actions.rs",
+      "detector": "structural",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Large file: large (1173 LOC) / complexity score 319",
+      "detail": {
+        "loc": 1173,
+        "complexity_score": 319,
+        "complexity_signals": [
+          "nesting depth 9",
+          "longest function 156 LOC",
+          "cyclomatic complexity 53",
+          "2 params",
+          "callback depth 3"
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "structural::src/app/events.rs": {
+      "id": "structural::src/app/events.rs",
+      "detector": "structural",
+      "file": "src/app/events.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Large file: large (567 LOC) / complexity score 508",
+      "detail": {
+        "loc": 567,
+        "complexity_score": 508,
+        "complexity_signals": [
+          "nesting depth 12",
+          "longest function 216 LOC",
+          "cyclomatic complexity 53",
+          "3 params",
+          "callback depth 2"
+        ]
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::2": {
+      "id": "unused::src/app/actions.rs::unused_import::2",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {send_event, AppEvent}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::6": {
+      "id": "unused::src/app/actions.rs::unused_import::6",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {Path, PathBuf}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::8": {
+      "id": "unused::src/app/actions.rs::unused_import::8",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {KeyEvent, MouseScrollDelta}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::10": {
+      "id": "unused::src/app/actions.rs::unused_import::10",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {Key, NamedKey}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::744": {
+      "id": "unused::src/app/actions.rs::unused_import::744",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {\r\n                    SystemParametersInfoW, SPIF_SENDWININICHANGE, SPIF_UPDATEINIFILE,\r\n                    SPI_SETDESKWALLPAPER,\r\n                }",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::787": {
+      "id": "unused::src/app/actions.rs::unused_import::787",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {\r\n                    AppendMenuW, CreatePopupMenu, TrackPopupMenu, MF_STRING, TPM_NONOTIFY,\r\n                    TPM_RETURNCMD,\r\n                }",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::817": {
+      "id": "unused::src/app/actions.rs::unused_import::817",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {HasWindowHandle, RawWindowHandle}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::1012": {
+      "id": "unused::src/app/actions.rs::unused_import::1012",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {BITMAPINFOHEADER, BI_RGB}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::1013": {
+      "id": "unused::src/app/actions.rs::unused_import::1013",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {\r\n                CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,\r\n            }",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::1016": {
+      "id": "unused::src/app/actions.rs::unused_import::1016",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {GlobalAlloc, GlobalLock, GlobalUnlock, GHND}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/actions.rs::unused_import::1140": {
+      "id": "unused::src/app/actions.rs::unused_import::1140",
+      "detector": "unused",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: *",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/events.rs::unused_import::2": {
+      "id": "unused::src/app/events.rs::unused_import::2",
+      "detector": "unused",
+      "file": "src/app/events.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {AppEvent, WakeUp, APP_ICON}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/events.rs::unused_import::3": {
+      "id": "unused::src/app/events.rs::unused_import::3",
+      "detector": "unused",
+      "file": "src/app/events.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {Renderer, STRIP_HEIGHT_PX}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/events.rs::unused_import::8": {
+      "id": "unused::src/app/events.rs::unused_import::8",
+      "detector": "unused",
+      "file": "src/app/events.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {ElementState, MouseButton, WindowEvent}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/events.rs::unused_import::9": {
+      "id": "unused::src/app/events.rs::unused_import::9",
+      "detector": "unused",
+      "file": "src/app/events.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {ActiveEventLoop, EventLoop}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/events.rs::unused_import::10": {
+      "id": "unused::src/app/events.rs::unused_import::10",
+      "detector": "unused",
+      "file": "src/app/events.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {Icon, Window, WindowId}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/mod.rs::unused_import::7": {
+      "id": "unused::src/app/mod.rs::unused_import::7",
+      "detector": "unused",
+      "file": "src/app/mod.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: SpedImageApp",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/mod.rs::unused_import::8": {
+      "id": "unused::src/app/mod.rs::unused_import::8",
+      "detector": "unused",
+      "file": "src/app/mod.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {AppEvent, WakeUp}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/services.rs::unused_import::2": {
+      "id": "unused::src/app/services.rs::unused_import::2",
+      "detector": "unused",
+      "file": "src/app/services.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {send_event, AppEvent, MAX_THUMBNAILS, MAX_THUMB_THREADS, THUMB_LOAD_SIZE}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/services.rs::unused_import::4": {
+      "id": "unused::src/app/services.rs::unused_import::4",
+      "detector": "unused",
+      "file": "src/app/services.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {Config, Event, RecommendedWatcher, RecursiveMode, Watcher}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/services.rs::unused_import::5": {
+      "id": "unused::src/app/services.rs::unused_import::5",
+      "detector": "unused",
+      "file": "src/app/services.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {Path, PathBuf}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/state.rs::unused_import::1": {
+      "id": "unused::src/app/state.rs::unused_import::1",
+      "detector": "unused",
+      "file": "src/app/state.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {AppEvent, WakeUp}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/state.rs::unused_import::10": {
+      "id": "unused::src/app/state.rs::unused_import::10",
+      "detector": "unused",
+      "file": "src/app/state.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: {self, Receiver, Sender}",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "unused::src/app/state.rs::unused_import::114": {
+      "id": "unused::src/app/state.rs::unused_import::114",
+      "detector": "unused",
+      "file": "src/app/state.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Unused import: *",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "signature::src/app/state.rs::signature_variance::new": {
+      "id": "signature::src/app/state.rs::signature_variance::new",
+      "detector": "signature",
+      "file": "src/app/state.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "'new' has 3 different signatures across 3 files",
+      "detail": {},
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:17+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "orphaned::src/app/actions.rs": {
+      "id": "orphaned::src/app/actions.rs",
+      "detector": "orphaned",
+      "file": "src/app/actions.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (1173 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 1173
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "orphaned::src/app/events.rs": {
+      "id": "orphaned::src/app/events.rs",
+      "detector": "orphaned",
+      "file": "src/app/events.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (567 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 567
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "orphaned::src/app/services.rs": {
+      "id": "orphaned::src/app/services.rs",
+      "detector": "orphaned",
+      "file": "src/app/services.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (142 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 142
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "orphaned::src/app/state.rs": {
+      "id": "orphaned::src/app/state.rs",
+      "detector": "orphaned",
+      "file": "src/app/state.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (125 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 125
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "orphaned::src/app/types.rs": {
+      "id": "orphaned::src/app/types.rs",
+      "detector": "orphaned",
+      "file": "src/app/types.rs",
+      "tier": 3,
+      "confidence": "medium",
+      "summary": "Orphaned file (37 LOC): zero importers, not an entry point",
+      "detail": {
+        "loc": 37
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::src/app/actions.rs": {
+      "id": "test_coverage::src/app/actions.rs",
+      "detector": "test_coverage",
+      "file": "src/app/actions.rs",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Untested module (1173 LOC, 0 importers) \u2014 no test files found",
+      "detail": {
+        "kind": "untested_critical",
+        "loc": 1173,
+        "importer_count": 0,
+        "loc_weight": 34.249087579087416,
+        "complexity_score": 319
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::src/app/events.rs": {
+      "id": "test_coverage::src/app/events.rs",
+      "detector": "test_coverage",
+      "file": "src/app/events.rs",
+      "tier": 2,
+      "confidence": "high",
+      "summary": "Untested module (567 LOC, 0 importers) \u2014 no test files found",
+      "detail": {
+        "kind": "untested_critical",
+        "loc": 567,
+        "importer_count": 0,
+        "loc_weight": 23.811761799581316,
+        "complexity_score": 508
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::src/app/services.rs": {
+      "id": "test_coverage::src/app/services.rs",
+      "detector": "test_coverage",
+      "file": "src/app/services.rs",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (142 LOC, 0 importers) \u2014 no test files found",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 142,
+        "importer_count": 0,
+        "loc_weight": 11.916375287812984
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::src/app/state.rs": {
+      "id": "test_coverage::src/app/state.rs",
+      "detector": "test_coverage",
+      "file": "src/app/state.rs",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (125 LOC, 0 importers) \u2014 no test files found",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 125,
+        "importer_count": 0,
+        "loc_weight": 11.180339887498949
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    },
+    "test_coverage::src/app/types.rs": {
+      "id": "test_coverage::src/app/types.rs",
+      "detector": "test_coverage",
+      "file": "src/app/types.rs",
+      "tier": 3,
+      "confidence": "high",
+      "summary": "Untested module (37 LOC, 0 importers) \u2014 no test files found",
+      "detail": {
+        "kind": "untested_module",
+        "loc": 37,
+        "importer_count": 0,
+        "loc_weight": 6.082762530298219
+      },
+      "status": "open",
+      "note": null,
+      "first_seen": "2026-03-07T12:25:18+00:00",
+      "last_seen": "2026-03-07T13:03:58+00:00",
+      "resolved_at": null,
+      "reopen_count": 0,
+      "lang": "rust",
+      "zone": "production",
+      "suppressed": false,
+      "suppressed_at": null,
+      "suppression_pattern": null
+    }
+  },
+  "review_cache": {
+    "files": {},
+    "holistic": {
+      "reviewed_at": "2026-03-07T11:27:26+00:00",
+      "file_count_at_review": 6,
+      "issue_count": 2
     }
   }
 }

@@ -211,7 +211,7 @@ mod tests {
         assert!(state.current_file().is_none());
 
         let temp_dir = env::temp_dir();
-        let path = temp_dir.join("test.png");
+        let path = temp_dir.join("test_ui_state_current_file.png");
         std::fs::File::create(&path).unwrap();
 
         state.files.push(FileEntry::new(path.clone()));

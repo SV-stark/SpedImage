@@ -1,0 +1,59 @@
+{
+    "batch": "cross_module_architecture",
+    "batch_index": 1,
+    "assessments": {
+        "cross_module_architecture": 72.5
+    },
+    "dimension_notes": {
+        "cross_module_architecture": {
+            "evidence": [
+                "src/gpu_renderer.rs is a 1560-line hub module mixing low-level WGPU state, shaders, and high-level UI rendering.",
+                "src/image_backend.rs (846 lines) acts as a heavy hub for disparate tasks: decoding, resizing, EXIF parsing, and histogram generation.",
+                "The recent modularization of SpedImageApp into src/app/ improved orchestration but highlighted the lack of decomposition in the support modules."
+            ],
+            "impact_scope": "subsystem",
+            "fix_scope": "multi_file_refactor",
+            "confidence": "high"
+        }
+    },
+    "issues": [
+        {
+            "dimension": "cross_module_architecture",
+            "identifier": "renderer_god_module",
+            "summary": "gpu_renderer.rs is a massive hub module with mixed responsibilities",
+            "related_files": [
+                "src/gpu_renderer.rs"
+            ],
+            "evidence": [
+                "Contains WGSL shader strings, vertex/uniform structures, and the entire Renderer implementation including complex UI overlay logic."
+            ],
+            "suggestion": "Split into gpu/mod.rs, gpu/shaders.rs, and separate the UI/overlay rendering into a higher-level module.",
+            "confidence": "high",
+            "impact_scope": "subsystem",
+            "fix_scope": "multi_file_refactor"
+        },
+        {
+            "dimension": "cross_module_architecture",
+            "identifier": "backend_hub_complexity",
+            "summary": "image_backend.rs mixes decoding logic with processing and metadata features",
+            "related_files": [
+                "src/image_backend.rs"
+            ],
+            "evidence": [
+                "Handles basic decoding, fast resizing (fir), EXIF extraction, and histogram computation in one file."
+            ],
+            "suggestion": "Extract EXIF and histogram logic into separate modules under image_backend/.",
+            "confidence": "high",
+            "impact_scope": "subsystem",
+            "fix_scope": "multi_file_refactor"
+        }
+    ],
+    "retrospective": {
+        "root_causes": [
+            "Rapid feature iteration led to 'appending' to existing files rather than creating new ones."
+        ],
+        "likely_symptoms": [
+            "High mental load when modifying rendering or loading logic."
+        ]
+    }
+}

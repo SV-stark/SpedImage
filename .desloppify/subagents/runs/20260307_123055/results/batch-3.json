@@ -1,0 +1,53 @@
+{
+    "batch": "abstraction_fitness",
+    "batch_index": 3,
+    "assessments": {
+        "abstraction_fitness": 82.5
+    },
+    "dimension_notes": {
+        "abstraction_fitness": {
+            "evidence": [
+                "UiState (src/ui.rs) and SpedImageApp (src/app/state.rs) have overlapping concerns regarding application flow control (e.g., navigation).",
+                "ImageAdjustments is a wide options bag passed through most rendering functions, which simplifies the API but obscures specific dependencies of individual rendering passes.",
+                "Indirection hotspots include actions.rs and events.rs with chain depths of 3, which is reasonable given the complexity of the event loop."
+            ],
+            "impact_scope": "module",
+            "fix_scope": "multi_file_refactor",
+            "confidence": "high",
+            "sub_axes": {
+                "abstraction_leverage": 85.0,
+                "indirection_cost": 75.0,
+                "interface_honesty": 90.0,
+                "delegation_density": 80.0,
+                "definition_directness": 82.0,
+                "type_discipline": 88.0
+            }
+        }
+    },
+    "issues": [
+        {
+            "dimension": "abstraction_fitness",
+            "identifier": "overlapping_state_responsibilities",
+            "summary": "Overlap between UiState and SpedImageApp leads to split ownership of navigation logic",
+            "related_files": [
+                "src/ui.rs",
+                "src/app/state.rs"
+            ],
+            "evidence": [
+                "Both structs maintain state related to the current file and handle navigation methods (next/prev)."
+            ],
+            "suggestion": "Consolidate file-list management and index tracking into UiState and treat SpedImageApp as the coordinator.",
+            "confidence": "high",
+            "impact_scope": "module",
+            "fix_scope": "multi_file_refactor"
+        }
+    ],
+    "retrospective": {
+        "root_causes": [
+            "Incremental migration of app logic out of the main loop created intermediate states in both structs."
+        ],
+        "likely_symptoms": [
+            "State synchronization bugs during rapid navigation."
+        ]
+    }
+}

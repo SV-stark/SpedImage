@@ -737,7 +737,7 @@ mod tests {
     #[test]
     fn test_save_jpeg() {
         let temp_dir = std::env::temp_dir();
-        let test_path = temp_dir.join("test_spedimage_save.jpg");
+        let test_path = temp_dir.join("test_save_jpeg.jpg");
 
         let img = image::DynamicImage::ImageRgba8(image::RgbaImage::new(100, 100));
         ImageBackend::save(&test_path, &img, 90).unwrap();
@@ -749,7 +749,7 @@ mod tests {
     #[test]
     fn test_save_png() {
         let temp_dir = std::env::temp_dir();
-        let test_path = temp_dir.join("test_spedimage_save.png");
+        let test_path = temp_dir.join("test_save_png.png");
 
         let img = image::DynamicImage::ImageRgba8(image::RgbaImage::new(100, 100));
         ImageBackend::save(&test_path, &img, 90).unwrap();
@@ -761,7 +761,7 @@ mod tests {
     #[test]
     fn test_save_bmp() {
         let temp_dir = std::env::temp_dir();
-        let test_path = temp_dir.join("test_spedimage_save.bmp");
+        let test_path = temp_dir.join("test_save_bmp.bmp");
 
         let img = image::DynamicImage::ImageRgba8(image::RgbaImage::new(100, 100));
         ImageBackend::save(&test_path, &img, 90).unwrap();
@@ -773,9 +773,9 @@ mod tests {
     #[test]
     fn test_is_supported() {
         let temp_dir = std::env::temp_dir();
-        let jpg_path = temp_dir.join("test.jpg");
-        let png_path = temp_dir.join("test.png");
-        let unknown_path = temp_dir.join("test.xyz");
+        let jpg_path = temp_dir.join("test_is_supported_1.jpg");
+        let png_path = temp_dir.join("test_is_supported_2.png");
+        let unknown_path = temp_dir.join("test_is_supported_3.xyz");
 
         std::fs::File::create(&jpg_path).unwrap();
         std::fs::File::create(&png_path).unwrap();

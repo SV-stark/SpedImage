@@ -1,0 +1,34 @@
+{
+  "batch": "api_surface_coherence",
+  "batch_index": 19,
+  "assessments": {"api_surface_coherence": 87.5},
+  "dimension_notes": {
+    "api_surface_coherence": {
+      "evidence": [
+        "The public API surface is relatively small and focused, which helps maintain coherence.",
+        "There is a slight inconsistency in parameter types for paths: some methods take PathBuf by value while others take &Path or String representation of paths.",
+        "The ImageLoaded event payload is a Vec<ImageData>, which is clear, but the handling logic in the event loop assumes the first frame is representative of the whole set for status updates, which is an implicit contract not reflected in the type itself."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "confidence": "high"
+    }
+  },
+  "issues": [
+    {
+      "dimension": "api_surface_coherence",
+      "identifier": "non_idiomatic_path_parameters",
+      "summary": "Methods take PathBuf by value instead of using slice references or AsRef",
+      "related_files": ["src/ui.rs", "src/app/state.rs"],
+      "evidence": ["UiState::load_directory and SpedImageApp::load_image both take PathBuf, forcing a clone if the caller only has a reference."],
+      "suggestion": "Change path parameters to take &Path or impl AsRef<Path> to improve API ergonomics and performance.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": ["Simplicity in initial API design prioritizing ease of implementation over idiomatic performance patterns."],
+    "likely_symptoms": ["Unnecessary allocations when navigating through many images quickly."]
+  }
+}

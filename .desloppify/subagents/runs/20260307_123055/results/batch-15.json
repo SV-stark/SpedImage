@@ -1,0 +1,44 @@
+{
+    "batch": "naming_quality",
+    "batch_index": 15,
+    "assessments": {
+        "naming_quality": 86.5
+    },
+    "dimension_notes": {
+        "naming_quality": {
+            "evidence": [
+                "Naming is mostly clear and domain-aligned (e.g., ImageAdjustments, SpedImageApp, Prefetched).",
+                "process_events (src/app/events.rs) is a generic name for a function with very complex and specific behaviors (directory handling, render state synchronization).",
+                "rgba_data (in ImageData) is descriptive, but arguably less idiomatic than simply 'pixels' or 'data' for a struct already named ImageData."
+            ],
+            "impact_scope": "module",
+            "fix_scope": "single_edit",
+            "confidence": "high"
+        }
+    },
+    "issues": [
+        {
+            "dimension": "naming_quality",
+            "identifier": "generic_event_handler_naming",
+            "summary": "The primary state machine loop uses a generic 'process_events' name",
+            "related_files": [
+                "src/app/events.rs"
+            ],
+            "evidence": [
+                "The function name 'process_events' doesn't reflect that it acts as the central coordinator for application state transitions."
+            ],
+            "suggestion": "Rename to 'handle_app_events' or 'coordinate_state_updates' and extract sub-handlers with more specific names (e.g., 'handle_image_load_success').",
+            "confidence": "medium",
+            "impact_scope": "local",
+            "fix_scope": "single_edit"
+        }
+    ],
+    "retrospective": {
+        "root_causes": [
+            "Standard library or framework naming conventions influencing domain-specific logic names."
+        ],
+        "likely_symptoms": [
+            "Developers may assume it's just a simple event forwarder rather than the application's core logic hub."
+        ]
+    }
+}

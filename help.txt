@@ -1,0 +1,23 @@
+CLI tool to aggregate directory contents into a single markdown file optimized for LLM consumption
+
+Usage: context-builder.exe [OPTIONS]
+
+Options:
+  -d, --input <INPUT>            Directory path to process [default: .]
+  -o, --output <OUTPUT>          Output file path [default: output.md]
+  -f, --filter <FILTER>          File extensions to include (e.g., --filter rs,toml)
+  -i, --ignore <IGNORE>          Folder or file names to ignore (e.g., --ignore target --ignore lock)
+      --preview                  Preview mode: only print the file tree to the console, don't generate the documentation file
+      --token-count              Token count mode: estimate the total token count of the final document
+      --line-numbers             Add line numbers to code blocks in the output
+  -y, --yes                      Automatically answer yes to all prompts
+      --max-tokens <MAX_TOKENS>  Maximum token budget for the output. Files are truncated/skipped when exceeded
+      --diff-only                Output only diffs (omit full file contents; requires auto-diff & timestamped output)
+      --clear-cache              Clear the cached project state and exit
+      --init                     Initialize a new context-builder.toml config file in the current directory
+      --signatures               Extract function/class signatures only (requires tree-sitter feature)
+      --structure                Extract code structure (imports, exports, symbol counts) - requires tree-sitter feature
+      --truncate <MODE>          Truncation mode for max-tokens: "smart" (AST boundaries) or "byte" [default: smart]
+      --visibility <VISIBILITY>  Filter signatures by visibility: "all", "public", or "private" [default: all]
+  -h, --help                     Print help
+  -V, --version                  Print version

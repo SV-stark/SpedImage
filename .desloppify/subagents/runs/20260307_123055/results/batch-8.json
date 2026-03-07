@@ -1,0 +1,45 @@
+{
+    "batch": "incomplete_migration",
+    "batch_index": 8,
+    "assessments": {
+        "incomplete_migration": 84.0
+    },
+    "dimension_notes": {
+        "incomplete_migration": {
+            "evidence": [
+                "The project has recently migrated from a monolithic src/app.rs to a modular src/app/ structure. This is a positive step, but leaves the leaf nodes (gpu_renderer.rs, image_backend.rs) in a monolithic state.",
+                "The overlap between UiState and SpedImageApp indicates an ongoing shift in how state is managed across the application.",
+                "No deprecated symbols or 'legacy' markers were found in the active code paths."
+            ],
+            "impact_scope": "module",
+            "fix_scope": "multi_file_refactor",
+            "confidence": "high"
+        }
+    },
+    "issues": [
+        {
+            "dimension": "incomplete_migration",
+            "identifier": "monolithic_backends",
+            "summary": "The migration to a modular structure is incomplete as it focuses only on the app orchestration layer",
+            "related_files": [
+                "src/gpu_renderer.rs",
+                "src/image_backend.rs"
+            ],
+            "evidence": [
+                "These files remain large monoliths despite the surrounding architecture moving towards modularity."
+            ],
+            "suggestion": "Continue the modularization effort by splitting gpu_renderer and image_backend into focused sub-modules.",
+            "confidence": "high",
+            "impact_scope": "subsystem",
+            "fix_scope": "multi_file_refactor"
+        }
+    ],
+    "retrospective": {
+        "root_causes": [
+            "Modularization effort prioritized the most complex part (app.rs) first, leaving the rest for later phases."
+        ],
+        "likely_symptoms": [
+            "Inconsistent levels of granularity across different parts of the codebase."
+        ]
+    }
+}

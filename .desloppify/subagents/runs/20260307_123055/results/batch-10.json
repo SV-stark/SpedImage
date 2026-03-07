@@ -1,0 +1,24 @@
+{
+    "batch": "initialization_coupling",
+    "batch_index": 10,
+    "assessments": {
+        "initialization_coupling": 90.0
+    },
+    "dimension_notes": {
+        "initialization_coupling": {
+            "evidence": [
+                "Initialization follows the standard winit ApplicationHandler pattern, ensuring that the Window and GPU context are only created after the event loop has resumed.",
+                "There are no module-level global variables or singletons that require specific initialization order.",
+                "The use of Option for fields like window and renderer is a necessary consequence of the winit lifeycle, although it introduces minor runtime checking overhead."
+            ],
+            "impact_scope": "module",
+            "fix_scope": "single_edit",
+            "confidence": "high"
+        }
+    },
+    "issues": [],
+    "retrospective": {
+        "root_causes": [],
+        "likely_symptoms": []
+    }
+}

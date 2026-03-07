@@ -1,0 +1,44 @@
+{
+    "batch": "contract_coherence",
+    "batch_index": 12,
+    "assessments": {
+        "contract_coherence": 88.0
+    },
+    "dimension_notes": {
+        "contract_coherence": {
+            "evidence": [
+                "Function signatures in Rust reflect their capabilities well (e.g., methods taking &mut self for state change).",
+                "The send_event helper in src/app/types.rs explicitly swallows potential errors from the mpsc channel and EventLoopProxy via .ok(), which violates the 'honesty' of the error contract if the channel is closed.",
+                "Most public functions honor their Result types, although top-level error propagation could be more granular."
+            ],
+            "impact_scope": "module",
+            "fix_scope": "single_edit",
+            "confidence": "high"
+        }
+    },
+    "issues": [
+        {
+            "dimension": "contract_coherence",
+            "identifier": "swallowed_send_errors",
+            "summary": "Application-wide event helper silently swallows channel failure",
+            "related_files": [
+                "src/app/types.rs"
+            ],
+            "evidence": [
+                "The send_event function uses .ok() on both tx.send and proxy.send_event without logging or propagation."
+            ],
+            "suggestion": "The function should at least log an error or return a Result to allow callers to handle application shutdown scenarios.",
+            "confidence": "high",
+            "impact_scope": "subsystem",
+            "fix_scope": "single_edit"
+        }
+    ],
+    "retrospective": {
+        "root_causes": [
+            "Prioritization of a 'fire and forget' API over robust error propagation in background services."
+        ],
+        "likely_symptoms": [
+            "Silent application stalls when the event loop is shutting down or the proxy becomes invalid."
+        ]
+    }
+}

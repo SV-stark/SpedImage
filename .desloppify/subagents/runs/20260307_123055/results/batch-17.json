@@ -1,0 +1,45 @@
+{
+    "batch": "convention_outlier",
+    "batch_index": 17,
+    "assessments": {
+        "convention_outlier": 88.5
+    },
+    "dimension_notes": {
+        "convention_outlier": {
+            "evidence": [
+                "The codebase is highly compliant with idiomatic Rust naming (snake_case) and organization standards.",
+                "A minor outlier is the placement of ui.rs at the root while the app layer has been moved to a src/app/ sub-package. This creates an inconsistent level of nesting for key modules.",
+                "The use of .ok() for swallowing errors in send_event (src/app/types.rs) is a minor style island compared to theResult-heavy pattern found elsewhere."
+            ],
+            "impact_scope": "module",
+            "fix_scope": "single_edit",
+            "confidence": "high"
+        }
+    },
+    "issues": [
+        {
+            "dimension": "convention_outlier",
+            "identifier": "inconsistent_module_nesting",
+            "summary": "UI module is at the root while newer app modules are nested",
+            "related_files": [
+                "src/ui.rs",
+                "src/app/mod.rs"
+            ],
+            "evidence": [
+                "ui.rs lives in src/ despite being a domain package similar to the ones now living in src/app/."
+            ],
+            "suggestion": "Move ui.rs to src/ui/mod.rs to maintain a consistent organizational hierarchy.",
+            "confidence": "high",
+            "impact_scope": "module",
+            "fix_scope": "single_edit"
+        }
+    ],
+    "retrospective": {
+        "root_causes": [
+            "Partial application of the new modularization strategy."
+        ],
+        "likely_symptoms": [
+            "Mildly confusing import paths (e.g., crate::ui vs crate::app::state)."
+        ]
+    }
+}

@@ -1,0 +1,76 @@
+    Checking spedimage v2.0.0 (E:\SpedImage)
+error: couldn't read `src\app\../assets/icons/icon.png`: The system cannot find the path specified. (os error 3)
+  --> src\app\types.rs:11:29
+   |
+11 | pub const APP_ICON: &[u8] = include_bytes!("../assets/icons/icon.png");
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: there is a file with the same name in a different directory
+   |
+11 | pub const APP_ICON: &[u8] = include_bytes!("../../assets/icons/icon.png");
+   |                                                +++
+
+warning: unused imports: `APP_ICON` and `WakeUp`
+ --> src\app\actions.rs:2:47
+  |
+2 | use crate::app::types::{send_event, AppEvent, WakeUp, APP_ICON};
+  |                                               ^^^^^^  ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::sync::Arc`
+ --> src\app\actions.rs:7:5
+  |
+7 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `ElementState`
+ --> src\app\actions.rs:9:20
+  |
+9 | use winit::event::{ElementState, KeyEvent, MouseScrollDelta};
+  |                    ^^^^^^^^^^^^
+
+warning: unused imports: `Icon` and `Window`
+  --> src\app\actions.rs:13:33
+   |
+13 | use winit::window::{Fullscreen, Icon, Window};
+   |                                 ^^^^  ^^^^^^
+
+warning: unused import: `crate::image_backend::ImageData`
+ --> src\app\events.rs:4:5
+  |
+4 | use crate::image_backend::ImageData;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Path`
+ --> src\app\events.rs:6:17
+  |
+6 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+
+warning: unused import: `winit::dpi::PhysicalPosition`
+ --> src\app\events.rs:9:5
+  |
+9 | use winit::dpi::PhysicalPosition;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Fullscreen`
+  --> src\app\events.rs:12:21
+   |
+12 | use winit::window::{Fullscreen, Icon, Window, WindowId};
+   |                     ^^^^^^^^^^
+
+warning: unused import: `std::os::windows::ffi::OsStrExt`
+  --> src\app\actions.rs:16:5
+   |
+16 | use std::os::windows::ffi::OsStrExt;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `winit::raw_window_handle::HasWindowHandle`
+  --> src\app\actions.rs:12:5
+   |
+12 | use winit::raw_window_handle::HasWindowHandle;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `spedimage` (lib) generated 10 warnings
+error: could not compile `spedimage` (lib) due to 1 previous error; 10 warnings emitted
