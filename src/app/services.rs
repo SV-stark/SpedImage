@@ -1,6 +1,6 @@
 use crate::app::state::SpedImageApp;
 use crate::app::types::{send_event, AppEvent, MAX_THUMBNAILS, MAX_THUMB_THREADS, THUMB_LOAD_SIZE};
-use crate::image_backend::ImageBackend;
+use crate::image::ImageBackend;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -32,15 +32,15 @@ impl SpedImageApp {
         };
 
         for path in neighbors {
-            if self.prefetch_cache.contains(&path) {
+            if self.navigation.prefetch_cache.contains(&path) {
                 continue;
             }
             const MAX_CONCURRENT_PREFETCH: usize = 2;
-            if self.prefetch_active.load(Ordering::Relaxed) >= MAX_CONCURRENT_PREFETCH {
+            if self.navigation.prefetch_active.load(Ordering::Relaxed) >= MAX_CONCURRENT_PREFETCH {
                 continue;
             }
-            self.prefetch_active.fetch_add(1, Ordering::Relaxed);
-            let active = self.prefetch_active.clone();
+            self.navigation.prefetch_active.fetch_add(1, Ordering::Relaxed);
+            let active = self.navigation.prefetch_active.clone();
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
             let p = path.clone();
@@ -96,7 +96,7 @@ impl SpedImageApp {
     /// Spawn background thumbnail-loading threads for all files in the current directory.
     pub(crate) fn load_thumbnails_for_dir(&mut self) {
         let files: Vec<PathBuf> = self.ui_state.files.iter().map(|f| f.path.clone()).collect();
-        self.thumb_paths = files.clone();
+        self.thumbnails.paths = files.clone();
 
         if let Some(ref mut renderer) = self.renderer {
             renderer.clear_thumbnails();
@@ -105,7 +105,7 @@ impl SpedImageApp {
         let n = files.len().min(MAX_THUMBNAILS);
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
-        let active = self.thumb_active.clone();
+        let active = self.thumbnails.active_count.clone();
 
         for path in files.into_iter().take(n) {
             while active.load(Ordering::Relaxed) >= MAX_THUMB_THREADS {
@@ -138,5 +138,33 @@ impl SpedImageApp {
                 }
             });
         }
+    }
+}
+ 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::event_loop::EventLoopBuilder;
+    use crate::app::state::SpedImageApp;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+ 
+    #[test]
+    fn test_prefetch_logic_caching() {
+        use winit::event_loop::EventLoop;
+        let event_loop = EventLoop::<crate::app::types::WakeUp>::with_user_event().build().unwrap();
+        let proxy = event_loop.create_proxy();
+        let (tx, _rx) = std::sync::mpsc::channel();
+ 
+        let mut app = SpedImageApp::default_with_proxy(proxy, tx);
+ 
+        let test_path = PathBuf::from("test_image_123.png");
+        app.navigation.prefetch_cache.put(test_path.clone(), ());
+        
+        let neighbors = vec![test_path.clone()];
+        app.prefetch_adjacent(&test_path);
+        
+        // Assert no new prefetch was started because it's in cache
+        assert_eq!(app.navigation.prefetch_active.load(Ordering::Relaxed), 0);
     }
 }

@@ -1,4 +1,4 @@
-use crate::image_backend::ImageData;
+use crate::image::ImageData;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use winit::event_loop::EventLoopProxy;

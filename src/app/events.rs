@@ -1,6 +1,6 @@
 use crate::app::state::SpedImageApp;
 use crate::app::types::{AppEvent, WakeUp, APP_ICON};
-use crate::gpu_renderer::{Renderer, STRIP_HEIGHT_PX};
+use crate::render::{Renderer, STRIP_HEIGHT_PX};
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -39,7 +39,7 @@ impl SpedImageApp {
                     self.ui_state.set_status(msg);
                 }
                 AppEvent::Prefetched(path, frames) => {
-                    self.prefetch_cache.push(path, frames);
+                    self.navigation.prefetch_cache.push(path, frames);
                 }
                 AppEvent::ThumbnailLoaded(path, rgba, width, height) => {
                     if let Some(ref mut renderer) = self.renderer {
@@ -60,7 +60,7 @@ impl SpedImageApp {
                         continue;
                     }
                     let mut first_frame = frames.remove(0);
-                    let path = PathBuf::from(&first_frame.path);
+                    let path = first_frame.path.clone();
 
                     let frame_delays: Vec<u32> = frames.iter().map(|f| f.frame_delay_ms).collect();
 
@@ -80,7 +80,7 @@ impl SpedImageApp {
                         }
                     }
 
-                    if new_dir != old_dir || self.thumb_paths.is_empty() {
+                    if new_dir != old_dir || self.thumbnails.paths.is_empty() {
                         self.load_thumbnails_for_dir();
                         if let Some(parent) = path.parent() {
                             self.setup_file_watcher(parent);
@@ -110,14 +110,14 @@ impl SpedImageApp {
                     drop(frames);
 
                     if !frame_delays.is_empty() && first_frame.frame_delay_ms > 0 {
-                        self.next_frame_time = Some(
+                        self.animation.next_frame_time = Some(
                             std::time::Instant::now()
                                 + std::time::Duration::from_millis(
                                     first_frame.frame_delay_ms as u64,
                                 ),
                         );
                     } else if frame_delays.is_empty() {
-                        self.next_frame_time = None;
+                        self.animation.next_frame_time = None;
                     }
 
                     let size_mb = first_frame.file_size_bytes as f64 / 1_048_576.0;
@@ -142,8 +142,8 @@ impl SpedImageApp {
                     ));
 
                     self.current_image = Some(first_frame);
-                    self.current_frame_delays = frame_delays;
-                    self.current_frame_idx = 0;
+                    self.animation.frame_delays = frame_delays;
+                    self.animation.frame_idx = 0;
                     self.loading = false;
                 }
                 AppEvent::ImageError(e) => {
@@ -158,7 +158,7 @@ impl SpedImageApp {
                 AppEvent::FileRenamed(old_path, new_path) => {
                     if let Some(img) = &mut self.current_image {
                         if img.path == old_path {
-                            img.path = new_path.to_string_lossy().into_owned();
+                            img.path = new_path.clone();
                         }
                     }
                     for file in &mut self.ui_state.files {
@@ -172,8 +172,8 @@ impl SpedImageApp {
                             break;
                         }
                     }
-                    if let Some(frames) = self.prefetch_cache.pop(&old_path) {
-                        self.prefetch_cache.push(new_path.clone(), frames);
+                    if let Some(frames) = self.navigation.prefetch_cache.pop(&old_path) {
+                        self.navigation.prefetch_cache.push(new_path.clone(), frames);
                     }
                     self.ui_state.set_status(format!(
                         "Renamed to {}",
@@ -269,9 +269,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 } else {
                     if let Some(c) = event.logical_key.to_text() {
                         let key = c.to_lowercase().chars().next().unwrap_or(' ');
-                        if self.held_navigation_key == Some(key) {
-                            self.held_navigation_key = None;
-                            self.last_advance_time = None;
+                        if self.navigation.held_key == Some(key) {
+                            self.navigation.held_key = None;
+                            self.navigation.last_advance_time = None;
                         }
                     }
                 }
@@ -326,13 +326,13 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let status_opt: Option<String> =
                         self.ui_state.status_message.clone().map(|msg| {
                             let mut final_msg = msg;
-                            let zoom_pct = (1.0 / self.ui_state.adjustments.crop_rect[2] * 100.0)
+                            let zoom_pct = (1.0f32 / self.ui_state.adjustments.crop_rect[2] * 100.0)
                                 .round() as u32;
                             if zoom_pct != 100 {
                                 final_msg = format!("{final_msg}  |  {zoom_pct}%");
                             }
-                            if self.slideshow_active {
-                                let interval_secs = self.slideshow_interval.as_secs();
+                            if self.slideshow.active {
+                                let interval_secs = self.slideshow.interval.as_secs();
                                 final_msg = format!("▶ {interval_secs}s  |  {final_msg}");
                             }
                             final_msg
@@ -408,7 +408,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         let diff: f32 = current
             .iter()
             .zip(target.iter())
-            .map(|(c, t)| (c - t).abs())
+            .map(|(&c, &t): (&f32, &f32)| (c - t).abs())
             .sum();
         if diff > 0.001 {
             animating_zoom = true;
@@ -422,13 +422,13 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             self.dirty = true;
         }
 
-        if let Some(next_time) = self.next_frame_time {
+        if let Some(next_time) = self.animation.next_frame_time {
             let now = std::time::Instant::now();
-            if now >= next_time && !self.current_frame_delays.is_empty() {
-                let total = self.current_frame_delays.len() + 1;
-                self.current_frame_idx = (self.current_frame_idx + 1) % total;
+            if now >= next_time && !self.animation.frame_delays.is_empty() {
+                let total = self.animation.frame_delays.len() + 1;
+                self.animation.frame_idx = (self.animation.frame_idx + 1) % total;
 
-                let delay = if self.current_frame_idx == 0 {
+                let delay = if self.animation.frame_idx == 0 {
                     if let Some(ref mut renderer) = self.renderer {
                         renderer.swap_gif_frame(0);
                     }
@@ -437,28 +437,28 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         .map(|f| f.frame_delay_ms)
                         .unwrap_or(100)
                 } else {
-                    let idx = self.current_frame_idx;
+                    let idx = self.animation.frame_idx;
                     if let Some(ref mut renderer) = self.renderer {
                         renderer.swap_gif_frame(idx);
                     }
-                    self.current_frame_delays
-                        .get(self.current_frame_idx - 1)
+                    self.animation.frame_delays
+                        .get(idx - 1)
                         .copied()
                         .unwrap_or(100)
                 };
 
-                self.next_frame_time =
+                self.animation.next_frame_time =
                     Some(now + std::time::Duration::from_millis(delay.max(10) as u64));
                 self.dirty = true;
             }
         }
 
         let now = std::time::Instant::now();
-        if self.slideshow_active {
-            if let Some(st) = self.slideshow_next_time {
+        if self.slideshow.active {
+            if let Some(st) = self.slideshow.next_time {
                 if now >= st {
                     self.next_image();
-                    self.slideshow_next_time = Some(now + self.slideshow_interval);
+                    self.slideshow.next_time = Some(now + self.slideshow.interval);
                 }
             }
         }
@@ -467,17 +467,17 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         if animating_zoom {
             wait_until = Some(now + std::time::Duration::from_millis(16));
         }
-        if let Some(ft) = self.next_frame_time {
+        if let Some(ft) = self.animation.next_frame_time {
             wait_until = Some(wait_until.map_or(ft, |w| w.min(ft)));
         }
-        if self.slideshow_active {
-            if let Some(st) = self.slideshow_next_time {
+        if self.slideshow.active {
+            if let Some(st) = self.slideshow.next_time {
                 wait_until = Some(wait_until.map_or(st, |w| w.min(st)));
             }
         }
 
         const HOLD_ADVANCE_INTERVAL_MS: u64 = 150;
-        if let (Some(key), Some(last_time)) = (self.held_navigation_key, self.last_advance_time) {
+        if let (Some(key), Some(last_time)) = (self.navigation.held_key, self.navigation.last_advance_time) {
             let now = std::time::Instant::now();
             let elapsed = now.duration_since(last_time);
             if elapsed.as_millis() >= HOLD_ADVANCE_INTERVAL_MS as u128 {
@@ -486,7 +486,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     'd' | 's' => self.next_image(),
                     _ => {}
                 }
-                self.last_advance_time = Some(now);
+                self.navigation.last_advance_time = Some(now);
                 wait_until = Some(now + std::time::Duration::from_millis(HOLD_ADVANCE_INTERVAL_MS));
             }
         }
@@ -503,7 +503,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
         }
     }
+}
 
+impl SpedImageApp {
     fn handle_left_click(&mut self) {
         let pos = self.last_cursor_pos;
 
@@ -546,7 +548,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
     }
 
     fn handle_thumbnail_click(&mut self, thumb_slot: usize) {
-        let path = match self.thumb_paths.get(thumb_slot) {
+        let path = match self.thumbnails.paths.get(thumb_slot) {
             Some(p) => p.clone(),
             None => return,
         };
@@ -562,12 +564,41 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 self.ui_state.selected_indices.insert(file_idx);
             }
             let sel_count = self.ui_state.selected_indices.len();
-            self.ui_state.set_status(format!("{} item(s) selected", sel_count));
+            self.ui_state
+                .set_status(format!("{} item(s) selected", sel_count));
             self.dirty = true;
         } else {
             self.ui_state.selected_indices.clear();
             self.ui_state.current_file_index = Some(file_idx);
             self.load_image(path);
         }
+    }
+}
+ 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::event_loop::EventLoopBuilder;
+    use crate::app::state::SpedImageApp;
+    use std::path::PathBuf;
+ 
+    #[test]
+    fn test_handle_thumbnail_click_navigation() {
+        use winit::event_loop::EventLoop;
+        let event_loop = EventLoop::<crate::app::types::WakeUp>::with_user_event().build().unwrap();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let mut app = SpedImageApp::default_with_proxy(event_loop.create_proxy(), tx);
+ 
+        let path = PathBuf::from("test.jpg");
+        app.ui_state.files.push(crate::ui::FileEntry {
+            path: path.clone(),
+            name: "test.jpg".into(),
+            is_image: true,
+        });
+        app.thumbnails.paths.push(path.clone());
+ 
+        app.handle_thumbnail_click(0);
+ 
+        assert_eq!(app.ui_state.current_file_index, Some(0));
     }
 }

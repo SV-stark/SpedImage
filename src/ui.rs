@@ -3,7 +3,7 @@
 //! Provides UI elements for the image viewer including file browser,
 //! adjustment controls, and toolbar.
 
-use crate::gpu_renderer::ImageAdjustments;
+use crate::render::ImageAdjustments;
 use std::path::PathBuf;
 
 /// File entry for the sidebar
@@ -198,7 +198,7 @@ impl UiState {
 }
 
 // Re-export ImageBackend for file filtering
-use crate::image_backend::ImageBackend;
+use crate::image::ImageBackend;
 
 #[cfg(test)]
 mod tests {
@@ -415,18 +415,30 @@ mod tests {
         let mut state = UiState::default();
         // Setup 3 dummy files
         state.files = vec![
-            FileEntry { path: "1".into(), name: "1".into(), is_image: true },
-            FileEntry { path: "2".into(), name: "2".into(), is_image: true },
-            FileEntry { path: "3".into(), name: "3".into(), is_image: true },
+            FileEntry {
+                path: "1".into(),
+                name: "1".into(),
+                is_image: true,
+            },
+            FileEntry {
+                path: "2".into(),
+                name: "2".into(),
+                is_image: true,
+            },
+            FileEntry {
+                path: "3".into(),
+                name: "3".into(),
+                is_image: true,
+            },
         ];
         state.current_file_index = Some(0);
 
         // prev should wrap to last
-        state.prev();
+        state.prev_file();
         assert_eq!(state.current_file_index, Some(2));
-        
+
         // next should wrap to first
-        state.next();
+        state.next_file();
         assert_eq!(state.current_file_index, Some(0));
     }
 }

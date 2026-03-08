@@ -1,7 +1,7 @@
 use crate::app::state::SpedImageApp;
 use crate::app::types::{send_event, AppEvent};
-use crate::gpu_renderer::STRIP_HEIGHT_PX;
-use crate::image_backend::ImageBackend;
+use crate::image::ImageBackend;
+use crate::render::STRIP_HEIGHT_PX;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use winit::dpi::PhysicalPosition;
@@ -9,6 +9,7 @@ use winit::event::{KeyEvent, MouseScrollDelta};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::Fullscreen;
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 impl SpedImageApp {
     pub(crate) fn handle_keyboard(&mut self, event: KeyEvent, event_loop: &ActiveEventLoop) {
@@ -73,8 +74,8 @@ impl SpedImageApp {
                         self.next_image();
                     } else {
                         self.next_image();
-                        self.held_navigation_key = Some('d');
-                        self.last_advance_time = Some(std::time::Instant::now());
+                        self.navigation.held_key = Some('d');
+                        self.navigation.last_advance_time = Some(std::time::Instant::now());
                     }
                 }
                 "a" | "A" => {
@@ -82,8 +83,8 @@ impl SpedImageApp {
                         self.prev_image();
                     } else {
                         self.prev_image();
-                        self.held_navigation_key = Some('a');
-                        self.last_advance_time = Some(std::time::Instant::now());
+                        self.navigation.held_key = Some('a');
+                        self.navigation.last_advance_time = Some(std::time::Instant::now());
                     }
                 }
                 "w" | "W" => {
@@ -93,8 +94,8 @@ impl SpedImageApp {
                         self.prev_image();
                     } else {
                         self.prev_image();
-                        self.held_navigation_key = Some('w');
-                        self.last_advance_time = Some(std::time::Instant::now());
+                        self.navigation.held_key = Some('w');
+                        self.navigation.last_advance_time = Some(std::time::Instant::now());
                     }
                 }
                 "s" | "S" => {
@@ -107,8 +108,8 @@ impl SpedImageApp {
                         self.next_image();
                     } else {
                         self.next_image();
-                        self.held_navigation_key = Some('s');
-                        self.last_advance_time = Some(std::time::Instant::now());
+                        self.navigation.held_key = Some('s');
+                        self.navigation.last_advance_time = Some(std::time::Instant::now());
                     }
                 }
                 "r" | "R" => self.rotate_image(),
@@ -135,7 +136,11 @@ impl SpedImageApp {
                         // do nothing; alt+h is reserved
                     } else if self.modifiers.shift {
                         self.ui_state.show_histogram = !self.ui_state.show_histogram;
-                        let state = if self.ui_state.show_histogram { "ON" } else { "OFF" };
+                        let state = if self.ui_state.show_histogram {
+                            "ON"
+                        } else {
+                            "OFF"
+                        };
                         // Lazy compute histogram when turning on
                         if self.ui_state.show_histogram {
                             if let Some(ref mut img) = self.current_image {
@@ -169,26 +174,26 @@ impl SpedImageApp {
     }
 
     pub(crate) fn toggle_slideshow(&mut self) {
-        self.slideshow_active = !self.slideshow_active;
-        if self.slideshow_active {
-            self.slideshow_next_time = Some(std::time::Instant::now() + self.slideshow_interval);
+        self.slideshow.active = !self.slideshow.active;
+        if self.slideshow.active {
+            self.slideshow.next_time = Some(std::time::Instant::now() + self.slideshow.interval);
             self.ui_state.set_status(format!(
                 "Slideshow started ({}s per image)",
-                self.slideshow_interval.as_secs()
+                self.slideshow.interval.as_secs()
             ));
         } else {
-            self.slideshow_next_time = None;
+            self.slideshow.next_time = None;
             self.ui_state.set_status("Slideshow paused");
         }
         self.dirty = true;
     }
 
     pub(crate) fn adjust_slideshow_interval(&mut self, change: i32) {
-        let current_secs = self.slideshow_interval.as_secs() as i32;
+        let current_secs = self.slideshow.interval.as_secs() as i32;
         let new_secs = (current_secs + change).clamp(1, 120) as u64;
-        self.slideshow_interval = std::time::Duration::from_secs(new_secs);
-        if self.slideshow_active {
-            self.slideshow_next_time = Some(std::time::Instant::now() + self.slideshow_interval);
+        self.slideshow.interval = std::time::Duration::from_secs(new_secs);
+        if self.slideshow.active {
+            self.slideshow.next_time = Some(std::time::Instant::now() + self.slideshow.interval);
             self.ui_state
                 .set_status(format!("Slideshow interval: {new_secs}s"));
         } else {
@@ -223,7 +228,7 @@ impl SpedImageApp {
 
     pub(crate) fn load_image(&mut self, path: PathBuf) {
         // Check prefetch cache first (LRU cache handles eviction automatically)
-        if let Some(cached_frames) = self.prefetch_cache.pop(&path) {
+        if let Some(cached_frames) = self.navigation.prefetch_cache.pop(&path) {
             tracing::info!("Cache hit for {:?}", path);
             if let Some(ref proxy) = self.event_proxy {
                 send_event(&self.event_tx, proxy, AppEvent::ImageLoaded(cached_frames));
@@ -271,7 +276,7 @@ impl SpedImageApp {
 
     pub(crate) fn delete_current_image(&mut self) {
         if let Some(ref image) = self.current_image {
-            let path = PathBuf::from(&image.path);
+            let path = image.path.clone();
             let confirmed = rfd::MessageDialog::new()
                 .set_title("Delete Image")
                 .set_description(format!(
@@ -287,7 +292,7 @@ impl SpedImageApp {
                     path.file_name().unwrap_or_default().to_string_lossy()
                 ));
                 self.current_image = None;
-                self.current_frame_delays.clear();
+                self.animation.frame_delays.clear();
                 self.ui_state
                     .load_directory(path.parent().unwrap_or(&path).to_path_buf());
                 self.dirty = true;
@@ -298,7 +303,7 @@ impl SpedImageApp {
 
     pub(crate) fn save_image(&mut self) {
         if let Some(ref image_data) = self.current_image {
-            let path = PathBuf::from(&image_data.path);
+            let path = image_data.path.clone();
             let mut save_path = path.clone();
 
             if let Some(stem) = path.file_stem() {
@@ -702,7 +707,7 @@ impl SpedImageApp {
 
     pub(crate) fn rename_current_image(&mut self) {
         if let Some(img) = &self.current_image {
-            let old_path = std::path::PathBuf::from(&img.path);
+            let old_path = img.path.clone();
             let filename = old_path
                 .file_name()
                 .unwrap_or_default()
@@ -734,7 +739,7 @@ impl SpedImageApp {
         #[cfg(windows)]
         {
             if let Some(img) = &self.current_image {
-                let p = &img.path;
+                let p = img.path.display().to_string();
                 tracing::info!("Setting wallpaper: {p}");
                 use std::os::windows::ffi::OsStrExt;
                 use windows::Win32::UI::WindowsAndMessaging::{
@@ -742,7 +747,7 @@ impl SpedImageApp {
                     SPI_SETDESKWALLPAPER,
                 };
 
-                let path = std::path::Path::new(&img.path);
+                let path = &img.path;
                 let abs_path = if path.is_absolute() {
                     path.to_path_buf()
                 } else {
@@ -814,10 +819,10 @@ impl SpedImageApp {
                 let mut pt = windows::Win32::Foundation::POINT::default();
                 let _ = GetCursorPos(&mut pt);
 
-                use winit::raw_window_handle::RawWindowHandle;
                 let hwnd = if let Ok(handle) = w.window_handle() {
-                    match handle.as_raw() {
-                        RawWindowHandle::Win32(h) => HWND(h.hwnd.get() as *mut _),
+                    let raw: RawWindowHandle = handle.as_raw();
+                    match raw {
+                        RawWindowHandle::Win32(h) => HWND(h.hwnd.get() as *mut std::ffi::c_void),
                         _ => HWND::default(),
                     }
                 } else {
@@ -903,7 +908,7 @@ impl SpedImageApp {
         {
             if let Some(img) = &self.current_image {
                 let p = &img.path;
-                tracing::info!("Printing image: {p}");
+                tracing::info!("Printing image: {}", p.display());
                 use std::os::windows::ffi::OsStrExt;
                 use windows::core::PCWSTR;
                 use windows::Win32::UI::Shell::ShellExecuteW;
@@ -1058,11 +1063,7 @@ impl SpedImageApp {
             };
 
             std::ptr::copy_nonoverlapping(&header as *const _ as *const u8, ptr, header_size);
-            std::ptr::copy_nonoverlapping(
-                flipped.as_ptr(),
-                ptr.add(header_size),
-                flipped.len(),
-            );
+            std::ptr::copy_nonoverlapping(flipped.as_ptr(), ptr.add(header_size), flipped.len());
             let _ = GlobalUnlock(hmem);
 
             if OpenClipboard(None).is_ok() {
@@ -1135,7 +1136,7 @@ impl SpedImageApp {
 
     pub(crate) fn active_thumb_index(&self) -> Option<usize> {
         let current = self.ui_state.current_file()?;
-        self.thumb_paths.iter().position(|p| p == current)
+        self.thumbnails.paths.iter().position(|p| p == current)
     }
 }
 
@@ -1149,12 +1150,12 @@ mod tests {
         assert!(!app.slideshow_active);
 
         app.toggle_slideshow();
-        assert!(app.slideshow_active);
-        assert!(app.slideshow_next_time.is_some());
+        assert!(app.slideshow.active);
+        assert!(app.slideshow.next_time.is_some());
 
         app.toggle_slideshow();
         assert!(!app.slideshow_active);
-        assert!(app.slideshow_next_time.is_none());
+        assert!(app.slideshow.next_time.is_none());
     }
 
     #[test]
@@ -1164,7 +1165,7 @@ mod tests {
 
         app.adjust_slideshow_interval(1);
         assert_eq!(
-            app.slideshow_interval,
+            app.slideshow.interval,
             initial + std::time::Duration::from_secs(1)
         );
 
@@ -1180,7 +1181,7 @@ mod tests {
         let mut app = SpedImageApp::new();
         // Initial crop rect is [0.0, 0.0, 1.0, 1.0] by default in ImageAdjustments
         assert_eq!(app.ui_state.adjustments.crop_rect[2], 1.0);
-        
+
         // Zooming out further should clamp at 1.0
         app.zoom_by(1.5, None);
         assert_eq!(app.ui_state.adjustments.crop_rect[2], 1.0);
@@ -1197,17 +1198,17 @@ mod tests {
         assert_eq!(app.active_thumb_index(), None);
 
         let path = std::path::PathBuf::from("test.jpg");
-        app.ui_state.files.push(crate::ui::FileEntry { 
-            path: path.clone(), 
-            name: "test.jpg".to_string(), 
-            is_image: true 
+        app.ui_state.files.push(crate::ui::FileEntry {
+            path: path.clone(),
+            name: "test.jpg".to_string(),
+            is_image: true,
         });
         app.ui_state.current_file_index = Some(0);
-        
+
         // thumb_paths doesn't have it -> None
         assert_eq!(app.active_thumb_index(), None);
 
-        app.thumb_paths.push(path);
+        app.thumbnails.paths.push(path);
         assert_eq!(app.active_thumb_index(), Some(0));
     }
 }
