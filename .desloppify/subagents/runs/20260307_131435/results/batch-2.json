@@ -1,7 +1,9 @@
 {
   "batch": "high_level_elegance",
   "batch_index": 2,
-  "assessments": {"high_level_elegance": 90.0},
+  "assessments": {
+    "high_level_elegance": 90.0
+  },
   "dimension_notes": {
     "high_level_elegance": {
       "evidence": [

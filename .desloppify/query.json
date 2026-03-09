@@ -998,8 +998,8 @@
       }
     }
   },
-  "scan_count": 23,
-  "last_scan": "2026-03-08T07:07:25+00:00",
+  "scan_count": 24,
+  "last_scan": "2026-03-09T04:33:11+00:00",
   "by_tier": {
     "1": {
       "auto_resolved": 0,
@@ -1031,7 +1031,7 @@
     "last_ignore_patterns": 0,
     "recent_scans": 5,
     "recent_ignored": 0,
-    "recent_raw_issues": 467,
+    "recent_raw_issues": 513,
     "recent_suppressed_pct": 0.0
   },
   "potentials": {
@@ -1745,7 +1745,7 @@
     },
     "reminders": [],
     "reminder_history": {
-      "report_scores": 21,
+      "report_scores": 22,
       "feedback_nudge": 3,
       "review_issues_pending": 3,
       "stagnant_nudge": 24
