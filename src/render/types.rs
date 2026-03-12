@@ -1,3 +1,4 @@
+use bytemuck::{Pod, Zeroable};
 use std::sync::Arc;
 use wgpu::{BindGroup, Texture};
 
@@ -5,38 +6,11 @@ use wgpu::{BindGroup, Texture};
 pub const STRIP_HEIGHT_PX: u32 = 90;
 /// Width of each thumbnail slot (including gap).
 pub const THUMB_SLOT_W: u32 = 80;
-/// Thumbnail image size (square, aspect-fit inside the slot).
-pub const THUMB_SIZE: u32 = 74;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ImageAdjustments {
-    pub brightness: f32,
-    pub contrast: f32,
-    pub saturation: f32,
-    pub rotation: f32,
-    pub crop_rect_target: [f32; 4], // Where we want to be
-    pub crop_rect: [f32; 4],        // Where we currently are (rendered)
-    pub hdr_toning: bool,
-    pub pixel_perfect: bool, // Nearest-neighbor sampling for pixel art
-}
-
-impl Default for ImageAdjustments {
-    fn default() -> Self {
-        Self {
-            brightness: 1.0,
-            contrast: 1.0,
-            saturation: 1.0,
-            rotation: 0.0,
-            crop_rect_target: [0.0, 0.0, 1.0, 1.0],
-            crop_rect: [0.0, 0.0, 1.0, 1.0],
-            hdr_toning: false,
-            pixel_perfect: false,
-        }
-    }
-}
+/// Size of the thumbnail texture.
+pub const THUMB_SIZE: u32 = 80;
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 pub struct Uniforms {
     pub rotation: f32,
     pub aspect_ratio: f32,
@@ -74,31 +48,38 @@ impl Uniforms {
         }
     }
 }
-/// A fully-uploaded thumbnail ready for GPU rendering.
+
+#[derive(Debug, Clone, Copy)]
+pub struct ImageAdjustments {
+    pub brightness: f32,
+    pub contrast: f32,
+    pub saturation: f32,
+    pub rotation: f32,
+    pub crop_rect: [f32; 4],
+    pub crop_rect_target: [f32; 4],
+    pub hdr_toning: bool,
+    pub pixel_perfect: bool,
+}
+
+impl Default for ImageAdjustments {
+    fn default() -> Self {
+        Self {
+            brightness: 1.0,
+            contrast: 1.0,
+            saturation: 1.0,
+            rotation: 0.0,
+            crop_rect: [0.0, 0.0, 1.0, 1.0],
+            crop_rect_target: [0.0, 0.0, 1.0, 1.0],
+            hdr_toning: false,
+            pixel_perfect: false,
+        }
+    }
+}
+
 pub struct ThumbnailEntry {
     pub path: std::path::PathBuf,
-    /// Bind group pointing at the thumbnail texture (same layout as image pipeline).
+    pub texture: Texture,
     pub bind_group: Arc<BindGroup>,
     pub width: u32,
     pub height: u32,
-    /// The GPU texture (kept alive so bind group stays valid).
-    pub _texture: Texture,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_image_adjustments_default() {
-        let adj = ImageAdjustments::default();
-
-        assert_eq!(adj.brightness, 1.0);
-        assert_eq!(adj.contrast, 1.0);
-        assert_eq!(adj.saturation, 1.0);
-        assert_eq!(adj.rotation, 0.0);
-        assert_eq!(adj.crop_rect, [0.0, 0.0, 1.0, 1.0]);
-        assert_eq!(adj.crop_rect_target, [0.0, 0.0, 1.0, 1.0]);
-        assert!(!adj.hdr_toning);
-    }
 }

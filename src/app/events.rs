@@ -13,9 +13,8 @@ impl SpedImageApp {
     pub fn run(initial_path: Option<PathBuf>) -> Result<()> {
         use winit::event_loop::EventLoop;
         let event_loop = EventLoop::<WakeUp>::with_user_event().build()?;
-        let mut app = SpedImageApp::new();
+        let mut app = SpedImageApp::new(event_loop.create_proxy());
         app.initial_path = initial_path;
-        app.event_proxy = Some(event_loop.create_proxy());
         event_loop.run_app(&mut app)?;
         Ok(())
     }
@@ -151,7 +150,7 @@ impl SpedImageApp {
         }
 
         if self.ui_state.is_cropping {
-            // Handle crop drag start etc
+            // Handle crop drag start
         } else {
             self.mouse_drag_start = Some(pos);
         }
@@ -167,7 +166,7 @@ impl SpedImageApp {
 }
 
 impl ApplicationHandler<WakeUp> for SpedImageApp {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let icon_img = image::load_from_memory(APP_ICON).ok().map(|i| i.to_rgba8());
         let icon = icon_img.and_then(|i| {
             let (w, h) = i.dimensions();
@@ -175,7 +174,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         });
 
         let window = Arc::new(
-            _event_loop
+            event_loop
                 .create_window(
                     WindowAttributes::default()
                         .with_title("SpedImage")
@@ -275,21 +274,21 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             WindowEvent::CursorMoved { position, .. } => {
                 self.last_cursor_pos = position;
                 if let Some(start) = self.mouse_drag_start {
-                    let dx = (position.x - start.x) as f32
-                        / self.renderer.as_ref().unwrap().config.width as f32;
-                    let dy = (position.y - start.y) as f32
-                        / self.renderer.as_ref().unwrap().config.height as f32;
+                    if let Some(ref r) = self.renderer {
+                        let dx = (position.x - start.x) as f32 / r.config.width as f32;
+                        let dy = (position.y - start.y) as f32 / r.config.height as f32;
 
-                    self.ui_state.adjustments.crop_rect[0] =
-                        (self.ui_state.adjustments.crop_rect[0] - dx)
-                            .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[2]);
-                    self.ui_state.adjustments.crop_rect[1] =
-                        (self.ui_state.adjustments.crop_rect[1] - dy)
-                            .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[3]);
-                    self.ui_state.adjustments.crop_rect_target =
-                        self.ui_state.adjustments.crop_rect;
-                    self.mouse_drag_start = Some(position);
-                    self.dirty = true;
+                        self.ui_state.adjustments.crop_rect[0] =
+                            (self.ui_state.adjustments.crop_rect[0] - dx)
+                                .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[2]);
+                        self.ui_state.adjustments.crop_rect[1] =
+                            (self.ui_state.adjustments.crop_rect[1] - dy)
+                                .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[3]);
+                        self.ui_state.adjustments.crop_rect_target =
+                            self.ui_state.adjustments.crop_rect;
+                        self.mouse_drag_start = Some(position);
+                        self.dirty = true;
+                    }
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -315,13 +314,20 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let d = match delta {
                         MouseScrollDelta::LineDelta(x, y) => (if x != 0.0 { x } else { -y }) * 50.0,
                         MouseScrollDelta::PixelDelta(p) => {
-                            if p.x != 0.0 { p.x as f32 } else { -p.y as f32 } 
+                            if p.x != 0.0 {
+                                p.x as f32
+                            } else {
+                                -p.y as f32
+                            }
                         }
                     };
-                    let max_scroll = (self.thumbnails.paths.len() as f32
-                        * crate::render::THUMB_SLOT_W as f32
-                        - self.renderer.as_ref().unwrap().config.width as f32)
-                        .max(0.0);
+                    let max_scroll = if let Some(ref r) = self.renderer {
+                        (self.thumbnails.paths.len() as f32 * crate::render::THUMB_SLOT_W as f32
+                            - r.config.width as f32)
+                            .max(0.0)
+                    } else {
+                        0.0
+                    };
                     self.navigation.thumb_scroll =
                         (self.navigation.thumb_scroll + d).clamp(0.0, max_scroll);
                     self.dirty = true;

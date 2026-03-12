@@ -45,7 +45,6 @@ impl ImageProcessor {
                     fast_image_resize::PixelType::U8x4,
                 );
 
-                // In fast_image_resize 3.0, it's Convolution(FilterType::Lanczos3)
                 use fast_image_resize::{FilterType, ResizeAlg, Resizer};
                 let mut resizer = Resizer::new(ResizeAlg::Convolution(FilterType::Lanczos3));
                 resizer
@@ -76,20 +75,9 @@ impl ImageProcessor {
 
     /// Get list of supported file extensions
     pub fn supported_extensions() -> Vec<&'static str> {
-        let mut exts = vec![
+        vec![
             "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico",
-        ];
-
-        #[cfg(feature = "raw")]
-        exts.extend_from_slice(&["raw", "dng", "cr2", "nef", "arw", "orf", "raf"]);
-
-        #[cfg(feature = "svg")]
-        exts.push("svg");
-
-        #[cfg(feature = "heif")]
-        exts.extend_from_slice(&["heic", "heif", "avif"]);
-
-        exts
+        ]
     }
 
     pub fn save(path: &Path, image: &image::DynamicImage, quality: u8) -> Result<()> {

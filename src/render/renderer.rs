@@ -18,24 +18,21 @@ pub struct Renderer {
     pub(crate) pipeline: RenderPipeline,
     pub(crate) crop_pipeline: RenderPipeline,
     pub(crate) uniform_buffer: wgpu::Buffer,
-    /// Uniform buffer used with identity (no-op) uniforms for thumbnail rendering.
     pub(crate) thumb_uniform_buffer: wgpu::Buffer,
     pub(crate) vertex_buffer: wgpu::Buffer,
     pub(crate) sampler: Sampler,
     pub(crate) sampler_nearest: Sampler,
     pub(crate) image_texture: Option<Texture>,
     pub(crate) image_bind_group: Option<Arc<BindGroup>>,
-    pub(crate) image_bind_group_nearest: Option<Arc<BindGroup>>, // For pixel-perfect mode
-    pub gif_textures: Vec<(Texture, Arc<BindGroup>)>, // cached GPU textures for GIF frames
+    pub(crate) image_bind_group_nearest: Option<Arc<BindGroup>>,
+    pub gif_textures: Vec<(Texture, Arc<BindGroup>)>,
     pub(crate) config: SurfaceConfiguration,
     pub(crate) image_size: Option<(u32, u32)>,
-    pub scale_factor: f64, // DPI scale (12: DPI-aware rendering)
+    pub scale_factor: f64,
 
-    // Text rendering
     pub(crate) text_brush: GlyphBrush<()>,
     pub(crate) staging_belt: wgpu::util::StagingBelt,
 
-    // Thumbnails
     pub thumbnails: Vec<ThumbnailEntry>,
 }
 
@@ -143,7 +140,7 @@ impl Renderer {
                 required_features: wgpu::Features::default(),
                 required_limits: wgpu::Limits::default(),
                 memory_hints: wgpu::MemoryHints::default(),
-                trace: wgpu::Trace::Off,
+                ..Default::default()
             })
             .await
             .context("Failed to request WGPU device")?;
@@ -243,7 +240,6 @@ impl Renderer {
             cache: None,
         });
 
-        // Crop overlay pipeline
         let crop_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Crop Shader"),
             source: wgpu::ShaderSource::Wgsl(crate::render::shaders::CROP_SHADER.into()),
@@ -350,11 +346,9 @@ impl Renderer {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
-        // wgpu_glyph text positions update automatically with new viewport dimensions
     }
 
     pub fn load_image(&mut self, image_data: &ImageData) -> Result<()> {
-        // Explicitly destroy old GPU texture to free VRAM immediately
         if let Some(old_tex) = self.image_texture.take() {
             old_tex.destroy();
         }
@@ -423,7 +417,6 @@ impl Renderer {
             ],
         }));
 
-        // Create pixel-perfect (nearest-neighbor) bind group
         let bind_group_nearest =
             Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Image Bind Group (Nearest)"),
@@ -451,12 +444,9 @@ impl Renderer {
         self.image_bind_group_nearest = Some(bind_group_nearest);
         self.image_size = Some((width, height));
 
-        tracing::debug!("Loaded image into GPU: {width}x{height}");
         Ok(())
     }
 
-    /// Encode image draw commands into `encoder` targeting `view`.
-    /// Does NOT submit or present — caller owns the frame lifetime.
     pub(crate) fn encode_image(
         &self,
         adjustments: &ImageAdjustments,
@@ -512,7 +502,6 @@ impl Renderer {
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-            // Use nearest-neighbor sampler for pixel-perfect mode
             if adjustments.pixel_perfect {
                 if let Some(bg) = &self.image_bind_group_nearest {
                     render_pass.set_bind_group(0, bg.as_ref(), &[]);
@@ -524,7 +513,6 @@ impl Renderer {
         }
     }
 
-    /// Swap the active bind group to a cached GIF frame (no GPU transfer).
     pub fn swap_gif_frame(&mut self, idx: usize) {
         if let Some((tex, bg)) = self.gif_textures.get(idx) {
             self.image_size = Some((tex.width(), tex.height()));

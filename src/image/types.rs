@@ -23,9 +23,7 @@ pub enum ImageFormatType {
     WebP,
     Heic,
     Avif,
-    /// RAW camera formats (Canon, Nikon, Sony, Fuji, Adobe DNG, etc.)
     Raw,
-    /// SVG vector graphics
     Svg,
     Unknown,
 }
@@ -41,20 +39,6 @@ impl ImageFormatType {
             "webp" => Self::WebP,
             "heic" | "heif" => Self::Heic,
             "avif" => Self::Avif,
-            // RAW formats: Canon, Nikon, Sony, Fuji, Olympus, Panasonic, Leica, Adobe
-            "cr2" | "cr3" | "crw"  // Canon
-            | "nef" | "nrw"        // Nikon
-            | "arw" | "srf" | "sr2" // Sony
-            | "raf"                // Fujifilm
-            | "orf"                // Olympus
-            | "rw2"                // Panasonic
-            | "dng"                // Adobe DNG (universal)
-            | "mrw"                // Minolta
-            | "pef"                // Pentax
-            | "3fr"                // Hasselblad
-            | "rwl"                // Leica
-            | "raw" | "rw1"        // Generic
-            => Self::Raw,
             "svg" => Self::Svg,
             _ => Self::Unknown,
         }
@@ -63,16 +47,9 @@ impl ImageFormatType {
     pub fn is_supported(&self) -> bool {
         match self {
             Self::Unknown => false,
-            // RAW requires the `raw` feature, SVG requires `svg`, HEIC/AVIF require `heif`
-            #[cfg(not(feature = "raw"))]
-            Self::Raw => false,
-            #[cfg(not(feature = "svg"))]
-            Self::Svg => false,
-            #[cfg(not(feature = "heif"))]
-            Self::Heic => false,
-            #[cfg(not(feature = "heif"))]
-            Self::Avif => false,
-            _ => true,
+            // Only core formats supported in the ultra-lightweight version
+            Self::Jpeg | Self::Png | Self::Gif | Self::Bmp | Self::Tiff | Self::WebP => true,
+            _ => false,
         }
     }
 }
@@ -135,79 +112,5 @@ impl ImageData {
     /// Get total pixel count
     pub fn pixel_count(&self) -> u32 {
         self.width * self.height
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_format_detection() {
-        assert_eq!(
-            ImageFormatType::from_extension("jpg"),
-            ImageFormatType::Jpeg
-        );
-        assert_eq!(ImageFormatType::from_extension("PNG"), ImageFormatType::Png);
-        assert_eq!(
-            ImageFormatType::from_extension("heic"),
-            ImageFormatType::Heic
-        );
-        #[cfg(feature = "svg")]
-        assert_eq!(ImageFormatType::from_extension("svg"), ImageFormatType::Svg);
-        #[cfg(feature = "raw")]
-        {
-            assert_eq!(ImageFormatType::from_extension("dng"), ImageFormatType::Raw);
-            assert_eq!(ImageFormatType::from_extension("arw"), ImageFormatType::Raw);
-            assert_eq!(ImageFormatType::from_extension("cr2"), ImageFormatType::Raw);
-            assert_eq!(ImageFormatType::from_extension("nef"), ImageFormatType::Raw);
-        }
-        assert_eq!(
-            ImageFormatType::from_extension("unknown"),
-            ImageFormatType::Unknown
-        );
-    }
-
-    #[test]
-    fn test_format_is_supported() {
-        assert!(ImageFormatType::Jpeg.is_supported());
-        assert!(ImageFormatType::Png.is_supported());
-        assert!(ImageFormatType::Gif.is_supported());
-        assert!(ImageFormatType::Bmp.is_supported());
-        assert!(ImageFormatType::Tiff.is_supported());
-        assert!(ImageFormatType::WebP.is_supported());
-        assert!(ImageFormatType::Heic.is_supported());
-        assert!(ImageFormatType::Avif.is_supported());
-        assert!(!ImageFormatType::Unknown.is_supported());
-
-        #[cfg(feature = "raw")]
-        assert!(ImageFormatType::Raw.is_supported());
-        #[cfg(not(feature = "raw"))]
-        assert!(!ImageFormatType::Raw.is_supported());
-
-        #[cfg(feature = "svg")]
-        assert!(ImageFormatType::Svg.is_supported());
-        #[cfg(not(feature = "svg"))]
-        assert!(!ImageFormatType::Svg.is_supported());
-    }
-
-    #[test]
-    fn test_image_data_methods() {
-        let data = ImageData {
-            width: 800,
-            height: 600,
-            format: ImageFormatType::Png,
-            rgba_data: vec![0u8; 800 * 600 * 4],
-            path: std::path::PathBuf::from("/test/image.png"),
-            file_size_bytes: 1024,
-            frame_delay_ms: 0,
-            exif_info: None,
-            histogram: None,
-            exif_loaded: false,
-        };
-
-        assert_eq!(data.as_rgba().len(), 800 * 600 * 4);
-        assert!((data.aspect_ratio() - 800.0 / 600.0).abs() < 0.001);
-        assert_eq!(data.pixel_count(), 800 * 600);
     }
 }

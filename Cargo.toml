@@ -8,88 +8,36 @@ license = "MIT"
 rust-version = "1.82"
 
 [dependencies]
-# Windowing
+# UI and Windowing
 winit = { version = "0.30", features = ["rwh_06"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "tiff", "webp", "ico", "tga"] }
+pollster = "0.3"
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rayon = "1.10"
+lru = "0.12"
+notify = "6.1"
+rfd = "0.15"
+arboard = "3.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+kamadak-exif = "0.5"
 
 # GPU Rendering
 wgpu = "26.0"
-
-# Image decoding (pure Rust)
-image = { version = "0.25", default-features = false, features = [
-    "jpeg",
-    "png",
-    "gif",
-    "bmp",
-    "tga",
-    "tiff",
-    "webp",
-] }
-
-# Text Rendering
+bytemuck = { version = "1.19", features = ["derive"] }
 wgpu_glyph = "0.26"
-
-# File dialog (native)
-rfd = "0.14"
-
-# Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Error handling
-thiserror = "2"
-anyhow = "1"
-
-# Async blocking
-pollster = "0.3"
-
-# EXIF parsing
-kamadak-exif = "0.5"
-chrono = "0.4"
-
-# For image manipulation
-fast_image_resize = "3"
-
-# For GPU data types
-bytemuck = { version = "1", features = ["derive"] }
-
-# LRU cache for prefetch
-lru = "0.12"
-
-# File watching for directory changes
-notify = "7"
-
-# Thread pool for async operations
-rayon = "1.10"
-
-# RAW camera format decoding
-rawler = { version = "0.7", optional = true }
-
-# SVG rendering
-resvg = { version = "0.47", optional = true }
-
-# HEIF/AVIF decoding via libheif (requires libheif C library)
-# On Windows: install libheif via vcpkg (cargo vcpkg -v build)
-# On Linux: install libheif-dev >= 1.17.0
-# Or enable embedded-libheif feature to compile from source
-libheif-rs = { version = "2.7", optional = true, default-features = false, features = ["embedded-libheif"] }
-
-[features]
-default = ["raw", "svg", "heif"]
-heif = ["libheif-rs"]
-raw = ["rawler"]
-svg = ["resvg"]
+fast_image_resize = "3.0"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.51"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
-    "Win32_Graphics_Imaging",
-    "Win32_System_Com",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Memory",
-    "Win32_System_DataExchange",
-    "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
     "Win32_UI_Shell",
 ] }
 

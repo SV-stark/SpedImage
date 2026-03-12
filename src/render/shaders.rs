@@ -21,100 +21,90 @@ struct Uniforms {
     pos_scale: vec2<f32>,
 };
 
-@group(0) @binding(0)
-var<uniform> uniforms: Uniforms;
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var s: sampler;
+@group(0) @binding(2) var t: texture_2d<f32>;
 
 @vertex
 fn vertex_main(
     @location(0) position: vec2<f32>,
-    @location(1) tex_coords: vec2<f32>
+    @location(1) tex_coords: vec2<f32>,
 ) -> VertexOutput {
     var out: VertexOutput;
-    var tex = tex_coords * vec2<f32>(uniforms.crop_w, uniforms.crop_h) 
-              + vec2<f32>(uniforms.crop_x, uniforms.crop_y);
-    let center = vec2<f32>(0.5, 0.5);
-    let rotated_tex = rotate(tex - center, uniforms.rotation) + center;
+    
     var pos = position;
-
-    let image_ar = uniforms.aspect_ratio;
-    let window_ar = uniforms.window_aspect_ratio;
-    let ratio = image_ar / window_ar;
-
-    if (ratio > 1.0) {
-        pos.y /= ratio;
-    } else {
-        pos.x *= ratio;
-    }
-
-    // Apply custom position and scale (for thumbnails)
+    
+    // Scale and offset for thumbnails/UI
     pos = pos * uniforms.pos_scale + uniforms.pos_offset;
+    
+    // Default image rendering if not overridden by UI
+    if (uniforms.pos_scale.x == 1.0 && uniforms.pos_scale.y == 1.0 && uniforms.pos_offset.x == 0.0) {
+        // Adjust for aspect ratio fit
+        let ratio = uniforms.aspect_ratio / uniforms.window_aspect_ratio;
+        if (ratio > 1.0) {
+            pos.y /= ratio;
+        } else {
+            pos.x *= ratio;
+        }
+
+        // Apply rotation
+        let angle = uniforms.rotation;
+        let c = cos(angle);
+        let s = sin(angle);
+        let rotated_pos = vec2<f32>(
+            pos.x * c - pos.y * s,
+            pos.x * s + pos.y * c
+        );
+        pos = rotated_pos;
+    }
 
     out.position = vec4<f32>(pos, 0.0, 1.0);
-    out.tex_coords = rotated_tex;
-    return out;
-}
-
-fn rotate(coord: vec2<f32>, angle: f32) -> vec2<f32> {
-    let s = sin(angle);
-    let c = cos(angle);
-    return vec2<f32>(coord.x * c - coord.y * s, coord.x * s + coord.y * c);
-}
-
-struct FragmentInput {
-    @location(0) tex_coords: vec2<f32>,
-};
-
-@group(0) @binding(1)
-var image_sampler: sampler;
-
-@group(0) @binding(2)
-var image_texture: texture_2d<f32>;
-
-@fragment
-fn fragment_main(input: FragmentInput) -> @location(0) vec4<f32> {
-    let tex_color = textureSample(image_texture, image_sampler, input.tex_coords);
-    var color = tex_color.rgb;
     
-    // Apply brightness and contrast first
-    color = color * uniforms.brightness;
-    color = (color - vec3<f32>(0.5)) * uniforms.contrast + vec3<f32>(0.5);
+    // Apply crop to texture coordinates
+    out.tex_coords = vec2<f32>(
+        uniforms.crop_x + tex_coords.x * uniforms.crop_w,
+        uniforms.crop_y + tex_coords.y * uniforms.crop_h
+    );
     
-    // Then calculate grayscale and apply saturation
-    let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
-    color = mix(vec3<f32>(gray), color, uniforms.saturation);
-
-    if (uniforms.hdr_toning > 0.5) {
-        let exposed = color * 1.6;
-        color = exposed / (1.0 + exposed);
-        color = color * color * (3.0 - 2.0 * color);
-    }
-
-    return vec4<f32>(color, tex_color.a);
-}
-"#;
-
-pub const CROP_SHADER: &str = r#"
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-};
-
-@vertex
-fn vertex_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-    // Generate a full screen quad
-    var out: VertexOutput;
-    let x = f32(vertex_index & 1u) * 2.0 - 1.0;
-    let y = f32((vertex_index >> 1u) & 1u) * 2.0 - 1.0;
-    // We invert y for Vulkan/WGPU coordinates
-    out.position = vec4<f32>(x, -y, 0.0, 1.0);
     return out;
 }
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // In viewport coordinates (0 to width/height)
-    // Actually, in.position.xy is in pixel coordinates.
-    // We pass normalized crop rect (0.0 to 1.0) but we don't know window bounds in shader easily.
-    // Instead we can generate the crop rect in vertex shader or just draw the overlay regions.
-    return vec4<f32>(0.0, 0.0, 0.0, 0.5); // Just a generic darken, we will use scissors!
+    var color = textureSample(t, s, in.tex_coords);
+    
+    // 1. Adjust Brightness & Contrast
+    color = vec4<f32>((color.rgb - 0.5) * uniforms.contrast + 0.5 + (uniforms.brightness - 1.0), color.a);
+    
+    // 2. Adjust Saturation
+    let gray = dot(color.rgb, vec3<f32>(0.299, 0.587, 0.114));
+    color = vec4<f32>(mix(vec3<f32>(gray), color.rgb, uniforms.saturation), color.a);
+    
+    // 3. HDR Toning (Filmic/Reinhard)
+    if (uniforms.hdr_toning > 0.5) {
+        var x = color.rgb * 1.6;
+        x = x / (1.0 + x);
+        color = vec4<f32>(x * x * (3.0 - 2.0 * x), color.a);
+    }
+    
+    return color;
+}
+"#;
+
+pub const CROP_SHADER: &str = r#"
+@vertex
+fn vertex_main(@builtin(vertex_index) item_index: u32) -> @builtin(position) vec4<f32> {
+    var pos = array<vec2<f32>, 4>(
+        vec2<f32>(-1.0,  1.0),
+        vec2<f32>( 1.0,  1.0),
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 1.0, -1.0)
+    );
+    return vec4<f32>(pos[item_index], 0.0, 1.0);
+}
+
+@fragment
+fn fragment_main() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0, 0.0, 0.0, 0.5); // Darken for crop regions
 }
 "#;

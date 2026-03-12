@@ -6,7 +6,7 @@ pub fn extract_exif_lazy(path: &std::path::Path) -> Option<String> {
 
     let mut out = String::new();
 
-    // Helper macro to append EXIF fields concisely
+    // Helper to append EXIF fields concisely
     let mut add_field = |tag: exif::Tag, label: &str| {
         if let Some(field) = exif_data.get_field(tag, exif::In::PRIMARY) {
             out.push_str(label);
@@ -33,7 +33,6 @@ pub fn extract_exif_lazy(path: &std::path::Path) -> Option<String> {
         exposure_line.push_str("s  ");
     }
     if let Some(f) = exif_data.get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY) {
-        // ISO
         exposure_line.push_str("ISO ");
         exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
     }
