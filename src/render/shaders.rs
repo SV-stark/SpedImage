@@ -17,6 +17,8 @@ struct Uniforms {
     saturation: f32,
     hdr_toning: f32,
     _padding: f32,
+    pos_offset: vec2<f32>,
+    pos_scale: vec2<f32>,
 };
 
 @group(0) @binding(0)
@@ -44,6 +46,9 @@ fn vertex_main(
         pos.x *= ratio;
     }
 
+    // Apply custom position and scale (for thumbnails)
+    pos = pos * uniforms.pos_scale + uniforms.pos_offset;
+
     out.position = vec4<f32>(pos, 0.0, 1.0);
     out.tex_coords = rotated_tex;
     return out;
@@ -70,11 +75,12 @@ fn fragment_main(input: FragmentInput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(image_texture, image_sampler, input.tex_coords);
     var color = tex_color.rgb;
     
-    // Grayscale factor
-    let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
-
+    // Apply brightness and contrast first
     color = color * uniforms.brightness;
     color = (color - vec3<f32>(0.5)) * uniforms.contrast + vec3<f32>(0.5);
+    
+    // Then calculate grayscale and apply saturation
+    let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
     color = mix(vec3<f32>(gray), color, uniforms.saturation);
 
     if (uniforms.hdr_toning > 0.5) {

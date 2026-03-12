@@ -50,8 +50,10 @@ pub struct Uniforms {
     pub saturation: f32,
     pub hdr_toning: f32,
     pub _padding: f32,
+    pub pos_offset: [f32; 2],
+    pub pos_scale: [f32; 2],
 }
- 
+
 impl Uniforms {
     pub fn identity() -> Self {
         Self {
@@ -67,10 +69,11 @@ impl Uniforms {
             saturation: 1.0,
             hdr_toning: 0.0,
             _padding: 0.0,
+            pos_offset: [0.0, 0.0],
+            pos_scale: [1.0, 1.0],
         }
     }
 }
-
 /// A fully-uploaded thumbnail ready for GPU rendering.
 pub struct ThumbnailEntry {
     pub path: std::path::PathBuf,

@@ -4,12 +4,13 @@ use crate::image::ImageBackend;
 use crate::render::STRIP_HEIGHT_PX;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use winit::dpi::PhysicalPosition;
 use winit::event::{KeyEvent, MouseScrollDelta};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
-use winit::window::Fullscreen;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use winit::window::Fullscreen;
 
 impl SpedImageApp {
     pub(crate) fn handle_keyboard(&mut self, event: KeyEvent, event_loop: &ActiveEventLoop) {
@@ -227,6 +228,13 @@ impl SpedImageApp {
     }
 
     pub(crate) fn load_image(&mut self, path: PathBuf) {
+        // (17) Load generation to prevent race conditions
+        let generation = self
+            .navigation
+            .load_generation
+            .fetch_add(1, Ordering::SeqCst)
+            + 1;
+
         // Check prefetch cache first (LRU cache handles eviction automatically)
         if let Some(cached_frames) = self.navigation.prefetch_cache.pop(&path) {
             tracing::info!("Cache hit for {:?}", path);
@@ -261,13 +269,20 @@ impl SpedImageApp {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         let path2 = path.clone();
+        let current_gen = self.navigation.load_generation.clone();
+
         std::thread::spawn(move || {
-            let event = match ImageBackend::load_and_downsample(&path2, max_w, max_h) {
-                Ok(data) => AppEvent::ImageLoaded(data),
-                Err(e) => AppEvent::ImageError(e.to_string()),
-            };
-            if let Some(ref proxy) = proxy {
-                send_event(&tx, proxy, event);
+            let result = ImageBackend::load_and_downsample(&path2, max_w, max_h);
+
+            // Only send if this is still the current generation
+            if current_gen.load(Ordering::SeqCst) == generation {
+                let event = match result {
+                    Ok(data) => AppEvent::ImageLoaded(data),
+                    Err(e) => AppEvent::ImageError(e.to_string()),
+                };
+                if let Some(ref proxy) = proxy {
+                    send_event(&tx, proxy, event);
+                }
             }
         });
 
@@ -286,17 +301,23 @@ impl SpedImageApp {
                 .set_buttons(rfd::MessageButtons::YesNo)
                 .show()
                 == rfd::MessageDialogResult::Yes;
-            if confirmed && std::fs::remove_file(&path).is_ok() {
-                self.ui_state.set_status(format!(
-                    "Deleted: {}",
-                    path.file_name().unwrap_or_default().to_string_lossy()
-                ));
-                self.current_image = None;
-                self.animation.frame_delays.clear();
-                self.ui_state
-                    .load_directory(path.parent().unwrap_or(&path).to_path_buf());
-                self.dirty = true;
-                self.next_image();
+
+            if confirmed {
+                if let Err(e) = std::fs::remove_file(&path) {
+                    self.ui_state.set_status(format!("Delete failed: {}", e));
+                } else {
+                    self.ui_state.set_status(format!(
+                        "Deleted: {}",
+                        path.file_name().unwrap_or_default().to_string_lossy()
+                    ));
+                    self.current_image = None;
+                    self.animation.frame_delays.clear();
+
+                    let dir = path.parent().unwrap_or(&path).to_path_buf();
+                    self.load_directory_async(dir);
+                    self.dirty = true;
+                    self.next_image();
+                }
             }
         }
     }
@@ -321,9 +342,28 @@ impl SpedImageApp {
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
 
+            // (13) If we have high-res data already in memory, use it instead of reloading
+            let in_memory_img = if image_data.width > 2000 || image_data.height > 2000 {
+                None // It was downsampled, better reload
+            } else {
+                image::DynamicImage::ImageRgba8(
+                    image::RgbaImage::from_raw(
+                        image_data.width,
+                        image_data.height,
+                        image_data.rgba_data.clone(),
+                    )
+                    .unwrap(),
+                )
+                .into()
+            };
+
             std::thread::spawn(move || {
                 let result = (|| -> anyhow::Result<()> {
-                    let mut img = image::open(&path_clone)?;
+                    let mut img = if let Some(i) = in_memory_img {
+                        i
+                    } else {
+                        image::open(&path_clone)?
+                    };
 
                     if adjustments.crop_rect != [0.0, 0.0, 1.0, 1.0] {
                         let (w, h) = (img.width() as f32, img.height() as f32);
@@ -572,7 +612,7 @@ impl SpedImageApp {
 
         if let Some(current) = self.ui_state.current_file() {
             if let Some(parent) = current.parent() {
-                self.ui_state.load_directory(parent.to_path_buf());
+                self.load_directory_async(parent.to_path_buf());
             }
         }
 
@@ -622,70 +662,6 @@ impl SpedImageApp {
         self.ui_state.is_cropping = false;
         self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
         self.ui_state.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
-        self.dirty = true;
-    }
-
-    pub(crate) fn pick_color_at(&mut self, cursor: PhysicalPosition<f64>) {
-        let (img, window) = match (&self.current_image, &self.window) {
-            (Some(i), Some(w)) => (i, w),
-            _ => return,
-        };
-
-        let size = window.inner_size();
-        if size.width == 0 || size.height == 0 {
-            return;
-        }
-
-        let available_h = if self.ui_state.show_thumbnail_strip {
-            (size.height as i32 - STRIP_HEIGHT_PX as i32).max(1) as f64
-        } else {
-            size.height as f64
-        };
-
-        let image_ar = img.width as f32 / img.height as f32;
-        let window_ar = size.width as f32 / available_h as f32;
-        let ratio = image_ar / window_ar;
-
-        let (img_half_w, img_half_h) = if ratio > 1.0 {
-            (1.0_f32, 1.0 / ratio)
-        } else {
-            (ratio, 1.0_f32)
-        };
-
-        let wx = (cursor.x / size.width as f64) as f32 * 2.0 - 1.0;
-        let wy = (cursor.y / available_h) as f32 * 2.0 - 1.0;
-
-        if wx < -img_half_w || wx > img_half_w || wy < -img_half_h || wy > img_half_h {
-            self.ui_state.set_status("Color Picker: click on the image");
-            self.dirty = true;
-            return;
-        }
-
-        let u_img = (wx + img_half_w) / (2.0 * img_half_w);
-        let v_img = (wy + img_half_h) / (2.0 * img_half_h);
-
-        let cr = &self.ui_state.adjustments.crop_rect;
-        let u = cr[0] + u_img * cr[2];
-        let v = cr[1] + v_img * cr[3];
-        let u = u.clamp(0.0, 1.0);
-        let v = v.clamp(0.0, 1.0);
-
-        let px = (u * (img.width - 1) as f32) as usize;
-        let py = (v * (img.height - 1) as f32) as usize;
-        let idx = (py * img.width as usize + px) * 4;
-
-        if idx + 3 >= img.rgba_data.len() {
-            return;
-        }
-
-        let r = img.rgba_data[idx];
-        let g = img.rgba_data[idx + 1];
-        let b = img.rgba_data[idx + 2];
-
-        self.ui_state.set_status(format!(
-            "Color Picker: R:{} G:{} B:{}  #{:02X}{:02X}{:02X}",
-            r, g, b, r, g, b
-        ));
         self.dirty = true;
     }
 
@@ -950,8 +926,32 @@ impl SpedImageApp {
 
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
+
+            // (13) Use in-memory data if it's small enough (not downsampled much)
+            let in_memory_data = if img.width > 2000 || img.height > 2000 {
+                None
+            } else {
+                Some(img.rgba_data.clone())
+            };
+            let (w, h) = (img.width, img.height);
+
             std::thread::spawn(move || {
-                let res = Self::do_copy_to_clipboard(&path);
+                let res = if let Some(rgba) = in_memory_data {
+                    let img_obj = image::DynamicImage::ImageRgba8(
+                        image::RgbaImage::from_raw(w, h, rgba).unwrap(),
+                    );
+                    #[cfg(target_os = "windows")]
+                    {
+                        Self::do_copy_to_clipboard_windows(&img_obj)
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        Self::do_copy_to_clipboard(&path)
+                    } // Fallback to path for other OS
+                } else {
+                    Self::do_copy_to_clipboard(&path)
+                };
+
                 if let Some(ref p) = proxy {
                     if let Err(e) = res {
                         send_event(&tx, p, AppEvent::SetStatus(format!("Copy failed: {e}")));
@@ -1093,44 +1093,41 @@ impl SpedImageApp {
     }
 
     pub(crate) fn zoom_in(&mut self, cursor: Option<PhysicalPosition<f64>>) {
-        self.zoom_by(0.9, cursor);
+        self.zoom_by(0.8, cursor); // Switched to 0.8 for faster zoom
     }
 
     pub(crate) fn zoom_out(&mut self, cursor: Option<PhysicalPosition<f64>>) {
-        self.zoom_by(1.1, cursor);
+        self.zoom_by(1.25, cursor);
     }
 
     pub(crate) fn zoom_by(&mut self, factor: f32, cursor: Option<PhysicalPosition<f64>>) {
-        let old_w = self.ui_state.adjustments.crop_rect[2];
-        let old_h = self.ui_state.adjustments.crop_rect[3];
-        let new_w = (old_w * factor).clamp(0.05, 1.0);
-        let new_h = (old_h * factor).clamp(0.05, 1.0);
+        let old_w = self.ui_state.adjustments.crop_rect_target[2];
+        let old_h = self.ui_state.adjustments.crop_rect_target[3];
+        let new_w = (old_w * factor).clamp(0.01, 1.0);
+        let new_h = (old_h * factor).clamp(0.01, 1.0);
 
         if let (Some(pos), Some(ref w)) = (cursor, &self.window) {
             let win_size = w.inner_size();
             if win_size.width > 0 && win_size.height > 0 {
                 let cx = (pos.x as f32 / win_size.width as f32)
-                    .mul_add(old_w, self.ui_state.adjustments.crop_rect[0]);
+                    .mul_add(old_w, self.ui_state.adjustments.crop_rect_target[0]);
                 let cy = (pos.y as f32 / win_size.height as f32)
-                    .mul_add(old_h, self.ui_state.adjustments.crop_rect[1]);
-                self.ui_state.adjustments.crop_rect[0] = (cx
-                    - new_w * (pos.x as f32 / win_size.width as f32))
-                    .max(0.0)
-                    .min(1.0 - new_w);
-                self.ui_state.adjustments.crop_rect[1] = (cy
-                    - new_h * (pos.y as f32 / win_size.height as f32))
-                    .max(0.0)
-                    .min(1.0 - new_h);
+                    .mul_add(old_h, self.ui_state.adjustments.crop_rect_target[1]);
+
+                self.ui_state.adjustments.crop_rect_target[0] =
+                    (cx - new_w * (pos.x as f32 / win_size.width as f32)).clamp(0.0, 1.0 - new_w);
+                self.ui_state.adjustments.crop_rect_target[1] =
+                    (cy - new_h * (pos.y as f32 / win_size.height as f32)).clamp(0.0, 1.0 - new_h);
             }
         }
 
-        self.ui_state.adjustments.crop_rect[2] = new_w;
-        self.ui_state.adjustments.crop_rect[3] = new_h;
+        self.ui_state.adjustments.crop_rect_target[2] = new_w;
+        self.ui_state.adjustments.crop_rect_target[3] = new_h;
         self.dirty = true;
     }
 
     pub(crate) fn zoom_fit(&mut self) {
-        self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
+        self.ui_state.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
         self.dirty = true;
     }
 
@@ -1147,21 +1144,21 @@ mod tests {
     #[test]
     fn test_slideshow_toggle() {
         let mut app = SpedImageApp::new();
-        assert!(!app.slideshow_active);
+        assert!(!app.slideshow.active);
 
         app.toggle_slideshow();
         assert!(app.slideshow.active);
         assert!(app.slideshow.next_time.is_some());
 
         app.toggle_slideshow();
-        assert!(!app.slideshow_active);
+        assert!(!app.slideshow.active);
         assert!(app.slideshow.next_time.is_none());
     }
 
     #[test]
     fn test_slideshow_interval() {
         let mut app = SpedImageApp::new();
-        let initial = app.slideshow_interval;
+        let initial = app.slideshow.interval;
 
         app.adjust_slideshow_interval(1);
         assert_eq!(
@@ -1171,7 +1168,7 @@ mod tests {
 
         app.adjust_slideshow_interval(-2);
         assert_eq!(
-            app.slideshow_interval,
+            app.slideshow.interval,
             initial - std::time::Duration::from_secs(1)
         );
     }
@@ -1180,15 +1177,15 @@ mod tests {
     fn test_zoom_by_clamping() {
         let mut app = SpedImageApp::new();
         // Initial crop rect is [0.0, 0.0, 1.0, 1.0] by default in ImageAdjustments
-        assert_eq!(app.ui_state.adjustments.crop_rect[2], 1.0);
+        assert_eq!(app.ui_state.adjustments.crop_rect_target[2], 1.0);
 
         // Zooming out further should clamp at 1.0
         app.zoom_by(1.5, None);
-        assert_eq!(app.ui_state.adjustments.crop_rect[2], 1.0);
+        assert_eq!(app.ui_state.adjustments.crop_rect_target[2], 1.0);
 
-        // Zooming in heavily should clamp at 0.05
-        app.zoom_by(0.01, None);
-        assert_eq!(app.ui_state.adjustments.crop_rect[2], 0.05);
+        // Zooming in heavily should clamp at 0.01
+        app.zoom_by(0.001, None);
+        assert_eq!(app.ui_state.adjustments.crop_rect_target[2], 0.01);
     }
 
     #[test]

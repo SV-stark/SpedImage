@@ -41,10 +41,16 @@ pub struct Renderer {
 
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Result<Self> {
-        let (device, queue, surface, adapter) = Self::create_device_and_surface(window.clone()).await?;
+        let (device, queue, surface, adapter) =
+            Self::create_device_and_surface(window.clone()).await?;
         let capabilities = surface.get_capabilities(&adapter);
-        let format = capabilities.formats[0];
- 
+        let format = capabilities
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(capabilities.formats[0]);
+
         let config = SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -56,10 +62,10 @@ impl Renderer {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
- 
+
         let (pipeline, crop_pipeline) = Self::create_pipelines(&device, format)?;
         let (vertex_buffer, uniform_buffer, thumb_uniform_buffer) = Self::create_buffers(&device);
- 
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Image Sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -69,7 +75,7 @@ impl Renderer {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
         });
- 
+
         let sampler_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Image Sampler (Nearest)"),
             mag_filter: wgpu::FilterMode::Nearest,
@@ -79,10 +85,11 @@ impl Renderer {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
         });
- 
-        let text_brush = Self::init_text_brush(&device, format).context("Failed to init text brush")?;
+
+        let text_brush =
+            Self::init_text_brush(&device, format).context("Failed to init text brush")?;
         let staging_belt = wgpu::util::StagingBelt::new(1024);
- 
+
         Ok(Self {
             _window: window.clone(),
             device,
@@ -107,15 +114,20 @@ impl Renderer {
             thumbnails: Vec::new(),
         })
     }
- 
+
     async fn create_device_and_surface(
         window: Arc<Window>,
-    ) -> Result<(wgpu::Device, wgpu::Queue, wgpu::Surface<'static>, wgpu::Adapter)> {
+    ) -> Result<(
+        wgpu::Device,
+        wgpu::Queue,
+        wgpu::Surface<'static>,
+        wgpu::Adapter,
+    )> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance
             .create_surface(window.clone())
             .context("Failed to create WGPU surface")?;
- 
+
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::LowPower,
@@ -124,23 +136,21 @@ impl Renderer {
             })
             .await
             .context("Failed to request WGPU adapter")?;
- 
+
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("SpedImage Device"),
-                    required_features: wgpu::Features::default(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                    trace: wgpu::Trace::Off,
-                },
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("SpedImage Device"),
+                required_features: wgpu::Features::default(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::Off,
+            })
             .await
             .context("Failed to request WGPU device")?;
- 
+
         Ok((device, queue, surface, adapter))
     }
- 
+
     fn create_pipelines(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -149,7 +159,7 @@ impl Renderer {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(crate::render::shaders::SHADER.into()),
         });
- 
+
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Image Bind Group Layout"),
             entries: &[
@@ -181,13 +191,13 @@ impl Renderer {
                 },
             ],
         });
- 
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
- 
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Image Render Pipeline"),
             layout: Some(&pipeline_layout),
@@ -232,19 +242,19 @@ impl Renderer {
             multiview: None,
             cache: None,
         });
- 
+
         // Crop overlay pipeline
         let crop_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Crop Shader"),
             source: wgpu::ShaderSource::Wgsl(crate::render::shaders::CROP_SHADER.into()),
         });
- 
+
         let crop_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Crop Pipeline Layout"),
             bind_group_layouts: &[],
             push_constant_ranges: &[],
         });
- 
+
         let crop_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Crop Overlay Pipeline"),
             layout: Some(&crop_pipeline_layout),
@@ -278,48 +288,46 @@ impl Renderer {
             multiview: None,
             cache: None,
         });
- 
+
         Ok((pipeline, crop_pipeline))
     }
- 
-    fn create_buffers(
-        device: &wgpu::Device,
-    ) -> (wgpu::Buffer, wgpu::Buffer, wgpu::Buffer) {
+
+    fn create_buffers(device: &wgpu::Device) -> (wgpu::Buffer, wgpu::Buffer, wgpu::Buffer) {
         use wgpu::util::DeviceExt;
         let vertex_data: [f32; 24] = [
             -1.0, -1.0, 0.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 0.0, 0.0, 1.0, -1.0, 1.0, 1.0,
             1.0, 1.0, 1.0, 0.0, -1.0, 1.0, 0.0, 0.0,
         ];
- 
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&vertex_data),
             usage: wgpu::BufferUsages::VERTEX,
         });
- 
+
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Uniform Buffer"),
             size: std::mem::size_of::<Uniforms>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
- 
+
         let thumb_uniforms = Uniforms::identity();
         let thumb_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Thumbnail Uniform Buffer"),
             contents: bytemuck::bytes_of(&thumb_uniforms),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
- 
+
         (vertex_buffer, uniform_buffer, thumb_uniform_buffer)
     }
- 
+
     fn init_text_brush(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
     ) -> Result<wgpu_glyph::GlyphBrush<()>> {
         const EMBEDDED_FONT: &[u8] = include_bytes!("../../assets/Inter-Regular.ttf");
- 
+
         let font = if cfg!(windows) {
             if let Ok(bytes) = std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf") {
                 wgpu_glyph::ab_glyph::FontArc::try_from_vec(bytes).context("Failed to load font")?
@@ -331,7 +339,7 @@ impl Renderer {
             wgpu_glyph::ab_glyph::FontArc::try_from_slice(EMBEDDED_FONT)
                 .context("Failed to load font")?
         };
- 
+
         Ok(wgpu_glyph::GlyphBrushBuilder::using_font(font).build(device, format))
     }
 
@@ -477,6 +485,8 @@ impl Renderer {
             saturation: adjustments.saturation,
             hdr_toning: if adjustments.hdr_toning { 1.0 } else { 0.0 },
             _padding: 0.0,
+            pos_offset: [0.0, 0.0],
+            pos_scale: [1.0, 1.0],
         };
 
         self.queue

@@ -25,6 +25,7 @@ Section "Install"
     SetOutPath "$INSTDIR"
     File "target\release\spedimage.exe"
     File "assets\icons\icon.png"
+    File "assets\libheif\*.dll"
     
     WriteUninstaller "$INSTDIR\uninstall.exe"
     

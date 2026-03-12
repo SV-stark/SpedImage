@@ -6,7 +6,7 @@ use lru::LruCache;
 use notify::RecommendedWatcher;
 use rayon::ThreadPool;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use winit::dpi::PhysicalPosition;
@@ -24,6 +24,8 @@ pub(crate) struct NavigationState {
     pub(crate) prefetch_active: Arc<AtomicUsize>,
     pub(crate) held_key: Option<char>,
     pub(crate) last_advance_time: Option<std::time::Instant>,
+    pub(crate) load_generation: Arc<AtomicU64>,
+    pub(crate) thumb_scroll: f32,
 }
 
 pub(crate) struct ThumbnailState {
@@ -82,10 +84,12 @@ impl SpedImageApp {
             mouse_drag_start: None,
             last_cursor_pos: PhysicalPosition::new(0.0, 0.0),
             navigation: NavigationState {
-                prefetch_cache: LruCache::new(std::num::NonZeroUsize::new(50).unwrap()),
+                prefetch_cache: LruCache::new(std::num::NonZeroUsize::new(10).unwrap()),
                 prefetch_active: Arc::new(AtomicUsize::new(0)),
                 held_key: None,
                 last_advance_time: None,
+                load_generation: Arc::new(AtomicU64::new(0)),
+                thumb_scroll: 0.0,
             },
             initial_path: None,
             thumbnails: ThumbnailState {
@@ -103,9 +107,8 @@ impl SpedImageApp {
         }
     }
 }
- 
-impl SpedImageApp {
 
+impl SpedImageApp {
     pub fn default_with_proxy(
         proxy: winit::event_loop::EventLoopProxy<crate::app::types::WakeUp>,
         tx: std::sync::mpsc::Sender<crate::app::types::AppEvent>,
@@ -116,7 +119,7 @@ impl SpedImageApp {
         app
     }
 }
- 
+
 impl Default for SpedImageApp {
     fn default() -> Self {
         Self::new()

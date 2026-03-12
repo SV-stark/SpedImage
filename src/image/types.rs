@@ -63,11 +63,15 @@ impl ImageFormatType {
     pub fn is_supported(&self) -> bool {
         match self {
             Self::Unknown => false,
-            // RAW requires the `raw` feature, SVG requires `svg`
+            // RAW requires the `raw` feature, SVG requires `svg`, HEIC/AVIF require `heif`
             #[cfg(not(feature = "raw"))]
             Self::Raw => false,
             #[cfg(not(feature = "svg"))]
             Self::Svg => false,
+            #[cfg(not(feature = "heif"))]
+            Self::Heic => false,
+            #[cfg(not(feature = "heif"))]
+            Self::Avif => false,
             _ => true,
         }
     }

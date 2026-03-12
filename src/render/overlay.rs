@@ -18,8 +18,9 @@ impl Renderer {
         crop_rect: [f32; 4],
         status_text: Option<&str>,
         show_help: bool,
-        sidebar_files: Option<&[String]>,
+        sidebar_text: Option<&str>,
         show_thumbnail_strip: bool,
+        _thumb_scroll: f32,
         exif_text: Option<&str>,
         show_histogram: bool,
         histogram_data: Option<&([u32; 256], [u32; 256], [u32; 256])>,
@@ -29,16 +30,11 @@ impl Renderer {
         let scale = self.scale_factor as f32;
 
         let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nH: Toggle HDR\nCtrl+S: Save\nF: Toggle Sidebar\nT: Toggle Thumbnails\nEsc: Quit";
-        let sidebar_list_text: String = sidebar_files
-            .map(|files| {
-                files
-                    .iter()
-                    .enumerate()
-                    .map(|(i, name)| format!("{}. {name}", i + 1))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .unwrap_or_default();
+        let sidebar_list_text = if let Some(sidebar_text) = sidebar_text {
+            sidebar_text
+        } else {
+            ""
+        };
 
         let nav_y = if show_thumbnail_strip && !self.thumbnails.is_empty() {
             (self.config.height as f32 - STRIP_HEIGHT_PX as f32) / 2.0
@@ -118,13 +114,12 @@ impl Renderer {
                 .into_iter()
                 .enumerate()
                 {
-                    let mut bars = String::new();
+                    let mut bars = String::with_capacity(64);
                     for i in (0..256).step_by(4) {
                         let val = hist[i..i + 4].iter().sum::<u32>() / 4;
                         let bar_h = (val as f32 / max_val as f32 * 8.0).round() as u32;
                         let char = match bar_h {
-                            0 => " ",
-                            1 => " ",
+                            0 | 1 => " ",
                             2 => "▂",
                             3 => "▃",
                             4 => "▄",
@@ -169,7 +164,7 @@ impl Renderer {
             );
         }
 
-        if sidebar_files.map(|f| !f.is_empty()).unwrap_or(false) {
+        if sidebar_text.map(|f| !f.is_empty()).unwrap_or(false) {
             self.text_brush.queue(
                 Section::default()
                     .add_text(
@@ -247,8 +242,9 @@ impl Renderer {
         crop_rect: [f32; 4],
         status_text: Option<&str>,
         show_help: bool,
-        sidebar_files: Option<&[String]>,
+        sidebar_text: Option<&str>,
         show_thumbnail_strip: bool,
+        thumb_scroll: f32,
         active_thumb_idx: Option<usize>,
         selected_indices: &std::collections::HashSet<usize>,
         exif_text: Option<&str>,
@@ -271,16 +267,22 @@ impl Renderer {
         self.encode_image(adjustments, &view, &mut encoder);
 
         if show_thumbnail_strip && !self.thumbnails.is_empty() {
-            self.encode_thumbnail_strip(active_thumb_idx, selected_indices, &view, &mut encoder);
+            self.encode_thumbnail_strip(
+                active_thumb_idx,
+                selected_indices,
+                thumb_scroll,
+                &view,
+                &mut encoder,
+            );
         }
-
         self.encode_ui_overlay(
             is_cropping,
             crop_rect,
             status_text,
             show_help,
-            sidebar_files,
+            sidebar_text,
             show_thumbnail_strip,
+            thumb_scroll,
             exif_text,
             show_histogram,
             histogram_data,

@@ -67,9 +67,15 @@ rawler = { version = "0.7", optional = true }
 # SVG rendering
 resvg = { version = "0.47", optional = true }
 
+# HEIF/AVIF decoding via libheif (requires libheif C library)
+# On Windows: install libheif via vcpkg (cargo vcpkg -v build)
+# On Linux: install libheif-dev >= 1.17.0
+# Or enable embedded-libheif feature to compile from source
+libheif-rs = { version = "2.7", optional = true, default-features = false, features = ["embedded-libheif"] }
+
 [features]
-default = ["raw", "svg"]
-heif = []
+default = ["raw", "svg", "heif"]
+heif = ["libheif-rs"]
 raw = ["rawler"]
 svg = ["resvg"]
 

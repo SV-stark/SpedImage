@@ -48,6 +48,8 @@ pub struct UiState {
     pub status_message: Option<String>,
     /// Set of file indices that are currently selected in the thumbnail strip.
     pub selected_indices: std::collections::HashSet<usize>,
+    /// Pre-formatted sidebar text for rendering performance.
+    pub sidebar_text: Option<String>,
 }
 
 impl Default for UiState {
@@ -65,6 +67,7 @@ impl Default for UiState {
             show_histogram: false,
             status_message: None,
             selected_indices: std::collections::HashSet::new(),
+            sidebar_text: None,
         }
     }
 }
@@ -152,6 +155,7 @@ impl UiState {
             if !self.files.is_empty() {
                 self.current_file_index = Some(0);
             }
+            self.sidebar_text = None;
         }
     }
 

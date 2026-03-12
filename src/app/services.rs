@@ -39,7 +39,9 @@ impl SpedImageApp {
             if self.navigation.prefetch_active.load(Ordering::Relaxed) >= MAX_CONCURRENT_PREFETCH {
                 continue;
             }
-            self.navigation.prefetch_active.fetch_add(1, Ordering::Relaxed);
+            self.navigation
+                .prefetch_active
+                .fetch_add(1, Ordering::Relaxed);
             let active = self.navigation.prefetch_active.clone();
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
@@ -93,6 +95,35 @@ impl SpedImageApp {
         }
     }
 
+    /// Spawn a background thread to scan a directory for images.
+    pub(crate) fn load_directory_async(&self, dir: PathBuf) {
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+
+        std::thread::spawn(move || {
+            let mut files = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if crate::image::ImageBackend::is_supported(&path) {
+                        files.push(crate::ui::FileEntry::new(path));
+                    }
+                }
+                files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+                if let Some(ref p) = proxy {
+                    send_event(&tx, p, AppEvent::DirectoryLoaded(dir, files));
+                }
+            } else if let Some(ref p) = proxy {
+                send_event(
+                    &tx,
+                    p,
+                    AppEvent::DirectoryError("Failed to read directory".to_string()),
+                );
+            }
+        });
+    }
+
     /// Spawn background thumbnail-loading threads for all files in the current directory.
     pub(crate) fn load_thumbnails_for_dir(&mut self) {
         let files: Vec<PathBuf> = self.ui_state.files.iter().map(|f| f.path.clone()).collect();
@@ -107,63 +138,72 @@ impl SpedImageApp {
         let proxy = self.event_proxy.clone();
         let active = self.thumbnails.active_count.clone();
 
-        for path in files.into_iter().take(n) {
-            while active.load(Ordering::Relaxed) >= MAX_THUMB_THREADS {
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-            active.fetch_add(1, Ordering::Relaxed);
-            let tx2 = tx.clone();
-            let proxy2 = proxy.clone();
-            let act2 = active.clone();
-            let p = path.clone();
-            std::thread::spawn(move || {
-                let result =
-                    ImageBackend::load_and_downsample(&p, THUMB_LOAD_SIZE, THUMB_LOAD_SIZE);
-                act2.fetch_sub(1, Ordering::Relaxed);
-                if let Ok(frames) = result {
-                    if let Some(first) = frames.into_iter().next() {
-                        if let Some(ref proxy) = proxy2 {
-                            send_event(
-                                &tx2,
-                                proxy,
-                                AppEvent::ThumbnailLoaded(
-                                    p,
-                                    first.rgba_data,
-                                    first.width,
-                                    first.height,
-                                ),
-                            );
+        // Spawn a manager thread to queue thumbnails without blocking the main event loop
+        std::thread::spawn(move || {
+            for path in files.into_iter().take(n) {
+                while active.load(Ordering::Relaxed) >= MAX_THUMB_THREADS {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                active.fetch_add(1, Ordering::Relaxed);
+
+                let tx2 = tx.clone();
+                let proxy2 = proxy.clone();
+                let act2 = active.clone();
+                let p = path.clone();
+
+                std::thread::spawn(move || {
+                    let result =
+                        ImageBackend::load_and_downsample(&p, THUMB_LOAD_SIZE, THUMB_LOAD_SIZE);
+                    act2.fetch_sub(1, Ordering::Relaxed);
+                    if let Ok(frames) = result {
+                        if let Some(first) = frames.into_iter().next() {
+                            if let Some(ref proxy) = proxy2 {
+                                send_event(
+                                    &tx2,
+                                    proxy,
+                                    AppEvent::ThumbnailLoaded(
+                                        p,
+                                        first.rgba_data,
+                                        first.width,
+                                        first.height,
+                                    ),
+                                );
+                            }
                         }
                     }
-                }
-            });
-        }
+                });
+            }
+        });
     }
 }
- 
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use winit::event_loop::EventLoopBuilder;
     use crate::app::state::SpedImageApp;
-    use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
- 
+    use std::sync::Arc;
+    use winit::event_loop::EventLoopBuilder;
+
     #[test]
     fn test_prefetch_logic_caching() {
         use winit::event_loop::EventLoop;
-        let event_loop = EventLoop::<crate::app::types::WakeUp>::with_user_event().build().unwrap();
+        let event_loop = EventLoop::<crate::app::types::WakeUp>::with_user_event()
+            .build()
+            .unwrap();
         let proxy = event_loop.create_proxy();
         let (tx, _rx) = std::sync::mpsc::channel();
- 
+
         let mut app = SpedImageApp::default_with_proxy(proxy, tx);
- 
+
         let test_path = PathBuf::from("test_image_123.png");
-        app.navigation.prefetch_cache.put(test_path.clone(), ());
-        
-        let neighbors = vec![test_path.clone()];
+        app.navigation
+            .prefetch_cache
+            .put(test_path.clone(), Vec::new());
+
+        let _neighbors = vec![test_path.clone()];
         app.prefetch_adjacent(&test_path);
-        
+
         // Assert no new prefetch was started because it's in cache
         assert_eq!(app.navigation.prefetch_active.load(Ordering::Relaxed), 0);
     }

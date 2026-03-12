@@ -10,12 +10,24 @@ fn register_file_associations() {
     use winreg::enums::*;
     use winreg::RegKey;
 
+    let settings_path = std::env::current_exe()
+        .ok()
+        .map(|p| p.with_file_name("settings.json"));
+
+    if let Some(ref path) = settings_path {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if content.contains("\"don't ask again\": true") {
+                return;
+            }
+        }
+    }
+
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let classes = hkcu
         .open_subkey_with_flags("Software\\Classes", KEY_ALL_ACCESS)
         .ok();
     if let Some(classes) = classes {
-        // Check if we already registered or user dismissed it
+        // Check if we already registered
         if classes.open_subkey("SpedImage.Image").is_ok() {
             return;
         }
@@ -29,22 +41,29 @@ fn register_file_associations() {
             == rfd::MessageDialogResult::Yes;
 
         if !confirmed {
-            // Write a dummy key so we don't ask again
-            let _ = classes.create_subkey("SpedImage.Image");
+            // Write to settings.json so we don't ask again
+            if let Some(path) = settings_path {
+                let _ = std::fs::write(path, "{\n  \"don't ask again\": true\n}");
+            }
             return;
         }
+
+        let exe_path = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("Failed to get current executable path: {e}");
+                return;
+            }
+        };
+        let exe_path_lossy = exe_path.to_string_lossy();
 
         if let Ok((prog_id, _)) = classes.create_subkey("SpedImage.Image") {
             let _ = prog_id.set_value("", &"SpedImage Image File");
             if let Ok((shell, _)) = prog_id.create_subkey("shell\\open\\command") {
-                let exe_path = std::env::current_exe().unwrap_or_default();
-                let exe_path_lossy = exe_path.to_string_lossy();
                 let cmd = format!("\"{exe_path_lossy}\" \"%1\"");
                 let _ = shell.set_value("", &cmd);
             }
             if let Ok((icon, _)) = prog_id.create_subkey("DefaultIcon") {
-                let exe_path = std::env::current_exe().unwrap_or_default();
-                let exe_path_lossy = exe_path.to_string_lossy();
                 let cmd = format!("\"{exe_path_lossy}\",0");
                 let _ = icon.set_value("", &cmd);
             }

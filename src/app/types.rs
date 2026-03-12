@@ -35,6 +35,8 @@ pub enum AppEvent {
     ThumbnailLoaded(PathBuf, Vec<u8>, u32, u32),
     SetStatus(String),
     FileRenamed(PathBuf, PathBuf),
+    DirectoryLoaded(PathBuf, Vec<crate::ui::FileEntry>),
+    DirectoryError(String),
 }
 
 /// Helper: send an AppEvent through the data channel, then wake the event loop.

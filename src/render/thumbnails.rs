@@ -100,6 +100,7 @@ impl Renderer {
         &mut self,
         active_idx: Option<usize>,
         selected_indices: &std::collections::HashSet<usize>,
+        thumb_scroll: f32,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -139,11 +140,11 @@ impl Renderer {
         // --- Pass 2: draw thumbnails -----------------------------------------
         // We calculate horizontal centering
         let n = self.thumbnails.len();
-        let total_w = n as u32 * THUMB_SLOT_W;
-        let start_x: u32 = if total_w <= win_w {
-            (win_w - total_w) / 2
+        let total_w = n as f32 * THUMB_SLOT_W as f32;
+        let start_x: f32 = if total_w <= win_w as f32 {
+            ((win_w as f32 - total_w) / 2.0).floor()
         } else {
-            0
+            -thumb_scroll
         };
 
         {
@@ -167,18 +168,12 @@ impl Renderer {
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
             for (i, thumb) in self.thumbnails.iter().enumerate() {
-                let x = start_x + (i as u32 * THUMB_SLOT_W);
-                if x + THUMB_SLOT_W > win_w {
-                    break;
+                let x = start_x + (i as f32 * THUMB_SLOT_W as f32);
+                if x + (THUMB_SLOT_W as f32) < 0.0 {
+                    continue;
                 }
-
-                // Draw highlight for selected items
-                let is_active = Some(i) == active_idx;
-                let is_selected = selected_indices.contains(&i);
-
-                if is_active || is_selected {
-                    // We can reuse the crop pipeline for a simple highlight border/overlay
-                    // but for now we just draw the thumb.
+                if x > win_w as f32 {
+                    break;
                 }
 
                 // Aspect-fit thumbnail in the slot
@@ -197,7 +192,38 @@ impl Renderer {
                 let off_x = (THUMB_SLOT_W - tw) / 2;
                 let off_y = (STRIP_HEIGHT_PX - th) / 2;
 
-                pass.set_scissor_rect(x + off_x, strip_y + off_y, tw, th);
+                let draw_x = x + off_x as f32;
+                let draw_y = strip_y as f32 + off_y as f32;
+
+                // Calculate NDC offset and scale
+                // NDC x = (2*x + w)/win_w - 1.0
+                // NDC y = 1.0 - (2*y + h)/win_h
+                // NDC scale x = w / win_w
+                // NDC scale y = h / win_h
+                let pos_offset = [
+                    (2.0 * draw_x + tw as f32) / win_w as f32 - 1.0,
+                    1.0 - (2.0 * draw_y + th as f32) / win_h as f32,
+                ];
+                let pos_scale = [tw as f32 / win_w as f32, th as f32 / win_h as f32];
+
+                let mut uniforms = super::types::Uniforms::identity();
+                uniforms.pos_offset = pos_offset;
+                uniforms.pos_scale = pos_scale;
+
+                self.queue.write_buffer(
+                    &self.thumb_uniform_buffer,
+                    0,
+                    bytemuck::bytes_of(&uniforms),
+                );
+
+                // Draw highlight for selected items
+                let is_active = Some(i) == active_idx;
+                let is_selected = selected_indices.contains(&i);
+
+                if is_active || is_selected {
+                    // Could draw a highlight here
+                }
+
                 pass.set_bind_group(0, thumb.bind_group.as_ref(), &[]);
                 pass.draw(0..6, 0..1);
             }
@@ -205,7 +231,7 @@ impl Renderer {
     }
 
     /// Return the index into `self.thumbnails` for a given pixel click coordinate
-    pub fn thumbnail_index_at(&self, x: f64, y: f64) -> Option<usize> {
+    pub fn thumbnail_index_at(&self, x: f64, y: f64, thumb_scroll: f32) -> Option<usize> {
         let win_h = self.config.height as f64;
         let win_w = self.config.width as f64;
         let strip_y = win_h - STRIP_HEIGHT_PX as f64;
@@ -219,7 +245,7 @@ impl Renderer {
         let start_x: f64 = if total_w <= win_w {
             (win_w - total_w) / 2.0
         } else {
-            0.0
+            -thumb_scroll as f64
         };
 
         if x < start_x || x >= start_x + total_w {
