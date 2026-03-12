@@ -5,8 +5,8 @@ OutFile "SpedImage_Setup.exe"
 InstallDir "$PROGRAMFILES64\SpedImage"
 RequestExecutionLevel admin
 
-!define MUI_ICON "assets\icons\icon.png"
-!define MUI_UNICON "assets\icons\icon.png"
+!define MUI_ICON "assets\icons\icon.ico"
+!define MUI_UNICON "assets\icons\icon.ico"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "LICENSE"
@@ -24,15 +24,15 @@ RequestExecutionLevel admin
 Section "Install"
     SetOutPath "$INSTDIR"
     File "target\release\spedimage.exe"
-    File "assets\icons\icon.png"
+    File "assets\icons\icon.ico"
     File "assets\libheif\*.dll"
     
     WriteUninstaller "$INSTDIR\uninstall.exe"
     
-    CreateShortCut "$DESKTOP\SpedImage.lnk" "$INSTDIR\spedimage.exe" "" "$INSTDIR\icon.png"
+    CreateShortCut "$DESKTOP\SpedImage.lnk" "$INSTDIR\spedimage.exe" "" "$INSTDIR\icon.ico"
     
     CreateDirectory "$SMPROGRAMS\SpedImage"
-    CreateShortCut "$SMPROGRAMS\SpedImage\SpedImage.lnk" "$INSTDIR\spedimage.exe" "" "$INSTDIR\icon.png"
+    CreateShortCut "$SMPROGRAMS\SpedImage\SpedImage.lnk" "$INSTDIR\spedimage.exe" "" "$INSTDIR\icon.ico"
     CreateShortCut "$SMPROGRAMS\SpedImage\Uninstall.lnk" "$INSTDIR\uninstall.exe"
 
     ; Register file associations
@@ -46,7 +46,7 @@ Section "Uninstall"
     RMDir /r "$SMPROGRAMS\SpedImage"
     
     Delete "$INSTDIR\spedimage.exe"
-    Delete "$INSTDIR\icon.png"
+    Delete "$INSTDIR\icon.ico"
     Delete "$INSTDIR\uninstall.exe"
     
     ; Remove registry file associations
