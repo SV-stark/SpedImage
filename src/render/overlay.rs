@@ -7,27 +7,18 @@ use wgpu::{
 use wgpu_glyph::{Section, Text};
 
 use super::renderer::Renderer;
-use super::types::{ImageAdjustments, STRIP_HEIGHT_PX};
+use super::types::{RenderParams, STRIP_HEIGHT_PX};
 
 impl Renderer {
     pub(crate) fn encode_ui_overlay(
         &mut self,
-        is_cropping: bool,
-        crop_rect: [f32; 4],
-        status_text: Option<&str>,
-        show_help: bool,
-        _sidebar_text: Option<&str>,
-        show_thumbnail_strip: bool,
-        _thumb_scroll: f32,
-        exif_text: Option<&str>,
-        _show_histogram: bool,
-        _histogram_data: Option<&([u32; 256], [u32; 256], [u32; 256])>,
+        params: &RenderParams,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         let scale = self.scale_factor as f32;
 
-        let nav_y = if show_thumbnail_strip && !self.thumbnails.is_empty() {
+        let nav_y = if params.show_thumbnail_strip && !self.thumbnails.is_empty() {
             (self.config.height as f32 - STRIP_HEIGHT_PX as f32) / 2.0
         } else {
             self.config.height as f32 / 2.0
@@ -52,7 +43,7 @@ impl Renderer {
                 .with_screen_position((self.config.width as f32 - 60.0 * scale, nav_y)),
         );
 
-        if let Some(status) = status_text {
+        if let Some(status) = params.status_text {
             if !status.is_empty() {
                 self.text_brush.queue(
                     Section::default()
@@ -66,7 +57,7 @@ impl Renderer {
             }
         }
 
-        if show_help {
+        if params.show_help {
             let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nH: Toggle HDR\nCtrl+S: Save\nF: Toggle Sidebar\nT: Toggle Thumbnails\nEsc: Quit";
             self.text_brush.queue(
                 Section::default()
@@ -79,7 +70,7 @@ impl Renderer {
             );
         }
 
-        if let Some(exif) = exif_text {
+        if let Some(exif) = params.exif_text {
             self.text_brush.queue(
                 Section::default()
                     .add_text(
@@ -108,15 +99,15 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
-            if is_cropping {
+            if params.is_cropping {
                 render_pass.set_pipeline(&self.crop_pipeline);
                 let win_w = self.config.width;
                 let win_h = self.config.height;
 
-                let cx = ((crop_rect[0] * win_w as f32) as u32).min(win_w.saturating_sub(1));
-                let cy = ((crop_rect[1] * win_h as f32) as u32).min(win_h.saturating_sub(1));
-                let cw = ((crop_rect[2] * win_w as f32) as u32).min(win_w - cx);
-                let ch = ((crop_rect[3] * win_h as f32) as u32).min(win_h - cy);
+                let cx = ((params.crop_rect[0] * win_w as f32) as u32).min(win_w.saturating_sub(1));
+                let cy = ((params.crop_rect[1] * win_h as f32) as u32).min(win_h.saturating_sub(1));
+                let cw = ((params.crop_rect[2] * win_w as f32) as u32).min(win_w - cx);
+                let ch = ((params.crop_rect[3] * win_h as f32) as u32).min(win_h - cy);
 
                 if cy > 0 {
                     render_pass.set_scissor_rect(0, 0, win_w, cy);
@@ -149,19 +140,7 @@ impl Renderer {
 
     pub fn render_frame(
         &mut self,
-        adjustments: &ImageAdjustments,
-        is_cropping: bool,
-        crop_rect: [f32; 4],
-        status_text: Option<&str>,
-        show_help: bool,
-        sidebar_text: Option<&str>,
-        show_thumbnail_strip: bool,
-        thumb_scroll: f32,
-        active_thumb_idx: Option<usize>,
-        selected_indices: &std::collections::HashSet<usize>,
-        exif_text: Option<&str>,
-        show_histogram: bool,
-        histogram_data: Option<&([u32; 256], [u32; 256], [u32; 256])>,
+        params: RenderParams,
     ) -> Result<()> {
         let frame = self
             .surface
@@ -176,28 +155,19 @@ impl Renderer {
                 label: Some("Frame Encoder"),
             });
 
-        self.encode_image(adjustments, &view, &mut encoder);
+        self.encode_image(params.adjustments, &view, &mut encoder);
 
-        if show_thumbnail_strip && !self.thumbnails.is_empty() {
+        if params.show_thumbnail_strip && !self.thumbnails.is_empty() {
             self.encode_thumbnail_strip(
-                active_thumb_idx,
-                selected_indices,
-                thumb_scroll,
+                params.active_thumb_idx,
+                params.selected_indices,
+                params.thumb_scroll,
                 &view,
                 &mut encoder,
             );
         }
         self.encode_ui_overlay(
-            is_cropping,
-            crop_rect,
-            status_text,
-            show_help,
-            sidebar_text,
-            show_thumbnail_strip,
-            thumb_scroll,
-            exif_text,
-            show_histogram,
-            histogram_data,
+            &params,
             &view,
             &mut encoder,
         );

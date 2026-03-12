@@ -16,7 +16,6 @@ pub struct NavigationState {
     pub(crate) held_key: Option<char>,
     pub(crate) last_advance_time: Option<std::time::Instant>,
     pub(crate) prefetch_cache: LruCache<PathBuf, Vec<ImageData>>,
-    pub(crate) prefetch_active: Arc<std::sync::atomic::AtomicUsize>,
     pub(crate) load_generation: Arc<AtomicU64>,
     pub(crate) thumb_scroll: f32,
 }
@@ -73,7 +72,6 @@ impl SpedImageApp {
                 held_key: None,
                 last_advance_time: None,
                 prefetch_cache: LruCache::new(std::num::NonZeroUsize::new(10).unwrap()),
-                prefetch_active: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
                 load_generation: Arc::new(AtomicU64::new(0)),
                 thumb_scroll: 0.0,
             },

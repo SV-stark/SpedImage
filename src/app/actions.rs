@@ -622,7 +622,7 @@ impl SpedImageApp {
                 for (i, item) in items.iter().enumerate() {
                     let mut wide: Vec<u16> = std::ffi::OsStr::new(item).encode_wide().collect();
                     wide.push(0);
-                    let _ = AppendMenuW(hmenu, MF_STRING, (i + 1) as usize, PCWSTR(wide.as_ptr()));
+                    let _ = AppendMenuW(hmenu, MF_STRING, i + 1, PCWSTR(wide.as_ptr()));
                 }
 
                 let mut pt = windows::Win32::Foundation::POINT::default();

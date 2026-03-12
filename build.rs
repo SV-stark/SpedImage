@@ -11,18 +11,16 @@ fn main() {
         if libheif_dir.exists() && libheif_dir.is_dir() {
             println!("cargo:rerun-if-changed=assets/libheif");
 
-            for entry in std::fs::read_dir(libheif_dir).expect("Failed to read libheif dir") {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("dll") {
-                        let file_name = path.file_name().unwrap();
+            for entry in std::fs::read_dir(libheif_dir).expect("Failed to read libheif dir").flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("dll") {
+                    let file_name = path.file_name().unwrap();
 
-                        let dest = Path::new(&out_dir).join(file_name);
-                        std::fs::copy(&path, &dest).expect("Failed to copy DLL");
+                    let dest = Path::new(&out_dir).join(file_name);
+                    std::fs::copy(&path, &dest).expect("Failed to copy DLL");
 
-                        let dest_in_target = Path::new(&target_dir).join(file_name);
-                        let _ = std::fs::copy(&path, &dest_in_target);
-                    }
+                    let dest_in_target = Path::new(&target_dir).join(file_name);
+                    let _ = std::fs::copy(&path, &dest_in_target);
                 }
             }
             println!("cargo:warning=Copied HEIF codec DLLs to output directory");

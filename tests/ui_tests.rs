@@ -2,7 +2,6 @@
 
 #[cfg(test)]
 mod ui_tests {
-    use super::*;
 
     #[test]
     fn test_navigation() {

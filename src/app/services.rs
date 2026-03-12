@@ -78,7 +78,7 @@ impl SpedImageApp {
             .ui_state
             .files
             .iter()
-            .position(|f| &f.path == current_path)
+            .position(|f| f.path == current_path)
         {
             Some(i) => i,
             None => return,

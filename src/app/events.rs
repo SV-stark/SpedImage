@@ -1,6 +1,6 @@
 use crate::app::state::SpedImageApp;
 use crate::app::types::{AppEvent, WakeUp, APP_ICON};
-use crate::render::{Renderer, STRIP_HEIGHT_PX};
+use crate::render::{Renderer, RenderParams, STRIP_HEIGHT_PX};
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -238,21 +238,22 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         None
                     };
 
-                    r.render_frame(
-                        &self.ui_state.adjustments,
-                        self.ui_state.is_cropping,
-                        self.ui_state.adjustments.crop_rect,
-                        Some(self.ui_state.get_status()),
-                        self.ui_state.show_help,
+                    let status = self.ui_state.get_status();
+                    r.render_frame(RenderParams {
+                        adjustments: &self.ui_state.adjustments,
+                        is_cropping: self.ui_state.is_cropping,
+                        crop_rect: self.ui_state.adjustments.crop_rect,
+                        status_text: Some(status),
+                        show_help: self.ui_state.show_help,
                         sidebar_text,
-                        self.ui_state.show_thumbnail_strip,
-                        self.navigation.thumb_scroll,
-                        active_thumb,
-                        &self.ui_state.selected_indices,
+                        show_thumbnail_strip: self.ui_state.show_thumbnail_strip,
+                        thumb_scroll: self.navigation.thumb_scroll,
+                        active_thumb_idx: active_thumb,
+                        selected_indices: &self.ui_state.selected_indices,
                         exif_text,
-                        self.ui_state.show_histogram,
-                        img.histogram.as_ref(),
-                    )
+                        show_histogram: self.ui_state.show_histogram,
+                        histogram_data: img.histogram.as_ref(),
+                    })
                     .ok();
                     self.dirty = false;
                 } else if let Some(ref r) = self.renderer {

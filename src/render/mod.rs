@@ -5,4 +5,6 @@ mod thumbnails;
 mod types;
 
 pub use renderer::Renderer;
-pub use types::{ImageAdjustments, ThumbnailEntry, STRIP_HEIGHT_PX, THUMB_SIZE, THUMB_SLOT_W};
+pub use types::{
+    ImageAdjustments, RenderParams, ThumbnailEntry, STRIP_HEIGHT_PX, THUMB_SIZE, THUMB_SLOT_W,
+};
