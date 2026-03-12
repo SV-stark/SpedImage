@@ -138,10 +138,7 @@ impl Renderer {
         );
     }
 
-    pub fn render_frame(
-        &mut self,
-        params: RenderParams,
-    ) -> Result<()> {
+    pub fn render_frame(&mut self, params: RenderParams) -> Result<()> {
         let frame = self
             .surface
             .get_current_texture()
@@ -166,11 +163,7 @@ impl Renderer {
                 &mut encoder,
             );
         }
-        self.encode_ui_overlay(
-            &params,
-            &view,
-            &mut encoder,
-        );
+        self.encode_ui_overlay(&params, &view, &mut encoder);
 
         self.queue.submit([encoder.finish()]);
         self.staging_belt.recall();

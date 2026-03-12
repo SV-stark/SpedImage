@@ -11,7 +11,10 @@ fn main() {
         if libheif_dir.exists() && libheif_dir.is_dir() {
             println!("cargo:rerun-if-changed=assets/libheif");
 
-            for entry in std::fs::read_dir(libheif_dir).expect("Failed to read libheif dir").flatten() {
+            for entry in std::fs::read_dir(libheif_dir)
+                .expect("Failed to read libheif dir")
+                .flatten()
+            {
                 let path = entry.path();
                 if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("dll") {
                     let file_name = path.file_name().unwrap();

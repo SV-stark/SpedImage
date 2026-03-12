@@ -1,6 +1,6 @@
 use crate::app::state::SpedImageApp;
 use crate::app::types::{AppEvent, WakeUp, APP_ICON};
-use crate::render::{Renderer, RenderParams, STRIP_HEIGHT_PX};
+use crate::render::{RenderParams, Renderer, STRIP_HEIGHT_PX};
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
