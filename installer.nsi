@@ -23,9 +23,8 @@ RequestExecutionLevel admin
 
 Section "Install"
     SetOutPath "$INSTDIR"
-    File /nonfatal "target/release/spedimage.exe"
-    File /nonfatal "assets/icons/icon.ico"
-
+    File "target\release\spedimage.exe"
+    File "assets\icons\icon.ico"
     
     WriteUninstaller "$INSTDIR\uninstall.exe"
     
