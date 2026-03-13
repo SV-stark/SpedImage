@@ -32,8 +32,8 @@ jobs:
 
     - name: Cargo Build
       run: cargo build --release --verbose
-      
-- name: Verify Release Build
+    
+    - name: Verify Release Build
       run: |
         ls -la target/release/
         if not exist target\release\spedimage.exe (
