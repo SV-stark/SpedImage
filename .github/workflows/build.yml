@@ -48,8 +48,10 @@ jobs:
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
         echo "Current directory: $(pwd)"
-        echo "Listing target/release:"
+        Get-ChildItem .
         Get-ChildItem target/release/
+        Get-ChildItem assets/icons/
+        Get-ChildItem assets/libheif/
         makensis installer.nsi
 
     - name: Nightly Release

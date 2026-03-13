@@ -23,8 +23,8 @@ RequestExecutionLevel admin
 
 Section "Install"
     SetOutPath "$INSTDIR"
-    File "target\release\spedimage.exe"
-    File "assets\icons\icon.ico"
+    File /nonfatal "target/release/spedimage.exe"
+    File /nonfatal "assets/icons/icon.ico"
     File /r "assets/libheif/*.dll"
     
     WriteUninstaller "$INSTDIR\uninstall.exe"
