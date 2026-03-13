@@ -35,7 +35,7 @@ jobs:
     
     - name: Verify Release Build
       run: |
-        ls -la target/release/
+        Get-ChildItem target/release/
         if (-not (Test-Path "target/release/spedimage.exe")) {
           echo "ERROR: spedimage.exe not found in target/release/"
           exit 1
@@ -49,7 +49,7 @@ jobs:
       run: |
         echo "Current directory: $(pwd)"
         echo "Listing target/release:"
-        ls -la target/release/
+        Get-ChildItem target/release/
         makensis installer.nsi
 
     - name: Nightly Release
