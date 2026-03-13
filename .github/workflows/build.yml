@@ -32,6 +32,14 @@ jobs:
 
     - name: Cargo Build
       run: cargo build --release --verbose
+      
+- name: Verify Release Build
+      run: |
+        ls -la target/release/
+        if not exist target\release\spedimage.exe (
+          echo "ERROR: spedimage.exe not found in target/release/"
+          exit 1
+        )
 
     - name: Set up NSIS
       uses: negrutiu/nsis-install@v1
@@ -39,6 +47,9 @@ jobs:
     - name: Generate Installer (Windows)
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
+        echo "Current directory: $(pwd)"
+        echo "Listing target/release:"
+        ls -la target/release/
         makensis installer.nsi
 
     - name: Nightly Release
