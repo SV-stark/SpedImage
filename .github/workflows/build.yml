@@ -36,10 +36,10 @@ jobs:
     - name: Verify Release Build
       run: |
         ls -la target/release/
-        if not exist target\release\spedimage.exe (
+        if (-not (Test-Path "target/release/spedimage.exe")) {
           echo "ERROR: spedimage.exe not found in target/release/"
           exit 1
-        )
+        }
 
     - name: Set up NSIS
       uses: negrutiu/nsis-install@v1
