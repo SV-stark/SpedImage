@@ -23,7 +23,7 @@ RequestExecutionLevel admin
 
 Section "Install"
     SetOutPath "$INSTDIR"
-    File "target/release/spedimage.exe"
+    File "target\release\spedimage.exe"
     File "assets/icons/icon.ico"
     File /r "assets/libheif/*.dll"
     
