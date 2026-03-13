@@ -23,9 +23,9 @@ RequestExecutionLevel admin
 
 Section "Install"
     SetOutPath "$INSTDIR"
-    File "target\release\spedimage.exe"
-    File "assets\icons\icon.ico"
-    File "assets\libheif\*.dll"
+    File "target/release/spedimage.exe"
+    File "assets/icons/icon.ico"
+    File /r "assets/libheif/*.dll"
     
     WriteUninstaller "$INSTDIR\uninstall.exe"
     
@@ -34,7 +34,7 @@ Section "Install"
     CreateDirectory "$SMPROGRAMS\SpedImage"
     CreateShortCut "$SMPROGRAMS\SpedImage\SpedImage.lnk" "$INSTDIR\spedimage.exe" "" "$INSTDIR\icon.ico"
     CreateShortCut "$SMPROGRAMS\SpedImage\Uninstall.lnk" "$INSTDIR\uninstall.exe"
-
+    
     ; Register file associations
     WriteRegStr HKCU "Software\Classes\SpedImage.Image" "" "SpedImage Image File"
     WriteRegStr HKCU "Software\Classes\SpedImage.Image\DefaultIcon" "" "$INSTDIR\spedimage.exe,0"
