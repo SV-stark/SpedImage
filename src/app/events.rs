@@ -168,11 +168,12 @@ impl SpedImageApp {
 impl ApplicationHandler<WakeUp> for SpedImageApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let icon = (|| -> Option<winit::window::Icon> {
-            use zune_image::image::Image;
-            use zune_core::options::DecoderOptions;
             use std::io::Cursor;
+            use zune_core::options::DecoderOptions;
+            use zune_image::image::Image;
             let mut img = Image::read(Cursor::new(APP_ICON), DecoderOptions::default()).ok()?;
-            img.convert_color(zune_core::colorspace::ColorSpace::RGBA).ok()?;
+            img.convert_color(zune_core::colorspace::ColorSpace::RGBA)
+                .ok()?;
             let (w, h) = img.dimensions();
             let rgba = img.flatten_to_u8()[0].clone();
             winit::window::Icon::from_rgba(rgba, w as u32, h as u32).ok()
@@ -200,7 +201,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         if let Some(ref mut r) = self.renderer {
-            let response = r.egui_state.on_window_event(&self.window.as_ref().unwrap(), &event);
+            let response = r
+                .egui_state
+                .on_window_event(self.window.as_ref().unwrap(), &event);
             if response.consumed {
                 self.dirty = true;
                 return;

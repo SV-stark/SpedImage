@@ -1,11 +1,10 @@
-use color_eyre::eyre::{Context, Result, ContextCompat};
+use color_eyre::eyre::{Context, ContextCompat, Result};
 use std::sync::Arc;
 use wgpu::{
     BindGroup, Device, Queue, RenderPipeline, Sampler, Surface, SurfaceConfiguration, Texture,
 };
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
-use parking_lot::Mutex;
 
 use super::types::{ImageAdjustments, ThumbnailEntry, Uniforms};
 use crate::image::ImageData;
@@ -16,7 +15,6 @@ pub struct Renderer {
     pub(crate) queue: Queue,
     pub(crate) surface: Surface<'static>,
     pub(crate) pipeline: RenderPipeline,
-    pub(crate) crop_pipeline: RenderPipeline,
     pub(crate) uniform_buffer: wgpu::Buffer,
     pub(crate) thumb_uniform_buffer: wgpu::Buffer,
     pub(crate) vertex_buffer: wgpu::Buffer,
@@ -61,7 +59,7 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        let (pipeline, crop_pipeline) = Self::create_pipelines(&device, format)?;
+        let (pipeline, _crop_pipeline) = Self::create_pipelines(&device, format)?;
         let (vertex_buffer, uniform_buffer, thumb_uniform_buffer) = Self::create_buffers(&device);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -101,7 +99,6 @@ impl Renderer {
             queue,
             surface,
             pipeline,
-            crop_pipeline,
             uniform_buffer,
             thumb_uniform_buffer,
             vertex_buffer,
@@ -149,7 +146,6 @@ impl Renderer {
                     required_features: wgpu::Features::default(),
                     required_limits: wgpu::Limits::default(),
                     memory_hints: wgpu::MemoryHints::default(),
-                    ..Default::default()
                 },
                 None,
             )

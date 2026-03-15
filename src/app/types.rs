@@ -1,6 +1,6 @@
 use crate::image::ImageData;
-use std::path::PathBuf;
 use crossbeam_channel::Sender;
+use std::path::PathBuf;
 use winit::event_loop::EventLoopProxy;
 
 /// Wakeup token sent through EventLoopProxy to wake the sleeping event loop.

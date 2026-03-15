@@ -38,12 +38,7 @@ impl ImageBackend {
     }
 
     /// Save an image to disk
-    pub fn save(
-        path: &std::path::Path,
-        rgba_data: &[u8],
-        w: u32,
-        h: u32,
-    ) -> Result<()> {
+    pub fn save(path: &std::path::Path, rgba_data: &[u8], w: u32, h: u32) -> Result<()> {
         ImageProcessor::save(path, rgba_data, w, h)
     }
 }

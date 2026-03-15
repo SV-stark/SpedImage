@@ -108,7 +108,6 @@ impl Renderer {
                     load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
-
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,

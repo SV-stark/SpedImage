@@ -28,14 +28,20 @@ impl ImageProcessor {
 
                 // Use zune-image for resizing
                 use zune_image::image::Image;
-                use zune_imageprocs::resize::{Resize, ResizeMethod};
                 use zune_image::traits::OperationsTrait;
-                
-                let mut z_img = Image::from_u8(&img.rgba_data, img.width as usize, img.height as usize, zune_core::colorspace::ColorSpace::RGBA);
+                use zune_imageprocs::resize::{Resize, ResizeMethod};
+
+                let mut z_img = Image::from_u8(
+                    &img.rgba_data,
+                    img.width as usize,
+                    img.height as usize,
+                    zune_core::colorspace::ColorSpace::RGBA,
+                );
                 let resize = Resize::new(dst_w as usize, dst_h as usize, ResizeMethod::Lanczos3);
-                resize.execute(&mut z_img)
+                resize
+                    .execute(&mut z_img)
                     .map_err(|e| eyre!("Zune resize failed: {e:?}"))?;
-                
+
                 let (new_w, new_h) = z_img.dimensions();
                 img.width = new_w as u32;
                 img.height = new_h as u32;
@@ -62,15 +68,19 @@ impl ImageProcessor {
     /// Get list of supported file extensions
     pub fn supported_extensions() -> Vec<&'static str> {
         vec![
-            "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico",
-            "avif", "svg",
-            "arw", "cr2", "nef", "dng", "orf", "raf", "srw",
+            "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico", "avif", "svg", "arw",
+            "cr2", "nef", "dng", "orf", "raf", "srw",
         ]
     }
 
     pub fn save(path: &Path, rgba_data: &[u8], w: u32, h: u32) -> Result<()> {
         use zune_image::image::Image;
-        let mut img = Image::from_u8(rgba_data, w as usize, h as usize, zune_core::colorspace::ColorSpace::RGBA);
+        let img = Image::from_u8(
+            rgba_data,
+            w as usize,
+            h as usize,
+            zune_core::colorspace::ColorSpace::RGBA,
+        );
         img.save(path)
             .map_err(|e| eyre!("Failed to save image: {e:?}"))?;
         Ok(())

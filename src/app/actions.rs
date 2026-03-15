@@ -311,10 +311,15 @@ impl SpedImageApp {
                     use zune_imageprocs::rotate::Rotate;
 
                     let mut img = if width > 2000 || height > 2000 {
-                         Image::open(&path_clone)
+                        Image::open(&path_clone)
                             .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?
                     } else {
-                         Image::from_u8(&rgba_data, width as usize, height as usize, zune_core::colorspace::ColorSpace::RGBA)
+                        Image::from_u8(
+                            &rgba_data,
+                            width as usize,
+                            height as usize,
+                            zune_core::colorspace::ColorSpace::RGBA,
+                        )
                     };
 
                     // Initial crop and rotate
@@ -324,30 +329,39 @@ impl SpedImageApp {
                         let crop_y = (adjustments.crop_rect[1] * h as f32) as usize;
                         let crop_w = (adjustments.crop_rect[2] * w as f32) as usize;
                         let crop_h = (adjustments.crop_rect[3] * h as f32) as usize;
-                        
-                        Crop::new(crop_w, crop_h, crop_x, crop_y).execute(&mut img)
+
+                        Crop::new(crop_w, crop_h, crop_x, crop_y)
+                            .execute(&mut img)
                             .map_err(|e| color_eyre::eyre::eyre!("Crop failed: {e:?}"))?;
                     }
 
-                    let rot_deg = (adjustments.rotation.to_degrees() % 360.0).round() as f32;
+                    let rot_deg = (adjustments.rotation.to_degrees() % 360.0).round();
                     if rot_deg.abs() > 0.1 {
-                        Rotate::new(rot_deg).execute(&mut img)
+                        Rotate::new(rot_deg)
+                            .execute(&mut img)
                             .map_err(|e| color_eyre::eyre::eyre!("Rotate failed: {e:?}"))?;
                     }
 
                     // Use zune-imageprocs for color/exposure adjustments
                     if (adjustments.brightness - 1.0).abs() > 0.01 {
-                        Brighten::new(adjustments.brightness).execute(&mut img)
+                        Brighten::new(adjustments.brightness)
+                            .execute(&mut img)
                             .map_err(|e| color_eyre::eyre::eyre!("Brighten failed: {e:?}"))?;
                     }
                     if (adjustments.contrast - 1.0).abs() > 0.01 {
-                        Contrast::new(adjustments.contrast).execute(&mut img)
+                        Contrast::new(adjustments.contrast)
+                            .execute(&mut img)
                             .map_err(|e| color_eyre::eyre::eyre!("Contrast failed: {e:?}"))?;
                     }
 
                     let (final_w, final_h) = img.dimensions();
                     let final_rgba = img.flatten_to_u8()[0].clone();
-                    ImageBackend::save(&save_path_clone, &final_rgba, final_w as u32, final_h as u32)?;
+                    ImageBackend::save(
+                        &save_path_clone,
+                        &final_rgba,
+                        final_w as u32,
+                        final_h as u32,
+                    )?;
                     Ok(())
                 })();
 
@@ -389,7 +403,7 @@ impl SpedImageApp {
                     use zune_image::image::Image;
                     let img = Image::open(path)
                         .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?;
-                    
+
                     if let Some(stem) = path.file_stem() {
                         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
                         let mut save_path = path.clone();
@@ -398,7 +412,7 @@ impl SpedImageApp {
                             stem.to_string_lossy(),
                             ext
                         ));
-                        
+
                         let (w, h) = img.dimensions();
                         let rgba = img.flatten_to_u8()[0].clone();
                         ImageBackend::save(&save_path, &rgba, w as u32, h as u32)?;

@@ -126,15 +126,13 @@ impl SpedImageApp {
 
         use notify_debouncer_full::{new_debouncer, notify::RecursiveMode, notify::Watcher};
 
-        let mut debouncer = new_debouncer(
-            std::time::Duration::from_millis(500),
-            None,
-            move |res| {
+        let mut debouncer =
+            new_debouncer(std::time::Duration::from_millis(500), None, move |res| {
                 if let Ok(_events) = res {
                     // Trigger a reload or specific event
                 }
-            },
-        ).ok();
+            })
+            .ok();
 
         if let Some(ref mut d) = debouncer {
             let _ = d.watcher().watch(&dir, RecursiveMode::NonRecursive);

@@ -2,17 +2,16 @@ use crate::app::types::{AppEvent, KeyModifiers, WakeUp};
 use crate::image::ImageData;
 use crate::render::Renderer;
 use crate::ui::UiState;
-use lru::LruCache;
-use notify_debouncer_full::{Debouncer, FileIdMap};
+use crossbeam_channel::{Receiver, Sender};
+use dashmap::DashMap;
 use notify_debouncer_full::notify;
+use notify_debouncer_full::{Debouncer, FileIdMap};
 use rayon::ThreadPool;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
-use crossbeam_channel::{Receiver, Sender};
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
-use dashmap::DashMap;
 
 pub struct NavigationState {
     pub(crate) held_key: Option<char>,
