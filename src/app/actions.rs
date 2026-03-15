@@ -202,7 +202,7 @@ impl SpedImageApp {
             .fetch_add(1, Ordering::SeqCst)
             + 1;
 
-        if let Some(cached_frames) = self.navigation.prefetch_cache.pop(&path) {
+        if let Some((_, cached_frames)) = self.navigation.prefetch_cache.remove(&path) {
             if let Some(ref proxy) = self.event_proxy {
                 send_event(&self.event_tx, proxy, AppEvent::ImageLoaded(cached_frames));
             }
@@ -298,76 +298,56 @@ impl SpedImageApp {
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
 
-            let in_memory_img = if image_data.width > 2000 || image_data.height > 2000 {
-                None
-            } else {
-                image::RgbaImage::from_raw(
-                    image_data.width,
-                    image_data.height,
-                    image_data.rgba_data.clone(),
-                )
-                .map(image::DynamicImage::ImageRgba8)
-            };
+            let rgba_data = image_data.rgba_data.clone();
+            let (width, height) = (image_data.width, image_data.height);
 
             std::thread::spawn(move || {
                 let result = (|| -> color_eyre::eyre::Result<()> {
-                    let mut img = if let Some(i) = in_memory_img {
-                        i
+                    use zune_image::image::Image;
+                    use zune_image::traits::OperationsTrait;
+                    use zune_imageprocs::brighten::Brighten;
+                    use zune_imageprocs::contrast::Contrast;
+                    use zune_imageprocs::crop::Crop;
+                    use zune_imageprocs::rotate::Rotate;
+
+                    let mut img = if width > 2000 || height > 2000 {
+                         Image::open(&path_clone)
+                            .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?
                     } else {
-                        image::open(&path_clone)?
+                         Image::from_u8(&rgba_data, width as usize, height as usize, zune_core::colorspace::ColorSpace::RGBA)
                     };
 
-                    // Initial crop and rotate using image crate (simple & effective)
+                    // Initial crop and rotate
                     if adjustments.crop_rect != [0.0, 0.0, 1.0, 1.0] {
-                        let (w, h) = (img.width() as f32, img.height() as f32);
-                        let crop_x = (adjustments.crop_rect[0] * w) as u32;
-                        let crop_y = (adjustments.crop_rect[1] * h) as u32;
-                        let crop_w = (adjustments.crop_rect[2] * w) as u32;
-                        let crop_h = (adjustments.crop_rect[3] * h) as u32;
-                        img = img.crop_imm(crop_x, crop_y, crop_w, crop_h);
+                        let (w, h) = img.dimensions();
+                        let crop_x = (adjustments.crop_rect[0] * w as f32) as usize;
+                        let crop_y = (adjustments.crop_rect[1] * h as f32) as usize;
+                        let crop_w = (adjustments.crop_rect[2] * w as f32) as usize;
+                        let crop_h = (adjustments.crop_rect[3] * h as f32) as usize;
+                        
+                        Crop::new(crop_w, crop_h, crop_x, crop_y).execute(&mut img)
+                            .map_err(|e| color_eyre::eyre::eyre!("Crop failed: {e:?}"))?;
                     }
 
-                    let rot_deg = (adjustments.rotation.to_degrees() % 360.0).round() as i32;
-                    let rot_normalized = if rot_deg < 0 { rot_deg + 360 } else { rot_deg };
-                    match rot_normalized {
-                        90 => img = img.rotate90(),
-                        180 => img = img.rotate180(),
-                        270 => img = img.rotate270(),
-                        _ => {}
+                    let rot_deg = (adjustments.rotation.to_degrees() % 360.0).round() as f32;
+                    if rot_deg.abs() > 0.1 {
+                        Rotate::new(rot_deg).execute(&mut img)
+                            .map_err(|e| color_eyre::eyre::eyre!("Rotate failed: {e:?}"))?;
                     }
 
-                    // Use imagepipe for high-quality color/exposure adjustments in 16-bit
-                    let rgba = img.to_rgba8();
-                    let mut pipeline = imagepipe::Pipeline::new(
-                        imagepipe::ImageSource::from_rgba8(
-                            rgba.width() as usize,
-                            rgba.height() as usize,
-                            rgba.into_raw(),
-                        )
-                    );
-
-                    // Add color adjustments to the pipeline
+                    // Use zune-imageprocs for color/exposure adjustments
                     if (adjustments.brightness - 1.0).abs() > 0.01 {
-                        // imagepipe uses a multiplier for exposure/brightness
-                        pipeline = pipeline.exposure(adjustments.brightness);
+                        Brighten::new(adjustments.brightness).execute(&mut img)
+                            .map_err(|e| color_eyre::eyre::eyre!("Brighten failed: {e:?}"))?;
+                    }
+                    if (adjustments.contrast - 1.0).abs() > 0.01 {
+                        Contrast::new(adjustments.contrast).execute(&mut img)
+                            .map_err(|e| color_eyre::eyre::eyre!("Contrast failed: {e:?}"))?;
                     }
 
-                    // imagepipe has saturation and other color ops
-                    if (adjustments.saturation - 1.0).abs() > 0.01 {
-                        // Note: imagepipe's saturation implementation might vary, 
-                        // but let's assume it has one or we use exposure/gamma for HDR effect.
-                    }
-
-                    // Process and convert back to DynamicImage
-                    let processed = pipeline.into_rgba8()
-                        .map_err(|e| color_eyre::eyre::eyre!("Imagepipe save processing failed: {e:?}"))?;
-                    
-                    let final_img = image::DynamicImage::ImageRgba8(
-                        image::RgbaImage::from_raw(processed.width as u32, processed.height as u32, processed.data)
-                            .ok_or_else(|| color_eyre::eyre::eyre!("Failed to create final image buffer"))?
-                    );
-
-                    ImageBackend::save(&save_path_clone, &final_img, 90)?;
+                    let (final_w, final_h) = img.dimensions();
+                    let final_rgba = img.flatten_to_u8()[0].clone();
+                    ImageBackend::save(&save_path_clone, &final_rgba, final_w as u32, final_h as u32)?;
                     Ok(())
                 })();
 
@@ -406,8 +386,10 @@ impl SpedImageApp {
             let mut saved_count = 0;
             for path in &selected {
                 let _ = (|| -> color_eyre::eyre::Result<()> {
-                    let img = image::open(path)?;
-                    // Simplified: apply same adjustments as save_image
+                    use zune_image::image::Image;
+                    let img = Image::open(path)
+                        .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?;
+                    
                     if let Some(stem) = path.file_stem() {
                         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
                         let mut save_path = path.clone();
@@ -416,7 +398,10 @@ impl SpedImageApp {
                             stem.to_string_lossy(),
                             ext
                         ));
-                        ImageBackend::save(&save_path, &img, 90)?;
+                        
+                        let (w, h) = img.dimensions();
+                        let rgba = img.flatten_to_u8()[0].clone();
+                        ImageBackend::save(&save_path, &rgba, w as u32, h as u32)?;
                     }
                     Ok(())
                 })();

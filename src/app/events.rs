@@ -167,11 +167,16 @@ impl SpedImageApp {
 
 impl ApplicationHandler<WakeUp> for SpedImageApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let icon_img = image::load_from_memory(APP_ICON).ok().map(|i| i.to_rgba8());
-        let icon = icon_img.and_then(|i| {
-            let (w, h) = i.dimensions();
-            winit::window::Icon::from_rgba(i.into_raw(), w, h).ok()
-        });
+        let icon = (|| -> Option<winit::window::Icon> {
+            use zune_image::image::Image;
+            use zune_core::options::DecoderOptions;
+            use std::io::Cursor;
+            let mut img = Image::read(Cursor::new(APP_ICON), DecoderOptions::default()).ok()?;
+            img.convert_color(zune_core::colorspace::ColorSpace::RGBA).ok()?;
+            let (w, h) = img.dimensions();
+            let rgba = img.flatten_to_u8()[0].clone();
+            winit::window::Icon::from_rgba(rgba, w as u32, h as u32).ok()
+        })();
 
         let window = Arc::new(
             event_loop

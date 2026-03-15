@@ -26,23 +26,20 @@ impl ImageProcessor {
                 let dst_w = dst_w.max(1);
                 let dst_h = dst_h.max(1);
 
-                // Use imagepipe for high-performance processing pipeline
-                let pipeline = imagepipe::Pipeline::new(
-                    imagepipe::ImageSource::from_rgba8(
-                        img.width as usize,
-                        img.height as usize,
-                        img.rgba_data,
-                    )
-                );
-
-                let processed_data = pipeline
-                    .resize(dst_w as usize, dst_h as usize, imagepipe::FilterType::Lanczos3)
-                    .into_rgba8()
-                    .map_err(|e| eyre!("Imagepipe processing failed: {e:?}"))?;
-
-                img.width = dst_w;
-                img.height = dst_h;
-                img.rgba_data = processed_data.data;
+                // Use zune-image for resizing
+                use zune_image::image::Image;
+                use zune_imageprocs::resize::{Resize, ResizeMethod};
+                use zune_image::traits::OperationsTrait;
+                
+                let mut z_img = Image::from_u8(&img.rgba_data, img.width as usize, img.height as usize, zune_core::colorspace::ColorSpace::RGBA);
+                let resize = Resize::new(dst_w as usize, dst_h as usize, ResizeMethod::Lanczos3);
+                resize.execute(&mut z_img)
+                    .map_err(|e| eyre!("Zune resize failed: {e:?}"))?;
+                
+                let (new_w, new_h) = z_img.dimensions();
+                img.width = new_w as u32;
+                img.height = new_h as u32;
+                img.rgba_data = z_img.flatten_to_u8()[0].clone();
             }
 
             processed.push(img);
@@ -70,36 +67,11 @@ impl ImageProcessor {
         ]
     }
 
-    pub fn save(path: &Path, image: &image::DynamicImage, quality: u8) -> Result<()> {
-        use rimage::{Encoder, config::EncoderConfig, image::OutputFormat};
-
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("png")
-            .to_lowercase();
-
-        let format = match ext.as_str() {
-            "jpg" | "jpeg" => OutputFormat::MozJpeg,
-            "webp" => OutputFormat::WebP,
-            "oxipng" | "png" => OutputFormat::OxiPng,
-            _ => {
-                // Fallback to standard image crate if rimage doesn't support it directly
-                image.save(path)?;
-                return Ok(());
-            }
-        };
-
-        let rgba = image.to_rgba8();
-        let (w, h) = rgba.dimensions();
-        
-        let mut encoder = Encoder::from_rgba8(rgba.into_raw(), w as usize, h as usize);
-        let config = EncoderConfig::new(format).with_quality(quality as f32);
-        
-        let data = encoder.encode(config)
-            .map_err(|e| eyre!("Rimage encoding failed: {e:?}"))?;
-            
-        std::fs::write(path, data)?;
+    pub fn save(path: &Path, rgba_data: &[u8], w: u32, h: u32) -> Result<()> {
+        use zune_image::image::Image;
+        let mut img = Image::from_u8(rgba_data, w as usize, h as usize, zune_core::colorspace::ColorSpace::RGBA);
+        img.save(path)
+            .map_err(|e| eyre!("Failed to save image: {e:?}"))?;
         Ok(())
     }
 }

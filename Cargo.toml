@@ -11,12 +11,12 @@ rust-version = "1.82"
 # UI and Windowing
 winit = { version = "0.30", features = ["rwh_06"] }
 egui = "0.31"
-egui-winit = { version = "0.31", features = ["links", "rwh_06"] }
-egui-wgpu = { version = "0.31", features = ["wgpu-backend"] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "tiff", "webp", "ico", "tga"] }
+egui-winit = { version = "0.31", features = ["links"] }
+egui-wgpu = "0.31"
 zune-image = "0.5"
-rimage = "0.11"
-imagepipe = "0.5"
+zune-core = "0.5"
+zune-imageprocs = "0.5"
+gif = "0.13"
 pollster = "0.3"
 color-eyre = "0.6"
 thiserror = "2.0"
@@ -32,7 +32,7 @@ serde_json = "1.0"
 kamadak-exif = "0.5"
 
 # GPU Rendering
-wgpu = "26.0"
+wgpu = "24.0"
 bytemuck = { version = "1.19", features = ["derive"] }
 
 # Concurrency

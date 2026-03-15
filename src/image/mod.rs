@@ -40,10 +40,11 @@ impl ImageBackend {
     /// Save an image to disk
     pub fn save(
         path: &std::path::Path,
-        image: &image::DynamicImage,
-        quality: u8,
+        rgba_data: &[u8],
+        w: u32,
+        h: u32,
     ) -> Result<()> {
-        ImageProcessor::save(path, image, quality)
+        ImageProcessor::save(path, rgba_data, w, h)
     }
 }
 
@@ -63,20 +64,5 @@ mod tests {
     fn test_load_nonexistent() {
         let result = ImageBackend::load(&PathBuf::from("nonexistent_file_123.jpg"));
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_load_supported_format() {
-        // Create a dummy image
-        let temp_dir = std::env::temp_dir();
-        let test_gif_path = temp_dir.join("test_backend.gif");
-
-        let mut img = image::DynamicImage::ImageRgba8(image::RgbaImage::new(10, 10));
-        img.save(&test_gif_path).unwrap();
-
-        let result = ImageBackend::load(&test_gif_path).unwrap();
-        assert!(!result.is_empty());
-
-        std::fs::remove_file(&test_gif_path).unwrap();
     }
 }

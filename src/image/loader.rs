@@ -21,6 +21,8 @@ impl ImageLoader {
         if ext == "gif" {
             Self::load_gif(path)
         } else if format_type == ImageFormatType::Raw {
+            return Err(eyre!("RAW support is temporarily disabled."));
+            /*
             let raw_img = imagepipe::simple_decode_8bit(path, 0, 0)
                 .map_err(|e| eyre!("Imagepipe RAW decode failed for {path:?}: {e:?}"))?;
             
@@ -39,12 +41,13 @@ impl ImageLoader {
                 }],
                 format_type,
             ))
+            */
         } else {
             let mut img = Image::open(path)
                 .map_err(|e| eyre!("Failed to open image {path:?}: {e:?}"))?;
             
             // Ensure we are in RGBA8
-            img.convert_color(zune_image::colorspace::ColorSpace::RGBA)?;
+            img.convert_color(zune_core::colorspace::ColorSpace::RGBA)?;
             
             let (w, h) = img.dimensions();
             let rgba = img.flatten_to_u8()[0].clone();
@@ -68,24 +71,40 @@ impl ImageLoader {
     }
 
     fn load_gif(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
-        // Fallback to image crate for GIF animation for now as it's well-integrated
+        use gif::DecodeOptions;
         let file = std::fs::File::open(path)?;
-        let reader = std::io::BufReader::new(file);
-        let decoder = image::codecs::gif::GifDecoder::new(reader)?;
-        let frames = image::AnimationDecoder::into_frames(decoder).collect_frames()?;
+        let mut options = DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::RGBA);
+        let mut decoder = options.read_info(file)
+            .map_err(|e| eyre!("Failed to read GIF info: {e:?}"))?;
 
-        let mut image_frames = Vec::with_capacity(frames.len());
+        let mut image_frames = Vec::new();
         let file_size = std::fs::metadata(path)?.len();
+        let (w, h) = (decoder.width() as u32, decoder.height() as u32);
 
-        for frame in frames {
-            let delay = std::time::Duration::from(frame.delay());
-            let delay_ms = delay.as_millis() as u32;
-            let buffer = frame.into_buffer();
-            let (w, h) = buffer.dimensions();
+        // A GIF frame might not cover the full canvas, so we need a canvas to compose them.
+        let mut canvas = vec![0u8; (w * h * 4) as usize];
+
+        while let Ok(Some(frame)) = decoder.read_next_frame() {
+            let delay_ms = frame.delay as u32 * 10;
+            
+            // For simplicity, we just update the canvas with the new frame data.
+            // Note: Proper GIF disposal methods are complex, this is a basic implementation.
+            let line_len = frame.width as usize * 4;
+            for (i, line) in frame.buffer.chunks_exact(line_len).enumerate() {
+                let y = frame.top as usize + i;
+                if y < h as usize {
+                    let canvas_start = (y * w as usize + frame.left as usize) * 4;
+                    let canvas_end = canvas_start + line_len;
+                    if canvas_end <= canvas.len() {
+                        canvas[canvas_start..canvas_end].copy_from_slice(line);
+                    }
+                }
+            }
 
             image_frames.push(ImageData {
                 path: path.to_path_buf(),
-                rgba_data: buffer.into_raw(),
+                rgba_data: canvas.clone(),
                 width: w,
                 height: h,
                 format: ImageFormatType::Gif,

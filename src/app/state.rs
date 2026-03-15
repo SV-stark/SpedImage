@@ -3,7 +3,8 @@ use crate::image::ImageData;
 use crate::render::Renderer;
 use crate::ui::UiState;
 use lru::LruCache;
-use notify_debouncer_full::{DebounceEventIter, Debouncer, FileIdDetector, NoCache};
+use notify_debouncer_full::{Debouncer, FileIdMap};
+use notify_debouncer_full::notify;
 use rayon::ThreadPool;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
@@ -57,7 +58,7 @@ pub struct SpedImageApp {
     pub(crate) event_rx: Receiver<AppEvent>,
     pub(crate) event_proxy: Option<EventLoopProxy<WakeUp>>,
     pub(crate) thread_pool: Arc<ThreadPool>,
-    pub(crate) file_watcher: Option<Debouncer<notify::RecommendedWatcher, NoCache, FileIdDetector>>,
+    pub(crate) file_watcher: Option<Debouncer<notify::RecommendedWatcher, FileIdMap>>,
 }
 
 impl SpedImageApp {

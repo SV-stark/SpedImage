@@ -9,15 +9,17 @@ use super::renderer::Renderer;
 use super::types::{RenderParams, STRIP_HEIGHT_PX};
 
 impl Renderer {
-    pub(crate) fn render_ui(
-        &mut self,
+    pub(crate) fn render_ui_static(
         params: &RenderParams,
         ctx: &egui::Context,
+        has_thumbnails: bool,
+        win_w: u32,
+        win_h: u32,
     ) {
-        let nav_y = if params.show_thumbnail_strip && !self.thumbnails.is_empty() {
-            (self.config.height as f32 - STRIP_HEIGHT_PX as f32) / 2.0
+        let nav_y = if params.show_thumbnail_strip && has_thumbnails {
+            (win_h as f32 - STRIP_HEIGHT_PX as f32) / 2.0
         } else {
-            self.config.height as f32 / 2.0
+            win_h as f32 / 2.0
         };
 
         egui::Area::new(egui::Id::new("nav_left"))
@@ -27,7 +29,7 @@ impl Renderer {
             });
 
         egui::Area::new(egui::Id::new("nav_right"))
-            .fixed_pos(egui::pos2(self.config.width as f32 - 60.0, nav_y))
+            .fixed_pos(egui::pos2(win_w as f32 - 60.0, nav_y))
             .show(ctx, |ui| {
                 ui.label(egui::RichText::new("▶").size(48.0).color(egui::Color32::from_rgba_unmultiplied(200, 200, 200, 150)));
             });
@@ -38,7 +40,7 @@ impl Renderer {
                     .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 10.0))
                     .title_bar(false)
                     .auto_sized()
-                    .frame(egui::Frame::none().fill(egui::Color32::from_black_alpha(150)).inner_margin(5.0))
+                    .frame(egui::Frame::NONE.fill(egui::Color32::from_black_alpha(150)).inner_margin(5.0))
                     .show(ctx, |ui| {
                         ui.label(egui::RichText::new(status).size(18.0).color(egui::Color32::WHITE));
                     });
@@ -100,8 +102,14 @@ impl Renderer {
 
         // egui pass
         let raw_input = self.egui_state.take_egui_input(&self._window);
+        
+        // Extract what we need for render_ui to avoid borrowing self in the closure
+        let has_thumbnails = !self.thumbnails.is_empty();
+        let win_w = self.config.width;
+        let win_h = self.config.height;
+
         let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
-            self.render_ui(&params, ctx);
+            Self::render_ui_static(&params, ctx, has_thumbnails, win_w, win_h);
         });
 
         self.egui_state.handle_platform_output(&self._window, full_output.platform_output);
@@ -125,7 +133,7 @@ impl Renderer {
         );
 
         {
-            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            let render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("egui Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &view,
@@ -134,14 +142,13 @@ impl Renderer {
                         load: LoadOp::Load,
                         store: StoreOp::Store,
                     },
-                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
 
-            self.egui_renderer.render(&mut render_pass, &tris, &screen_descriptor);
+            self.egui_renderer.render(&mut render_pass.forget_lifetime(), &tris, &screen_descriptor);
         }
 
         for id in full_output.textures_delta.free {
@@ -181,7 +188,7 @@ impl Renderer {
                         }),
                         store: StoreOp::Store,
                     },
-                    depth_slice: None,
+
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
