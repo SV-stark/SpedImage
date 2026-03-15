@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
+use color_eyre::eyre::{Context, Result};
 use std::sync::Arc;
 use wgpu::{
     BindGroup, Device, Queue, RenderPipeline, Sampler, Surface, SurfaceConfiguration, Texture,
 };
-use wgpu_glyph::GlyphBrush;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+use parking_lot::Mutex;
 
 use super::types::{ImageAdjustments, ThumbnailEntry, Uniforms};
 use crate::image::ImageData;
@@ -30,8 +30,9 @@ pub struct Renderer {
     pub(crate) image_size: Option<(u32, u32)>,
     pub scale_factor: f64,
 
-    pub(crate) text_brush: GlyphBrush<()>,
-    pub(crate) staging_belt: wgpu::util::StagingBelt,
+    // egui
+    pub(crate) egui_state: egui_winit::State,
+    pub(crate) egui_renderer: egui_wgpu::Renderer,
 
     pub thumbnails: Vec<ThumbnailEntry>,
 }
@@ -83,9 +84,16 @@ impl Renderer {
             ..Default::default()
         });
 
-        let text_brush =
-            Self::init_text_brush(&device, format).context("Failed to init text brush")?;
-        let staging_belt = wgpu::util::StagingBelt::new(1024);
+        let egui_state = egui_winit::State::new(
+            egui::Context::default(),
+            egui::viewport::ViewportId::ROOT,
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+            None,
+        );
+
+        let egui_renderer = egui_wgpu::Renderer::new(&device, format, None, 1, false);
 
         Ok(Self {
             _window: window.clone(),
@@ -106,8 +114,8 @@ impl Renderer {
             config,
             image_size: None,
             scale_factor: window.scale_factor(),
-            text_brush,
-            staging_belt,
+            egui_state,
+            egui_renderer,
             thumbnails: Vec::new(),
         })
     }
@@ -316,27 +324,6 @@ impl Renderer {
         });
 
         (vertex_buffer, uniform_buffer, thumb_uniform_buffer)
-    }
-
-    fn init_text_brush(
-        device: &wgpu::Device,
-        format: wgpu::TextureFormat,
-    ) -> Result<wgpu_glyph::GlyphBrush<()>> {
-        const EMBEDDED_FONT: &[u8] = include_bytes!("../../assets/Inter-Regular.ttf");
-
-        let font = if cfg!(windows) {
-            if let Ok(bytes) = std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf") {
-                wgpu_glyph::ab_glyph::FontArc::try_from_vec(bytes).context("Failed to load font")?
-            } else {
-                wgpu_glyph::ab_glyph::FontArc::try_from_slice(EMBEDDED_FONT)
-                    .context("Failed to load font")?
-            }
-        } else {
-            wgpu_glyph::ab_glyph::FontArc::try_from_slice(EMBEDDED_FONT)
-                .context("Failed to load font")?
-        };
-
-        Ok(wgpu_glyph::GlyphBrushBuilder::using_font(font).build(device, format))
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) {

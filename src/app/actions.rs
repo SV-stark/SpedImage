@@ -310,7 +310,7 @@ impl SpedImageApp {
             };
 
             std::thread::spawn(move || {
-                let result = (|| -> anyhow::Result<()> {
+                let result = (|| -> color_eyre::eyre::Result<()> {
                     let mut img = if let Some(i) = in_memory_img {
                         i
                     } else {
@@ -412,7 +412,7 @@ impl SpedImageApp {
         std::thread::spawn(move || {
             let mut saved_count = 0;
             for path in &selected {
-                let _ = (|| -> anyhow::Result<()> {
+                let _ = (|| -> color_eyre::eyre::Result<()> {
                     let img = image::open(path)?;
                     // Simplified: apply same adjustments as save_image
                     if let Some(stem) = path.file_stem() {

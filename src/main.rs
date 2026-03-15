@@ -2,12 +2,15 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use spedimage_lib::SpedImageApp;
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 fn main() -> Result<()> {
+    // Initialize error reporting
+    color_eyre::install()?;
+
     // Initialize logging
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))

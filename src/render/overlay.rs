@@ -1,141 +1,74 @@
-use anyhow::{Context, Result};
+use color_eyre::eyre::{Context, Result};
 use std::sync::Arc;
 use wgpu::{
     CommandEncoderDescriptor, LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor,
     StoreOp,
 };
-use wgpu_glyph::{Section, Text};
 
 use super::renderer::Renderer;
 use super::types::{RenderParams, STRIP_HEIGHT_PX};
 
 impl Renderer {
-    pub(crate) fn encode_ui_overlay(
+    pub(crate) fn render_ui(
         &mut self,
         params: &RenderParams,
-        view: &wgpu::TextureView,
-        encoder: &mut wgpu::CommandEncoder,
+        ctx: &egui::Context,
     ) {
-        let scale = self.scale_factor as f32;
-
         let nav_y = if params.show_thumbnail_strip && !self.thumbnails.is_empty() {
             (self.config.height as f32 - STRIP_HEIGHT_PX as f32) / 2.0
         } else {
             self.config.height as f32 / 2.0
         };
 
-        self.text_brush.queue(
-            Section::default()
-                .add_text(
-                    Text::new("◀")
-                        .with_scale(48.0 * scale)
-                        .with_color([0.8, 0.8, 0.8, 0.6]),
-                )
-                .with_screen_position((20.0 * scale, nav_y)),
-        );
-        self.text_brush.queue(
-            Section::default()
-                .add_text(
-                    Text::new("▶")
-                        .with_scale(48.0 * scale)
-                        .with_color([0.8, 0.8, 0.8, 0.6]),
-                )
-                .with_screen_position((self.config.width as f32 - 60.0 * scale, nav_y)),
-        );
+        egui::Area::new(egui::Id::new("nav_left"))
+            .fixed_pos(egui::pos2(20.0, nav_y))
+            .show(ctx, |ui| {
+                ui.label(egui::RichText::new("◀").size(48.0).color(egui::Color32::from_rgba_unmultiplied(200, 200, 200, 150)));
+            });
+
+        egui::Area::new(egui::Id::new("nav_right"))
+            .fixed_pos(egui::pos2(self.config.width as f32 - 60.0, nav_y))
+            .show(ctx, |ui| {
+                ui.label(egui::RichText::new("▶").size(48.0).color(egui::Color32::from_rgba_unmultiplied(200, 200, 200, 150)));
+            });
 
         if let Some(status) = params.status_text {
             if !status.is_empty() {
-                self.text_brush.queue(
-                    Section::default()
-                        .add_text(
-                            Text::new(status)
-                                .with_scale(18.0 * scale)
-                                .with_color([1.0, 1.0, 1.0, 1.0]),
-                        )
-                        .with_screen_position((10.0 * scale, 10.0 * scale)),
-                );
+                egui::Window::new("Status")
+                    .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 10.0))
+                    .title_bar(false)
+                    .auto_sized()
+                    .frame(egui::Frame::none().fill(egui::Color32::from_black_alpha(150)).inner_margin(5.0))
+                    .show(ctx, |ui| {
+                        ui.label(egui::RichText::new(status).size(18.0).color(egui::Color32::WHITE));
+                    });
             }
         }
 
         if params.show_help {
-            let help_text = "Shortcuts:\nA/W: Prev Image\nD/S: Next Image\nR: Rotate\nC: Toggle Crop\nH: Toggle HDR\nCtrl+S: Save\nF: Toggle Sidebar\nT: Toggle Thumbnails\nEsc: Quit";
-            self.text_brush.queue(
-                Section::default()
-                    .add_text(
-                        Text::new(help_text)
-                            .with_scale(16.0 * scale)
-                            .with_color([0.9, 0.9, 0.9, 1.0]),
-                    )
-                    .with_screen_position((10.0 * scale, 40.0 * scale)),
-            );
+            egui::Window::new("Shortcuts")
+                .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 40.0))
+                .title_bar(true)
+                .show(ctx, |ui| {
+                    ui.label("A/W: Prev Image");
+                    ui.label("D/S: Next Image");
+                    ui.label("R: Rotate");
+                    ui.label("C: Toggle Crop");
+                    ui.label("H: Toggle HDR");
+                    ui.label("Ctrl+S: Save");
+                    ui.label("F: Toggle Sidebar");
+                    ui.label("T: Toggle Thumbnails");
+                    ui.label("Esc: Quit");
+                });
         }
 
         if let Some(exif) = params.exif_text {
-            self.text_brush.queue(
-                Section::default()
-                    .add_text(
-                        Text::new(exif)
-                            .with_scale(15.0 * scale)
-                            .with_color([0.85, 0.95, 1.0, 1.0]),
-                    )
-                    .with_screen_position((10.0 * scale, self.config.height as f32 - 30.0 * scale)),
-            );
+            egui::Area::new(egui::Id::new("exif"))
+                .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(10.0, -10.0))
+                .show(ctx, |ui| {
+                    ui.label(egui::RichText::new(exif).size(15.0).color(egui::Color32::from_rgb(210, 240, 255)));
+                });
         }
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("UI Overlay Pass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Load,
-                        store: StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            if params.is_cropping {
-                render_pass.set_pipeline(&self.crop_pipeline);
-                let win_w = self.config.width;
-                let win_h = self.config.height;
-
-                let cx = ((params.crop_rect[0] * win_w as f32) as u32).min(win_w.saturating_sub(1));
-                let cy = ((params.crop_rect[1] * win_h as f32) as u32).min(win_h.saturating_sub(1));
-                let cw = ((params.crop_rect[2] * win_w as f32) as u32).min(win_w - cx);
-                let ch = ((params.crop_rect[3] * win_h as f32) as u32).min(win_h - cy);
-
-                if cy > 0 {
-                    render_pass.set_scissor_rect(0, 0, win_w, cy);
-                    render_pass.draw(0..4, 0..1);
-                }
-                if cy + ch < win_h {
-                    render_pass.set_scissor_rect(0, cy + ch, win_w, win_h - (cy + ch));
-                    render_pass.draw(0..4, 0..1);
-                }
-                if cx > 0 {
-                    render_pass.set_scissor_rect(0, cy, cx, ch);
-                    render_pass.draw(0..4, 0..1);
-                }
-                if cx + cw < win_w {
-                    render_pass.set_scissor_rect(cx + cw, cy, win_w - (cx + cw), ch);
-                    render_pass.draw(0..4, 0..1);
-                }
-            }
-        }
-
-        let _ = self.text_brush.draw_queued(
-            &self.device,
-            &mut self.staging_belt,
-            encoder,
-            view,
-            self.config.width,
-            self.config.height,
-        );
     }
 
     pub fn render_frame(&mut self, params: RenderParams) -> Result<()> {
@@ -152,6 +85,7 @@ impl Renderer {
                 label: Some("Frame Encoder"),
             });
 
+        // Image pass
         self.encode_image(params.adjustments, &view, &mut encoder);
 
         if params.show_thumbnail_strip && !self.thumbnails.is_empty() {
@@ -163,10 +97,58 @@ impl Renderer {
                 &mut encoder,
             );
         }
-        self.encode_ui_overlay(&params, &view, &mut encoder);
+
+        // egui pass
+        let raw_input = self.egui_state.take_egui_input(&self._window);
+        let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
+            self.render_ui(&params, ctx);
+        });
+
+        self.egui_state.handle_platform_output(&self._window, full_output.platform_output);
+
+        let tris = self.egui_state.egui_ctx().tessellate(full_output.shapes, full_output.pixels_per_point);
+        for (id, image_delta) in full_output.textures_delta.set {
+            self.egui_renderer.update_texture(&self.device, &self.queue, id, &image_delta);
+        }
+
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.config.width, self.config.height],
+            pixels_per_point: self.scale_factor as f32,
+        };
+
+        self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &tris,
+            &screen_descriptor,
+        );
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("egui Pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            self.egui_renderer.render(&mut render_pass, &tris, &screen_descriptor);
+        }
+
+        for id in full_output.textures_delta.free {
+            self.egui_renderer.free_texture(&id);
+        }
 
         self.queue.submit([encoder.finish()]);
-        self.staging_belt.recall();
         frame.present();
         Ok(())
     }

@@ -1,7 +1,7 @@
 use crate::app::state::SpedImageApp;
 use crate::app::types::{AppEvent, WakeUp, APP_ICON};
 use crate::render::{RenderParams, Renderer, STRIP_HEIGHT_PX};
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
@@ -90,7 +90,7 @@ impl SpedImageApp {
                     self.load_image(path);
                 }
                 AppEvent::Prefetched(path, frames) => {
-                    self.navigation.prefetch_cache.put(path, frames);
+                    self.navigation.prefetch_cache.insert(path, frames);
                 }
                 AppEvent::ThumbnailLoaded(path, rgba, w, h) => {
                     if let Some(ref mut renderer) = self.renderer {
@@ -194,6 +194,14 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        if let Some(ref mut r) = self.renderer {
+            let response = r.egui_state.on_window_event(&self.window.as_ref().unwrap(), &event);
+            if response.consumed {
+                self.dirty = true;
+                return;
+            }
+        }
+
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {

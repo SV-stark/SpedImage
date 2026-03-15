@@ -3,19 +3,20 @@ use crate::image::ImageData;
 use crate::render::Renderer;
 use crate::ui::UiState;
 use lru::LruCache;
-use notify::RecommendedWatcher;
+use notify_debouncer_full::{DebounceEventIter, Debouncer, FileIdDetector, NoCache};
 use rayon::ThreadPool;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
-use std::sync::mpsc::{Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender};
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
+use dashmap::DashMap;
 
 pub struct NavigationState {
     pub(crate) held_key: Option<char>,
     pub(crate) last_advance_time: Option<std::time::Instant>,
-    pub(crate) prefetch_cache: LruCache<PathBuf, Vec<ImageData>>,
+    pub(crate) prefetch_cache: Arc<DashMap<PathBuf, Vec<ImageData>>>,
     pub(crate) load_generation: Arc<AtomicU64>,
     pub(crate) thumb_scroll: f32,
 }
@@ -56,12 +57,12 @@ pub struct SpedImageApp {
     pub(crate) event_rx: Receiver<AppEvent>,
     pub(crate) event_proxy: Option<EventLoopProxy<WakeUp>>,
     pub(crate) thread_pool: Arc<ThreadPool>,
-    pub(crate) file_watcher: Option<RecommendedWatcher>,
+    pub(crate) file_watcher: Option<Debouncer<notify::RecommendedWatcher, NoCache, FileIdDetector>>,
 }
 
 impl SpedImageApp {
     pub fn new(proxy: EventLoopProxy<WakeUp>) -> Self {
-        let (event_tx, event_rx) = std::sync::mpsc::channel();
+        let (event_tx, event_rx) = crossbeam_channel::unbounded();
 
         Self {
             window: None,
@@ -71,7 +72,7 @@ impl SpedImageApp {
             navigation: NavigationState {
                 held_key: None,
                 last_advance_time: None,
-                prefetch_cache: LruCache::new(std::num::NonZeroUsize::new(10).unwrap()),
+                prefetch_cache: Arc::new(DashMap::new()),
                 load_generation: Arc::new(AtomicU64::new(0)),
                 thumb_scroll: 0.0,
             },

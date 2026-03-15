@@ -1,4 +1,4 @@
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use std::sync::Arc;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, TexelCopyBufferLayout,

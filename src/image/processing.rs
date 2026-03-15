@@ -1,4 +1,4 @@
-use anyhow::Result;
+use color_eyre::eyre::{eyre, Result};
 use std::path::Path;
 
 use super::loader::ImageLoader;
@@ -37,7 +37,7 @@ impl ImageProcessor {
                     img.rgba_data,
                     fast_image_resize::PixelType::U8x4,
                 )
-                .map_err(|e| anyhow::anyhow!("Failed to create source image for resize: {e}"))?;
+                .map_err(|e| eyre!("Failed to create source image for resize: {e}"))?;
 
                 let mut dst_image = fast_image_resize::Image::new(
                     dst_w_nz,
@@ -49,7 +49,7 @@ impl ImageProcessor {
                 let mut resizer = Resizer::new(ResizeAlg::Convolution(FilterType::Lanczos3));
                 resizer
                     .resize(&src_image.view(), &mut dst_image.view_mut())
-                    .map_err(|e| anyhow::anyhow!("Resize failed: {e}"))?;
+                    .map_err(|e| eyre!("Resize failed: {e}"))?;
 
                 img.width = dst_w;
                 img.height = dst_h;
@@ -81,23 +81,35 @@ impl ImageProcessor {
     }
 
     pub fn save(path: &Path, image: &image::DynamicImage, quality: u8) -> Result<()> {
-        let mut file = std::fs::File::create(path)?;
+        use rimage::{Encoder, config::EncoderConfig, image::OutputFormat};
+
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("png")
             .to_lowercase();
 
-        match ext.as_str() {
-            "jpg" | "jpeg" => {
-                let mut encoder =
-                    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut file, quality);
-                encoder.encode_image(image)?;
-            }
+        let format = match ext.as_str() {
+            "jpg" | "jpeg" => OutputFormat::MozJpeg,
+            "webp" => OutputFormat::WebP,
+            "oxipng" | "png" => OutputFormat::OxiPng,
             _ => {
+                // Fallback to standard image crate if rimage doesn't support it directly
                 image.save(path)?;
+                return Ok(());
             }
-        }
+        };
+
+        let rgba = image.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        
+        let mut encoder = Encoder::from_rgba8(rgba.into_raw(), w as usize, h as usize);
+        let config = EncoderConfig::new(format).with_quality(quality as f32);
+        
+        let data = encoder.encode(config)
+            .map_err(|e| eyre!("Rimage encoding failed: {e:?}"))?;
+            
+        std::fs::write(path, data)?;
         Ok(())
     }
 }

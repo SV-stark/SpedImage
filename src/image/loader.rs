@@ -1,7 +1,7 @@
-use anyhow::Result;
-use image::GenericImageView;
-use std::io::BufReader;
+use color_eyre::eyre::{eyre, Result};
 use std::path::Path;
+use zune_image::image::Image;
+use zune_image::traits::OperationsTrait;
 
 use super::types::{ImageData, ImageFormatType};
 
@@ -18,23 +18,24 @@ impl ImageLoader {
 
         let format_type = ImageFormatType::from_extension(&ext);
 
-        let format = image::ImageFormat::from_path(path).unwrap_or(image::ImageFormat::Png);
-
-        if format == image::ImageFormat::Gif {
+        if ext == "gif" {
             Self::load_gif(path)
         } else {
-            let file = std::fs::File::open(path)?;
-            let reader = BufReader::new(file);
-            let img = image::load(reader, format)
-                .map_err(|e| anyhow::anyhow!("Failed to open image {path:?}: {e}"))?;
+            let mut img = Image::open(path)
+                .map_err(|e| eyre!("Failed to open image {path:?}: {e:?}"))?;
+            
+            // Ensure we are in RGBA8
+            img.convert_color(zune_image::colorspace::ColorSpace::RGBA)?;
+            
             let (w, h) = img.dimensions();
-            let rgba = img.to_rgba8().into_raw();
+            let rgba = img.flatten_to_u8()[0].clone();
+
             Ok((
                 vec![ImageData {
                     path: path.to_path_buf(),
                     rgba_data: rgba,
-                    width: w,
-                    height: h,
+                    width: w as u32,
+                    height: h as u32,
                     format: format_type,
                     file_size_bytes: std::fs::metadata(path)?.len(),
                     frame_delay_ms: 0,
@@ -48,8 +49,9 @@ impl ImageLoader {
     }
 
     fn load_gif(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        // Fallback to image crate for GIF animation for now as it's well-integrated
         let file = std::fs::File::open(path)?;
-        let reader = BufReader::new(file);
+        let reader = std::io::BufReader::new(file);
         let decoder = image::codecs::gif::GifDecoder::new(reader)?;
         let frames = image::AnimationDecoder::into_frames(decoder).collect_frames()?;
 

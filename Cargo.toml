@@ -10,15 +10,21 @@ rust-version = "1.82"
 [dependencies]
 # UI and Windowing
 winit = { version = "0.30", features = ["rwh_06"] }
+egui = "0.31"
+egui-winit = { version = "0.31", features = ["links", "rwh_06"] }
+egui-wgpu = { version = "0.31", features = ["wgpu-backend"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "tiff", "webp", "ico", "tga"] }
+zune-image = "0.5"
+rimage = "0.11"
+imagepipe = "0.5"
 pollster = "0.3"
-anyhow = "1.0"
+color-eyre = "0.6"
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rayon = "1.10"
 lru = "0.12"
-notify = "6.1"
+notify-debouncer-full = "0.3"
 rfd = "0.15"
 arboard = "3.4"
 serde = { version = "1.0", features = ["derive"] }
@@ -28,8 +34,12 @@ kamadak-exif = "0.5"
 # GPU Rendering
 wgpu = "26.0"
 bytemuck = { version = "1.19", features = ["derive"] }
-wgpu_glyph = "0.26"
 fast_image_resize = "3.0"
+
+# Concurrency
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+dashmap = "6.1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

@@ -1,7 +1,6 @@
 use crate::app::state::SpedImageApp;
 use crate::app::types::{send_event, AppEvent, MAX_THUMBNAILS, THUMB_LOAD_SIZE};
 use crate::image::ImageBackend;
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 
 impl SpedImageApp {
@@ -125,21 +124,21 @@ impl SpedImageApp {
             path.parent().unwrap_or(path).to_path_buf()
         };
 
-        let mut watcher = RecommendedWatcher::new(
-            move |res: notify::Result<notify::Event>| {
-                if let Ok(event) = res {
-                    if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() {
-                        // Trigger a reload
-                    }
+        use notify_debouncer_full::{new_debouncer, notify::RecursiveMode, notify::Watcher};
+
+        let mut debouncer = new_debouncer(
+            std::time::Duration::from_millis(500),
+            None,
+            move |res| {
+                if let Ok(_events) = res {
+                    // Trigger a reload or specific event
                 }
             },
-            Config::default(),
-        )
-        .ok();
+        ).ok();
 
-        if let Some(ref mut w) = watcher {
-            let _ = w.watch(&dir, RecursiveMode::NonRecursive);
+        if let Some(ref mut d) = debouncer {
+            let _ = d.watcher().watch(&dir, RecursiveMode::NonRecursive);
         }
-        self.file_watcher = watcher;
+        self.file_watcher = debouncer;
     }
 }

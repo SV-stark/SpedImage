@@ -7,11 +7,13 @@ pub use loader::ImageLoader;
 pub use processing::ImageProcessor;
 pub use types::{ImageData, ImageError, ImageFormatType};
 
+use color_eyre::eyre::Result;
+
 pub struct ImageBackend;
 
 impl ImageBackend {
     /// Load an image from path (returns multiple frames for GIFs)
-    pub fn load(path: &std::path::Path) -> anyhow::Result<Vec<ImageData>> {
+    pub fn load(path: &std::path::Path) -> Result<Vec<ImageData>> {
         let (frames, _format) = ImageLoader::load(path)?;
         Ok(frames)
     }
@@ -21,7 +23,7 @@ impl ImageBackend {
         path: &std::path::Path,
         max_w: u32,
         max_h: u32,
-    ) -> anyhow::Result<Vec<ImageData>> {
+    ) -> Result<Vec<ImageData>> {
         ImageProcessor::load_and_downsample(path, max_w, max_h)
     }
 
@@ -40,7 +42,7 @@ impl ImageBackend {
         path: &std::path::Path,
         image: &image::DynamicImage,
         quality: u8,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         ImageProcessor::save(path, image, quality)
     }
 }
