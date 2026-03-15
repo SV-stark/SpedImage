@@ -20,6 +20,25 @@ impl ImageLoader {
 
         if ext == "gif" {
             Self::load_gif(path)
+        } else if format_type == ImageFormatType::Raw {
+            let raw_img = imagepipe::simple_decode_8bit(path, 0, 0)
+                .map_err(|e| eyre!("Imagepipe RAW decode failed for {path:?}: {e:?}"))?;
+            
+            Ok((
+                vec![ImageData {
+                    path: path.to_path_buf(),
+                    rgba_data: raw_img.data,
+                    width: raw_img.width as u32,
+                    height: raw_img.height as u32,
+                    format: format_type,
+                    file_size_bytes: std::fs::metadata(path)?.len(),
+                    frame_delay_ms: 0,
+                    exif_info: None,
+                    exif_loaded: false,
+                    histogram: None,
+                }],
+                format_type,
+            ))
         } else {
             let mut img = Image::open(path)
                 .map_err(|e| eyre!("Failed to open image {path:?}: {e:?}"))?;

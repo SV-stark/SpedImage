@@ -40,6 +40,7 @@ impl ImageFormatType {
             "heic" | "heif" => Self::Heic,
             "avif" => Self::Avif,
             "svg" => Self::Svg,
+            "arw" | "cr2" | "nef" | "dng" | "orf" | "raf" | "srw" => Self::Raw,
             _ => Self::Unknown,
         }
     }
@@ -47,8 +48,8 @@ impl ImageFormatType {
     pub fn is_supported(&self) -> bool {
         match self {
             Self::Unknown => false,
-            // Only core formats supported in the ultra-lightweight version
-            Self::Jpeg | Self::Png | Self::Gif | Self::Bmp | Self::Tiff | Self::WebP => true,
+            // Core formats + RAW via imagepipe
+            Self::Jpeg | Self::Png | Self::Gif | Self::Bmp | Self::Tiff | Self::WebP | Self::Raw => true,
             _ => false,
         }
     }
