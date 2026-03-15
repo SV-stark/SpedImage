@@ -63,6 +63,7 @@ impl ImageProcessor {
     pub fn supported_extensions() -> Vec<&'static str> {
         vec![
             "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico",
+            "avif", "svg",
             "arw", "cr2", "nef", "dng", "orf", "raf", "srw",
         ]
     }

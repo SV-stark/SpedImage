@@ -49,7 +49,7 @@ impl ImageFormatType {
         match self {
             Self::Unknown => false,
             // Core formats + RAW via imagepipe
-            Self::Jpeg | Self::Png | Self::Gif | Self::Bmp | Self::Tiff | Self::WebP | Self::Raw => true,
+            Self::Jpeg | Self::Png | Self::Gif | Self::Bmp | Self::Tiff | Self::WebP | Self::Raw | Self::Avif | Self::Svg => true,
             _ => false,
         }
     }

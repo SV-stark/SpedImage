@@ -20,6 +20,10 @@ impl ImageLoader {
 
         if ext == "gif" {
             Self::load_gif(path)
+        } else if ext == "svg" {
+            Self::load_svg(path)
+        } else if ext == "tiff" || ext == "tif" {
+            Self::load_tiff(path)
         } else if format_type == ImageFormatType::Raw {
             return Err(eyre!("RAW support is temporarily disabled."));
             /*
@@ -68,6 +72,97 @@ impl ImageLoader {
                 format_type,
             ))
         }
+    }
+
+    fn load_svg(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        use resvg::tiny_skia;
+        use resvg::usvg;
+
+        let svg_data = std::fs::read(path)?;
+        let fontdb = usvg::fontdb::Database::new();
+        
+        let rtree = usvg::Tree::from_data(&svg_data, &usvg::Options::default(), &fontdb)
+            .map_err(|e| eyre!("Failed to parse SVG: {e:?}"))?;
+        
+        let size = rtree.size();
+        let width = size.width() as u32;
+        let height = size.height() as u32;
+
+        let mut pixmap = tiny_skia::Pixmap::new(width, height)
+            .ok_or_else(|| eyre!("Failed to create pixmap for SVG rendering (size: {}x{})", width, height))?;
+        
+        resvg::render(&rtree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+
+        let file_size = std::fs::metadata(path)?.len();
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: pixmap.data().to_vec(),
+                width,
+                height,
+                format: ImageFormatType::Svg,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: false,
+                histogram: None,
+            }],
+            ImageFormatType::Svg,
+        ))
+    }
+
+    fn load_tiff(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        use tiff::decoder::{Decoder, DecodingResult};
+        let file = std::fs::File::open(path)?;
+        let mut decoder = Decoder::new(file)
+            .map_err(|e| eyre!("TIFF decoder init failed: {e:?}"))?;
+        
+        let (width, height) = decoder.dimensions()
+            .map_err(|e| eyre!("Failed to get TIFF dimensions: {e:?}"))?;
+        
+        let img_res = decoder.read_image()
+            .map_err(|e| eyre!("TIFF decode failed: {e:?}"))?;
+        
+        let rgba_data = match img_res {
+            DecodingResult::U8(v) => {
+                use zune_image::image::Image;
+                use zune_core::colorspace::ColorSpace;
+                
+                let colortype = decoder.colortype()
+                    .map_err(|e| eyre!("Failed to get TIFF colortype: {e:?}"))?;
+                
+                let input_space = match colortype {
+                    tiff::ColorType::RGB(8) => ColorSpace::RGB,
+                    tiff::ColorType::RGBA(8) => ColorSpace::RGBA,
+                    tiff::ColorType::Gray(8) => ColorSpace::Luma,
+                    _ => return Err(eyre!("Unsupported TIFF color type: {:?}", colortype)),
+                };
+
+                let mut img = Image::from_u8(&v, width as usize, height as usize, input_space);
+                img.convert_color(ColorSpace::RGBA)?;
+                img.flatten_to_u8()[0].clone()
+            },
+            _ => return Err(eyre!("Unsupported TIFF bit depth")),
+        };
+
+        let file_size = std::fs::metadata(path)?.len();
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data,
+                width: width as u32,
+                height: height as u32,
+                format: ImageFormatType::Tiff,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: false,
+                histogram: None,
+            }],
+            ImageFormatType::Tiff,
+        ))
     }
 
     fn load_gif(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
