@@ -26,34 +26,23 @@ impl ImageProcessor {
                 let dst_w = dst_w.max(1);
                 let dst_h = dst_h.max(1);
 
-                use std::num::NonZeroU32;
-                let dst_w_nz = NonZeroU32::new(dst_w).unwrap();
-                let dst_h_nz = NonZeroU32::new(dst_h).unwrap();
-
-                // High-quality downsampling using fast_image_resize
-                let src_image = fast_image_resize::Image::from_vec_u8(
-                    NonZeroU32::new(img.width).unwrap(),
-                    NonZeroU32::new(img.height).unwrap(),
-                    img.rgba_data,
-                    fast_image_resize::PixelType::U8x4,
-                )
-                .map_err(|e| eyre!("Failed to create source image for resize: {e}"))?;
-
-                let mut dst_image = fast_image_resize::Image::new(
-                    dst_w_nz,
-                    dst_h_nz,
-                    fast_image_resize::PixelType::U8x4,
+                // Use imagepipe for high-performance processing pipeline
+                let pipeline = imagepipe::Pipeline::new(
+                    imagepipe::ImageSource::from_rgba8(
+                        img.width as usize,
+                        img.height as usize,
+                        img.rgba_data,
+                    )
                 );
 
-                use fast_image_resize::{FilterType, ResizeAlg, Resizer};
-                let mut resizer = Resizer::new(ResizeAlg::Convolution(FilterType::Lanczos3));
-                resizer
-                    .resize(&src_image.view(), &mut dst_image.view_mut())
-                    .map_err(|e| eyre!("Resize failed: {e}"))?;
+                let processed_data = pipeline
+                    .resize(dst_w as usize, dst_h as usize, imagepipe::FilterType::Lanczos3)
+                    .into_rgba8()
+                    .map_err(|e| eyre!("Imagepipe processing failed: {e:?}"))?;
 
                 img.width = dst_w;
                 img.height = dst_h;
-                img.rgba_data = dst_image.into_vec();
+                img.rgba_data = processed_data.data;
             }
 
             processed.push(img);

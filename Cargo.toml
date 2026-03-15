@@ -34,7 +34,6 @@ kamadak-exif = "0.5"
 # GPU Rendering
 wgpu = "26.0"
 bytemuck = { version = "1.19", features = ["derive"] }
-fast_image_resize = "3.0"
 
 # Concurrency
 crossbeam-channel = "0.5"
