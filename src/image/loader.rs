@@ -45,7 +45,8 @@ impl ImageLoader {
                 format_type,
             ))
             */
-        } else {            let mut img =
+        } else {
+            let mut img =
                 Image::open(path).map_err(|e| eyre!("Failed to open image {path:?}: {e:?}"))?;
 
             // Ensure we are in RGBA8
