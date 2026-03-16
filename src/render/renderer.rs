@@ -16,7 +16,6 @@ pub struct Renderer {
     pub(crate) surface: Surface<'static>,
     pub(crate) pipeline: RenderPipeline,
     pub(crate) uniform_buffer: wgpu::Buffer,
-    pub(crate) thumb_uniform_buffer: wgpu::Buffer,
     pub(crate) vertex_buffer: wgpu::Buffer,
     pub(crate) sampler: Sampler,
     pub(crate) sampler_nearest: Sampler,
@@ -60,7 +59,7 @@ impl Renderer {
         surface.configure(&device, &config);
 
         let (pipeline, _crop_pipeline) = Self::create_pipelines(&device, format)?;
-        let (vertex_buffer, uniform_buffer, thumb_uniform_buffer) = Self::create_buffers(&device);
+        let (vertex_buffer, uniform_buffer) = Self::create_buffers(&device);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Image Sampler"),
@@ -100,7 +99,6 @@ impl Renderer {
             surface,
             pipeline,
             uniform_buffer,
-            thumb_uniform_buffer,
             vertex_buffer,
             sampler,
             sampler_nearest,
@@ -295,7 +293,7 @@ impl Renderer {
         Ok((pipeline, crop_pipeline))
     }
 
-    fn create_buffers(device: &wgpu::Device) -> (wgpu::Buffer, wgpu::Buffer, wgpu::Buffer) {
+    fn create_buffers(device: &wgpu::Device) -> (wgpu::Buffer, wgpu::Buffer) {
         use wgpu::util::DeviceExt;
         let vertex_data: [f32; 24] = [
             -1.0, -1.0, 0.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 0.0, 0.0, 1.0, -1.0, 1.0, 1.0,
@@ -315,14 +313,7 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
-        let thumb_uniforms = Uniforms::identity();
-        let thumb_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Thumbnail Uniform Buffer"),
-            contents: bytemuck::bytes_of(&thumb_uniforms),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        (vertex_buffer, uniform_buffer, thumb_uniform_buffer)
+        (vertex_buffer, uniform_buffer)
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) {

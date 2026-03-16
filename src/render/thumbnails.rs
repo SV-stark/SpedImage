@@ -52,6 +52,16 @@ impl Renderer {
             },
         );
 
+        let thumb_uniforms = Uniforms::identity();
+        let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Thumbnail Uniform Buffer"),
+            size: std::mem::size_of::<Uniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue
+            .write_buffer(&uniform_buffer, 0, bytemuck::bytes_of(&thumb_uniforms));
+
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group = Arc::new(self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("Thumbnail Bind Group"),
@@ -59,9 +69,7 @@ impl Renderer {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::Buffer(
-                        self.thumb_uniform_buffer.as_entire_buffer_binding(),
-                    ),
+                    resource: BindingResource::Buffer(uniform_buffer.as_entire_buffer_binding()),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -78,6 +86,7 @@ impl Renderer {
             path,
             texture,
             bind_group,
+            uniform_buffer,
             width,
             height,
         });
@@ -149,7 +158,7 @@ impl Renderer {
             uniforms.pos_offset = pos_offset;
 
             self.queue
-                .write_buffer(&self.thumb_uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+                .write_buffer(&thumb.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
             pass.set_bind_group(0, Some(thumb.bind_group.as_ref()), &[]);
             pass.set_scissor_rect(
@@ -161,6 +170,10 @@ impl Renderer {
             );
             pass.draw(0..6, 0..1);
         }
+    }
+
+    pub fn clear_thumbnails(&mut self) {
+        self.thumbnails.clear();
     }
 
     pub fn thumbnail_index_at(&self, x: f64, y: f64, thumb_scroll: f32) -> Option<usize> {

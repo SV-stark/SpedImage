@@ -80,6 +80,7 @@ pub struct ThumbnailEntry {
     pub path: std::path::PathBuf,
     pub texture: Texture,
     pub bind_group: Arc<BindGroup>,
+    pub uniform_buffer: wgpu::Buffer,
     pub width: u32,
     pub height: u32,
 }

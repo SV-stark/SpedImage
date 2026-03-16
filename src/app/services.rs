@@ -32,6 +32,12 @@ impl SpedImageApp {
             return;
         }
 
+        self.thumbnails.paths = files.clone();
+
+        if let Some(ref mut r) = self.renderer {
+            r.clear_thumbnails();
+        }
+
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         let pool = self.thread_pool.clone();
