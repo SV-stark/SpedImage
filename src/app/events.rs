@@ -168,7 +168,7 @@ impl SpedImageApp {
                 AppEvent::HistogramComputed(path, histogram) => {
                     if let Some(ref mut img) = self.current_image {
                         if img.path == path {
-                            img.histogram = Some(histogram);
+                            img.histogram = Some(*histogram);
                             self.dirty = true;
                         }
                     }

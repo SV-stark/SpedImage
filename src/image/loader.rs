@@ -245,8 +245,9 @@ impl ImageLoader {
                     h as usize,
                     zune_core::colorspace::ColorSpace::RGBA,
                 );
-                if let Ok(_) = Resize::new(dst_w as usize, dst_h as usize, ResizeMethod::Lanczos3)
+                if Resize::new(dst_w as usize, dst_h as usize, ResizeMethod::Lanczos3)
                     .execute(&mut z_img)
+                    .is_ok()
                 {
                     final_rgba = z_img.flatten_to_u8()[0].clone();
                 }

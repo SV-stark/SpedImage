@@ -39,7 +39,7 @@ pub enum AppEvent {
     DirectoryError(String),
     ConfirmDelete(PathBuf),
     ConfirmBatchDelete(Vec<PathBuf>),
-    HistogramComputed(PathBuf, ([u32; 256], [u32; 256], [u32; 256])),
+    HistogramComputed(PathBuf, Box<([u32; 256], [u32; 256], [u32; 256])>),
     DirectoryChanged(PathBuf),
 }
 

@@ -144,7 +144,7 @@ impl SpedImageApp {
                                                 p,
                                                 AppEvent::HistogramComputed(
                                                     path,
-                                                    (r_hist, g_hist, b_hist),
+                                                    Box::new((r_hist, g_hist, b_hist)),
                                                 ),
                                             );
                                         }
