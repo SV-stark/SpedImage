@@ -7,8 +7,9 @@ impl SpedImageApp {
     pub(crate) fn load_directory_async(&self, dir: PathBuf) {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
+        let pool = self.thread_pool.clone();
 
-        std::thread::spawn(move || {
+        pool.spawn(move || {
             let mut files = Vec::new();
             if let Ok(entries) = std::fs::read_dir(&dir) {
                 for entry in entries.filter_map(|e| e.ok()) {
@@ -41,8 +42,9 @@ impl SpedImageApp {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         let pool = self.thread_pool.clone();
+        let pool_outer = self.thread_pool.clone();
 
-        std::thread::spawn(move || {
+        pool_outer.spawn(move || {
             for path in files.into_iter().take(MAX_THUMBNAILS) {
                 let tx = tx.clone();
                 let proxy = proxy.clone();
@@ -74,56 +76,9 @@ impl SpedImageApp {
         });
     }
 
-    pub(crate) fn prefetch_adjacent(&self, current_path: &Path) {
-        if self.ui_state.files.len() < 2 {
-            return;
-        }
-
-        let idx = match self
-            .ui_state
-            .files
-            .iter()
-            .position(|f| f.path == current_path)
-        {
-            Some(i) => i,
-            None => return,
-        };
-
-        let next_idx = (idx + 1) % self.ui_state.files.len();
-        let prev_idx = if idx == 0 {
-            self.ui_state.files.len() - 1
-        } else {
-            idx - 1
-        };
-
-        let targets = vec![
-            self.ui_state.files[next_idx].path.clone(),
-            self.ui_state.files[prev_idx].path.clone(),
-        ];
-
-        let (max_w, max_h) = if let Some(ref w) = self.window {
-            let size = w.inner_size();
-            (size.width, size.height)
-        } else {
-            (1920, 1080)
-        };
-
-        for path in targets {
-            let tx = self.event_tx.clone();
-            let proxy = self.event_proxy.clone();
-            std::thread::spawn(move || {
-                if let Ok(frames) = ImageBackend::load_and_downsample(&path, max_w, max_h) {
-                    if let Some(ref p) = proxy {
-                        send_event(&tx, p, AppEvent::Prefetched(path, frames));
-                    }
-                }
-            });
-        }
-    }
-
     pub(crate) fn setup_file_watcher(&mut self, path: &Path) {
-        let _tx = self.event_tx.clone();
-        let _proxy = self.event_proxy.clone();
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
         let dir = if path.is_dir() {
             path.to_path_buf()
         } else {
@@ -132,10 +87,13 @@ impl SpedImageApp {
 
         use notify_debouncer_full::{new_debouncer, notify::RecursiveMode, notify::Watcher};
 
+        let dir_clone = dir.clone();
         let mut debouncer =
             new_debouncer(std::time::Duration::from_millis(500), None, move |res| {
                 if let Ok(_events) = res {
-                    // Trigger a reload or specific event
+                    if let Some(ref p) = proxy {
+                        send_event(&tx, p, AppEvent::DirectoryChanged(dir_clone.clone()));
+                    }
                 }
             })
             .ok();

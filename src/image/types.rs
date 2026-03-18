@@ -76,6 +76,7 @@ pub struct ImageData {
     pub exif_info: Option<String>,
     pub histogram: Option<([u32; 256], [u32; 256], [u32; 256])>,
     pub exif_loaded: bool,
+    pub is_downsampled: bool,
 }
 
 impl ImageData {

@@ -10,7 +10,7 @@ impl ImageProcessor {
     /// Load an image from file and downsample it if needed for the current display resolution.
     /// This is used for background loading and prefetching.
     pub fn load_and_downsample(path: &Path, max_w: u32, max_h: u32) -> Result<Vec<ImageData>> {
-        let (frames, _format) = ImageLoader::load(path)?;
+        let (frames, _format) = ImageLoader::load(path, Some(max_w), Some(max_h))?;
         let mut processed = Vec::with_capacity(frames.len());
 
         for frame in frames {
@@ -46,6 +46,7 @@ impl ImageProcessor {
                 img.width = new_w as u32;
                 img.height = new_h as u32;
                 img.rgba_data = z_img.flatten_to_u8()[0].clone();
+                img.is_downsampled = true;
             }
 
             processed.push(img);

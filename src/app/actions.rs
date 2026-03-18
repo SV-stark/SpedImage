@@ -124,7 +124,25 @@ impl SpedImageApp {
                         self.ui_state.show_histogram = !self.ui_state.show_histogram;
                         if self.ui_state.show_histogram {
                             if let Some(ref mut img) = self.current_image {
-                                img.compute_histogram();
+                                if img.histogram.is_none() {
+                                    let tx = self.event_tx.clone();
+                                    let proxy = self.event_proxy.clone();
+                                    let path = img.path.clone();
+                                    let rgba = img.rgba_data.clone();
+                                    self.thread_pool.spawn(move || {
+                                        let mut r_hist = [0u32; 256];
+                                        let mut g_hist = [0u32; 256];
+                                        let mut b_hist = [0u32; 256];
+                                        for chunk in rgba.chunks_exact(4) {
+                                            r_hist[chunk[0] as usize] += 1;
+                                            g_hist[chunk[1] as usize] += 1;
+                                            b_hist[chunk[2] as usize] += 1;
+                                        }
+                                        if let Some(ref p) = proxy {
+                                            send_event(&tx, p, AppEvent::HistogramComputed(path, (r_hist, g_hist, b_hist)));
+                                        }
+                                    });
+                                }
                             }
                         }
                         self.dirty = true;
@@ -202,11 +220,53 @@ impl SpedImageApp {
             .fetch_add(1, Ordering::SeqCst)
             + 1;
 
+        // Compute prefetch targets
+        let mut prefetch_targets = Vec::new();
+        if self.ui_state.files.len() >= 2 {
+            if let Some(idx) = self.ui_state.files.iter().position(|f| f.path == path) {
+                let next_idx = (idx + 1) % self.ui_state.files.len();
+                let prev_idx = if idx == 0 {
+                    self.ui_state.files.len() - 1
+                } else {
+                    idx - 1
+                };
+                prefetch_targets.push(self.ui_state.files[next_idx].path.clone());
+                prefetch_targets.push(self.ui_state.files[prev_idx].path.clone());
+            }
+        }
+
+        let (max_w, max_h) = match &self.window {
+            Some(w) => {
+                let size = w.inner_size();
+                (size.width, size.height)
+            }
+            None => (3840, 2160),
+        };
+
+        let pool = self.thread_pool.clone();
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+        let current_gen = self.navigation.load_generation.clone();
+
         if let Some((_, cached_frames)) = self.navigation.prefetch_cache.remove(&path) {
             if let Some(ref proxy) = self.event_proxy {
                 send_event(&self.event_tx, proxy, AppEvent::ImageLoaded(cached_frames));
             }
-            self.prefetch_adjacent(&path);
+            
+            for target_path in prefetch_targets {
+                let tx_p = tx.clone();
+                let proxy_p = proxy.clone();
+                let gen_p = current_gen.clone();
+                pool.spawn(move || {
+                    if let Ok(frames) = ImageBackend::load_and_downsample(&target_path, max_w, max_h) {
+                        if gen_p.load(Ordering::Relaxed) == generation {
+                            if let Some(ref p) = proxy_p {
+                                send_event(&tx_p, p, AppEvent::Prefetched(target_path, frames));
+                            }
+                        }
+                    }
+                });
+            }
             return;
         }
 
@@ -222,23 +282,13 @@ impl SpedImageApp {
             w.set_title(&format!("SpedImage — {name}"));
         }
 
-        let (max_w, max_h) = match &self.window {
-            Some(w) => {
-                let size = w.inner_size();
-                (size.width, size.height)
-            }
-            None => (3840, 2160),
-        };
-
-        let tx = self.event_tx.clone();
-        let proxy = self.event_proxy.clone();
         let path2 = path.clone();
-        let current_gen = self.navigation.load_generation.clone();
+        let pool_inner = pool.clone();
 
-        std::thread::spawn(move || {
+        pool.spawn(move || {
             let result = ImageBackend::load_and_downsample(&path2, max_w, max_h);
 
-            if current_gen.load(Ordering::SeqCst) == generation {
+            if current_gen.load(Ordering::Relaxed) == generation {
                 let event = match result {
                     Ok(data) => AppEvent::ImageLoaded(data),
                     Err(e) => AppEvent::ImageError(e.to_string()),
@@ -246,35 +296,49 @@ impl SpedImageApp {
                 if let Some(ref proxy) = proxy {
                     send_event(&tx, proxy, event);
                 }
+
+                // prefetch adjacent images
+                for target_path in prefetch_targets {
+                    let tx_p = tx.clone();
+                    let proxy_p = proxy.clone();
+                    let gen_p = current_gen.clone();
+                    pool_inner.spawn(move || {
+                        if let Ok(frames) = ImageBackend::load_and_downsample(&target_path, max_w, max_h) {
+                            if gen_p.load(Ordering::Relaxed) == generation {
+                                if let Some(ref p) = proxy_p {
+                                    send_event(&tx_p, p, AppEvent::Prefetched(target_path, frames));
+                                }
+                            }
+                        }
+                    });
+                }
             }
         });
-
-        self.prefetch_adjacent(&path);
     }
 
     pub(crate) fn delete_current_image(&mut self) {
         if let Some(ref image) = self.current_image {
             let path = image.path.clone();
-            let confirmed = rfd::MessageDialog::new()
-                .set_title("Delete Image")
-                .set_description(format!(
-                    "Delete {}?",
-                    path.file_name().unwrap_or_default().to_string_lossy()
-                ))
-                .set_buttons(rfd::MessageButtons::YesNo)
-                .show()
-                == rfd::MessageDialogResult::Yes;
+            let tx = self.event_tx.clone();
+            let proxy = self.event_proxy.clone();
 
-            if confirmed {
-                if let Err(e) = std::fs::remove_file(&path) {
-                    self.ui_state.set_status(format!("Delete failed: {}", e));
-                } else {
-                    self.current_image = None;
-                    let dir = path.parent().unwrap_or(&path).to_path_buf();
-                    self.load_directory_async(dir);
-                    self.next_image();
-                }
-            }
+            self.thread_pool.spawn(move || {
+                let dialog = rfd::AsyncMessageDialog::new()
+                    .set_title("Delete Image")
+                    .set_description(format!(
+                        "Delete {}?",
+                        path.file_name().unwrap_or_default().to_string_lossy()
+                    ))
+                    .set_buttons(rfd::MessageButtons::YesNo);
+
+                pollster::block_on(async move {
+                    if dialog.show().await == rfd::MessageDialogResult::Yes {
+                        if let Some(ref p) = proxy {
+                            send_event(&tx, p, AppEvent::ConfirmDelete(path));
+                        }
+                    }
+                });
+            });
         }
     }
 
@@ -300,8 +364,9 @@ impl SpedImageApp {
 
             let rgba_data = image_data.rgba_data.clone();
             let (width, height) = (image_data.width, image_data.height);
+            let is_downsampled = image_data.is_downsampled;
 
-            std::thread::spawn(move || {
+            self.thread_pool.spawn(move || {
                 let result = (|| -> color_eyre::eyre::Result<()> {
                     use zune_image::image::Image;
                     use zune_image::traits::OperationsTrait;
@@ -310,7 +375,7 @@ impl SpedImageApp {
                     use zune_imageprocs::crop::Crop;
                     use zune_imageprocs::rotate::Rotate;
 
-                    let mut img = if width > 2000 || height > 2000 {
+                    let mut img = if is_downsampled {
                         Image::open(&path_clone)
                             .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?
                     } else {
@@ -396,7 +461,7 @@ impl SpedImageApp {
             .set_status(format!("Batch saving {} images...", selected.len()));
         self.dirty = true;
 
-        std::thread::spawn(move || {
+        self.thread_pool.spawn(move || {
             let mut saved_count = 0;
             for path in &selected {
                 let _ = (|| -> color_eyre::eyre::Result<()> {
@@ -443,24 +508,23 @@ impl SpedImageApp {
             return;
         }
 
-        if rfd::MessageDialog::new()
-            .set_title("Delete Images")
-            .set_description(format!("Delete {} selected images?", selected.len()))
-            .set_buttons(rfd::MessageButtons::YesNo)
-            .show()
-            == rfd::MessageDialogResult::Yes
-        {
-            for path in &selected {
-                let _ = std::fs::remove_file(path);
-            }
-            self.ui_state.selected_indices.clear();
-            if let Some(current) = self.ui_state.current_file() {
-                if let Some(parent) = current.parent() {
-                    self.load_directory_async(parent.to_path_buf());
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+
+        self.thread_pool.spawn(move || {
+            let dialog = rfd::AsyncMessageDialog::new()
+                .set_title("Delete Images")
+                .set_description(format!("Delete {} selected images?", selected.len()))
+                .set_buttons(rfd::MessageButtons::YesNo);
+
+            pollster::block_on(async move {
+                if dialog.show().await == rfd::MessageDialogResult::Yes {
+                    if let Some(ref p) = proxy {
+                        send_event(&tx, p, AppEvent::ConfirmBatchDelete(selected));
+                    }
                 }
-            }
-            self.dirty = true;
-        }
+            });
+        });
     }
 
     pub(crate) fn next_image(&mut self) {
@@ -529,7 +593,7 @@ impl SpedImageApp {
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
 
-            std::thread::spawn(move || {
+            self.thread_pool.spawn(move || {
                 if let Some(new_path) = rfd::FileDialog::new()
                     .set_title("Rename File")
                     .set_file_name(&filename)
@@ -718,7 +782,7 @@ impl SpedImageApp {
             let rgba = img.rgba_data.clone();
             let (w, h) = (img.width, img.height);
 
-            std::thread::spawn(move || {
+            self.thread_pool.spawn(move || {
                 let mut clipboard = arboard::Clipboard::new().unwrap();
                 let image_data = arboard::ImageData {
                     width: w as usize,
@@ -741,7 +805,7 @@ impl SpedImageApp {
     pub(crate) fn open_file_dialog(&mut self) {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
-        std::thread::spawn(move || {
+        self.thread_pool.spawn(move || {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("Images", &ImageBackend::supported_extensions())
                 .pick_file()

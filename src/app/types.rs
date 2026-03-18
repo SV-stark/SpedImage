@@ -37,6 +37,10 @@ pub enum AppEvent {
     FileRenamed(PathBuf, PathBuf),
     DirectoryLoaded(PathBuf, Vec<crate::ui::FileEntry>),
     DirectoryError(String),
+    ConfirmDelete(PathBuf),
+    ConfirmBatchDelete(Vec<PathBuf>),
+    HistogramComputed(PathBuf, ([u32; 256], [u32; 256], [u32; 256])),
+    DirectoryChanged(PathBuf),
 }
 
 /// Helper: send an AppEvent through the data channel, then wake the event loop.

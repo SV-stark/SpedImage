@@ -14,7 +14,7 @@ pub struct ImageBackend;
 impl ImageBackend {
     /// Load an image from path (returns multiple frames for GIFs)
     pub fn load(path: &std::path::Path) -> Result<Vec<ImageData>> {
-        let (frames, _format) = ImageLoader::load(path)?;
+        let (frames, _format) = ImageLoader::load(path, None, None)?;
         Ok(frames)
     }
 

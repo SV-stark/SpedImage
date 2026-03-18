@@ -90,12 +90,13 @@ impl Renderer {
             width,
             height,
         });
+        self.last_thumb_state = None;
 
         Ok(())
     }
 
     pub(crate) fn encode_thumbnail_strip(
-        &self,
+        &mut self,
         _active_idx: Option<usize>,
         _selected_indices: &std::collections::HashSet<usize>,
         thumb_scroll: f32,
@@ -107,6 +108,43 @@ impl Renderer {
         let strip_h = STRIP_HEIGHT_PX;
 
         let start_x = -thumb_scroll;
+
+        let current_state = (win_w, win_h, thumb_scroll);
+        let update_uniforms = self.last_thumb_state != Some(current_state);
+        if update_uniforms {
+            for (_i, thumb) in self.thumbnails.iter().enumerate() {
+                let x = start_x + (_i as f32 * THUMB_SLOT_W as f32);
+                if x + (THUMB_SLOT_W as f32) < 0.0 || x > win_w as f32 {
+                    continue;
+                }
+
+                let (tw, th) = if thumb.width > thumb.height {
+                    (
+                        THUMB_SLOT_W as f32 - 10.0,
+                        ((THUMB_SLOT_W as f32 - 10.0) * (thumb.height as f32 / thumb.width as f32)),
+                    )
+                } else {
+                    (
+                        ((strip_h as f32 - 10.0) * (thumb.width as f32 / thumb.height as f32)),
+                        strip_h as f32 - 10.0,
+                    )
+                };
+
+                let pos_scale = [tw / win_w as f32, th / win_h as f32];
+                let pos_offset = [
+                    (x + THUMB_SLOT_W as f32 / 2.0) / win_w as f32 * 2.0 - 1.0,
+                    -((win_h as f32 - strip_h as f32 / 2.0) / win_h as f32 * 2.0 - 1.0),
+                ];
+
+                let mut uniforms = Uniforms::identity();
+                uniforms.pos_scale = pos_scale;
+                uniforms.pos_offset = pos_offset;
+
+                self.queue
+                    .write_buffer(&thumb.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+            }
+            self.last_thumb_state = Some(current_state);
+        }
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Thumbnail Strip Pass"),
@@ -135,31 +173,6 @@ impl Renderer {
                 break;
             }
 
-            let (tw, th) = if thumb.width > thumb.height {
-                (
-                    THUMB_SLOT_W as f32 - 10.0,
-                    ((THUMB_SLOT_W as f32 - 10.0) * (thumb.height as f32 / thumb.width as f32)),
-                )
-            } else {
-                (
-                    ((strip_h as f32 - 10.0) * (thumb.width as f32 / thumb.height as f32)),
-                    strip_h as f32 - 10.0,
-                )
-            };
-
-            let pos_scale = [tw / win_w as f32, th / win_h as f32];
-            let pos_offset = [
-                (x + THUMB_SLOT_W as f32 / 2.0) / win_w as f32 * 2.0 - 1.0,
-                -((win_h as f32 - strip_h as f32 / 2.0) / win_h as f32 * 2.0 - 1.0),
-            ];
-
-            let mut uniforms = Uniforms::identity();
-            uniforms.pos_scale = pos_scale;
-            uniforms.pos_offset = pos_offset;
-
-            self.queue
-                .write_buffer(&thumb.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
-
             pass.set_bind_group(0, Some(thumb.bind_group.as_ref()), &[]);
             pass.set_scissor_rect(
                 x.max(0.0) as u32,
@@ -174,6 +187,7 @@ impl Renderer {
 
     pub fn clear_thumbnails(&mut self) {
         self.thumbnails.clear();
+        self.last_thumb_state = None;
     }
 
     pub fn thumbnail_index_at(&self, x: f64, y: f64, thumb_scroll: f32) -> Option<usize> {

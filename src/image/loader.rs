@@ -8,7 +8,7 @@ pub struct ImageLoader;
 
 impl ImageLoader {
     /// Load an image from a file path
-    pub fn load(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    pub fn load(path: &Path, max_w: Option<u32>, max_h: Option<u32>) -> Result<(Vec<ImageData>, ImageFormatType)> {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -18,7 +18,7 @@ impl ImageLoader {
         let format_type = ImageFormatType::from_extension(&ext);
 
         if ext == "gif" {
-            Self::load_gif(path)
+            Self::load_gif(path, max_w, max_h)
         } else if ext == "svg" {
             Self::load_svg(path)
         } else if ext == "tiff" || ext == "tif" {
@@ -67,6 +67,7 @@ impl ImageLoader {
                     exif_info: None,
                     exif_loaded: false,
                     histogram: None,
+                    is_downsampled: false,
                 }],
                 format_type,
             ))
@@ -115,6 +116,7 @@ impl ImageLoader {
                 exif_info: None,
                 exif_loaded: false,
                 histogram: None,
+                is_downsampled: false,
             }],
             ImageFormatType::Svg,
         ))
@@ -171,12 +173,13 @@ impl ImageLoader {
                 exif_info: None,
                 exif_loaded: false,
                 histogram: None,
+                is_downsampled: false,
             }],
             ImageFormatType::Tiff,
         ))
     }
 
-    fn load_gif(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    fn load_gif(path: &Path, max_w: Option<u32>, max_h: Option<u32>) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use gif::DecodeOptions;
         let file = std::fs::File::open(path)?;
         let mut options = DecodeOptions::new();
@@ -188,6 +191,18 @@ impl ImageLoader {
         let mut image_frames = Vec::new();
         let file_size = std::fs::metadata(path)?.len();
         let (w, h) = (decoder.width() as u32, decoder.height() as u32);
+
+        let mut dst_w = w;
+        let mut dst_h = h;
+        if let (Some(mw), Some(mh)) = (max_w, max_h) {
+            if w > mw || h > mh {
+                let ratio = (w as f32 / mw as f32).max(h as f32 / mh as f32);
+                dst_w = (w as f32 / ratio).round() as u32;
+                dst_h = (h as f32 / ratio).round() as u32;
+                dst_w = dst_w.max(1);
+                dst_h = dst_h.max(1);
+            }
+        }
 
         // A GIF frame might not cover the full canvas, so we need a canvas to compose them.
         let mut canvas = vec![0u8; (w * h * 4) as usize];
@@ -209,17 +224,36 @@ impl ImageLoader {
                 }
             }
 
+            let is_downsampled = dst_w != w || dst_h != h;
+            let mut final_rgba = canvas.clone();
+            if is_downsampled {
+                use zune_image::image::Image;
+                use zune_image::traits::OperationsTrait;
+                use zune_imageprocs::resize::{Resize, ResizeMethod};
+                
+                let mut z_img = Image::from_u8(
+                    &canvas,
+                    w as usize,
+                    h as usize,
+                    zune_core::colorspace::ColorSpace::RGBA,
+                );
+                if let Ok(_) = Resize::new(dst_w as usize, dst_h as usize, ResizeMethod::Lanczos3).execute(&mut z_img) {
+                    final_rgba = z_img.flatten_to_u8()[0].clone();
+                }
+            }
+
             image_frames.push(ImageData {
                 path: path.to_path_buf(),
-                rgba_data: canvas.clone(),
-                width: w,
-                height: h,
+                rgba_data: final_rgba,
+                width: dst_w,
+                height: dst_h,
                 format: ImageFormatType::Gif,
                 file_size_bytes: file_size,
                 frame_delay_ms: delay_ms,
                 exif_info: None,
                 exif_loaded: false,
                 histogram: None,
+                is_downsampled,
             });
         }
 

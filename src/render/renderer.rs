@@ -32,6 +32,7 @@ pub struct Renderer {
     pub(crate) egui_renderer: egui_wgpu::Renderer,
 
     pub thumbnails: Vec<ThumbnailEntry>,
+    pub(crate) last_thumb_state: Option<(u32, u32, f32)>,
 }
 
 impl Renderer {
@@ -112,6 +113,7 @@ impl Renderer {
             egui_state,
             egui_renderer,
             thumbnails: Vec::new(),
+            last_thumb_state: None,
         })
     }
 
@@ -130,7 +132,7 @@ impl Renderer {
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::LowPower,
+                power_preference: wgpu::PowerPreference::None,
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
