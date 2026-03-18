@@ -8,7 +8,11 @@ pub struct ImageLoader;
 
 impl ImageLoader {
     /// Load an image from a file path
-    pub fn load(path: &Path, max_w: Option<u32>, max_h: Option<u32>) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    pub fn load(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -179,7 +183,11 @@ impl ImageLoader {
         ))
     }
 
-    fn load_gif(path: &Path, max_w: Option<u32>, max_h: Option<u32>) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    fn load_gif(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use gif::DecodeOptions;
         let file = std::fs::File::open(path)?;
         let mut options = DecodeOptions::new();
@@ -230,14 +238,16 @@ impl ImageLoader {
                 use zune_image::image::Image;
                 use zune_image::traits::OperationsTrait;
                 use zune_imageprocs::resize::{Resize, ResizeMethod};
-                
+
                 let mut z_img = Image::from_u8(
                     &canvas,
                     w as usize,
                     h as usize,
                     zune_core::colorspace::ColorSpace::RGBA,
                 );
-                if let Ok(_) = Resize::new(dst_w as usize, dst_h as usize, ResizeMethod::Lanczos3).execute(&mut z_img) {
+                if let Ok(_) = Resize::new(dst_w as usize, dst_h as usize, ResizeMethod::Lanczos3)
+                    .execute(&mut z_img)
+                {
                     final_rgba = z_img.flatten_to_u8()[0].clone();
                 }
             }

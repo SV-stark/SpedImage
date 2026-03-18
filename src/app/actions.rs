@@ -139,7 +139,14 @@ impl SpedImageApp {
                                             b_hist[chunk[2] as usize] += 1;
                                         }
                                         if let Some(ref p) = proxy {
-                                            send_event(&tx, p, AppEvent::HistogramComputed(path, (r_hist, g_hist, b_hist)));
+                                            send_event(
+                                                &tx,
+                                                p,
+                                                AppEvent::HistogramComputed(
+                                                    path,
+                                                    (r_hist, g_hist, b_hist),
+                                                ),
+                                            );
                                         }
                                     });
                                 }
@@ -252,13 +259,15 @@ impl SpedImageApp {
             if let Some(ref proxy) = self.event_proxy {
                 send_event(&self.event_tx, proxy, AppEvent::ImageLoaded(cached_frames));
             }
-            
+
             for target_path in prefetch_targets {
                 let tx_p = tx.clone();
                 let proxy_p = proxy.clone();
                 let gen_p = current_gen.clone();
                 pool.spawn(move || {
-                    if let Ok(frames) = ImageBackend::load_and_downsample(&target_path, max_w, max_h) {
+                    if let Ok(frames) =
+                        ImageBackend::load_and_downsample(&target_path, max_w, max_h)
+                    {
                         if gen_p.load(Ordering::Relaxed) == generation {
                             if let Some(ref p) = proxy_p {
                                 send_event(&tx_p, p, AppEvent::Prefetched(target_path, frames));
@@ -303,7 +312,9 @@ impl SpedImageApp {
                     let proxy_p = proxy.clone();
                     let gen_p = current_gen.clone();
                     pool_inner.spawn(move || {
-                        if let Ok(frames) = ImageBackend::load_and_downsample(&target_path, max_w, max_h) {
+                        if let Ok(frames) =
+                            ImageBackend::load_and_downsample(&target_path, max_w, max_h)
+                        {
                             if gen_p.load(Ordering::Relaxed) == generation {
                                 if let Some(ref p) = proxy_p {
                                     send_event(&tx_p, p, AppEvent::Prefetched(target_path, frames));

@@ -471,7 +471,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     }
                     self.navigation.last_advance_time = Some(std::time::Instant::now());
                     needs_redraw = true;
-                    update_wakeup(std::time::Instant::now() + std::time::Duration::from_millis(200));
+                    update_wakeup(
+                        std::time::Instant::now() + std::time::Duration::from_millis(200),
+                    );
                 } else {
                     update_wakeup(next);
                 }
