@@ -331,7 +331,8 @@ impl Renderer {
         let width = image_data.width;
         let height = image_data.height;
 
-        let needs_new_texture = self.image_size != Some((width, height)) || self.image_texture.is_none();
+        let needs_new_texture =
+            self.image_size != Some((width, height)) || self.image_texture.is_none();
 
         if needs_new_texture {
             if let Some(old_tex) = self.image_texture.take() {
