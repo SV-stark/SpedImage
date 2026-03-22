@@ -328,77 +328,38 @@ impl Renderer {
     }
 
     pub fn load_image(&mut self, image_data: &ImageData) -> Result<()> {
-        if let Some(old_tex) = self.image_texture.take() {
-            old_tex.destroy();
-        }
-        self.image_bind_group = None;
-        self.image_bind_group_nearest = None;
-
         let width = image_data.width;
         let height = image_data.height;
 
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Image Texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
+        let needs_new_texture = self.image_size != Some((width, height)) || self.image_texture.is_none();
 
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            image_data.as_rgba(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
+        if needs_new_texture {
+            if let Some(old_tex) = self.image_texture.take() {
+                old_tex.destroy();
+            }
+            self.image_bind_group = None;
+            self.image_bind_group_nearest = None;
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group_layout = self.pipeline.get_bind_group_layout(0);
-
-        let bind_group = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Image Bind Group"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(
-                        self.uniform_buffer.as_entire_buffer_binding(),
-                    ),
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Image Texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
                 },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-            ],
-        }));
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
 
-        let bind_group_nearest =
-            Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Image Bind Group (Nearest)"),
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group_layout = self.pipeline.get_bind_group_layout(0);
+
+            let bind_group = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Image Bind Group"),
                 layout: &bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -409,7 +370,7 @@ impl Renderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler_nearest),
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
@@ -418,10 +379,55 @@ impl Renderer {
                 ],
             }));
 
-        self.image_texture = Some(texture);
-        self.image_bind_group = Some(bind_group);
-        self.image_bind_group_nearest = Some(bind_group_nearest);
-        self.image_size = Some((width, height));
+            let bind_group_nearest =
+                Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Image Bind Group (Nearest)"),
+                    layout: &bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::Buffer(
+                                self.uniform_buffer.as_entire_buffer_binding(),
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler_nearest),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(&view),
+                        },
+                    ],
+                }));
+
+            self.image_texture = Some(texture);
+            self.image_bind_group = Some(bind_group);
+            self.image_bind_group_nearest = Some(bind_group_nearest);
+            self.image_size = Some((width, height));
+        }
+
+        if let Some(texture) = &self.image_texture {
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                image_data.as_rgba(),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width * 4),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
 
         Ok(())
     }
