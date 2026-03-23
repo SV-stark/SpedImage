@@ -7,6 +7,9 @@ use spedimage_lib::SpedImageApp;
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> Result<()> {
     // Initialize error reporting
     color_eyre::install()?;
@@ -15,6 +18,7 @@ fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(tracing_subscriber::fmt::layer())
+        .with(tracing_tracy::TracyLayer::new())
         .init();
 
     tracing::info!("Starting SpedImage v2.0.0");

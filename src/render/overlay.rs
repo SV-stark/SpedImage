@@ -107,10 +107,27 @@ impl Renderer {
                 label: Some("Frame Encoder"),
             });
 
+        self.profiler.begin_frame()
+            .map_err(|e| eyre!("Failed to begin profiler frame: {e:?}"))?;
+
         // Image pass
-        self.encode_image(params.adjustments, &view, &mut encoder);
+        {
+            let _scope = wgpu_profiler::scope::Scope::start(
+                "Image Render",
+                &mut self.profiler,
+                &mut encoder,
+                &self.device,
+            );
+            self.encode_image(params.adjustments, &view, &mut encoder);
+        }
 
         if params.show_thumbnail_strip && !self.thumbnails.is_empty() {
+            let _scope = wgpu_profiler::scope::Scope::start(
+                "Thumbnails Render",
+                &mut self.profiler,
+                &mut encoder,
+                &self.device,
+            );
             self.encode_thumbnail_strip(
                 params.active_thumb_idx,
                 params.selected_indices,
@@ -158,6 +175,12 @@ impl Renderer {
         );
 
         {
+            let _scope = wgpu_profiler::scope::Scope::start(
+                "egui Render",
+                &mut self.profiler,
+                &mut encoder,
+                &self.device,
+            );
             let render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("egui Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
@@ -183,6 +206,10 @@ impl Renderer {
         for id in full_output.textures_delta.free {
             self.egui_renderer.free_texture(&id);
         }
+
+        self.profiler.resolve_queries(&mut encoder);
+        self.profiler.end_frame()
+            .map_err(|e| eyre!("Failed to end profiler frame: {e:?}"))?;
 
         self.queue.submit([encoder.finish()]);
         frame.present();

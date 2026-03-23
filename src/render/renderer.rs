@@ -33,12 +33,19 @@ pub struct Renderer {
 
     pub thumbnails: Vec<ThumbnailEntry>,
     pub(crate) last_thumb_state: Option<(u32, u32, f32)>,
+
+    // Profiling
+    pub(crate) profiler: wgpu_profiler::GpuProfiler,
 }
 
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Result<Self> {
         let (device, queue, surface, adapter) =
             Self::create_device_and_surface(window.clone()).await?;
+        
+        let profiler = wgpu_profiler::GpuProfiler::new(wgpu_profiler::GpuProfilerSettings::default())
+            .map_err(|e| eyre!("Failed to create GPU profiler: {e:?}"))?;
+
         let capabilities = surface.get_capabilities(&adapter);
         let format = capabilities
             .formats
@@ -114,6 +121,7 @@ impl Renderer {
             egui_renderer,
             thumbnails: Vec::new(),
             last_thumb_state: None,
+            profiler,
         })
     }
 

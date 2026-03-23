@@ -23,6 +23,7 @@ pub enum ImageFormatType {
     WebP,
     Heic,
     Avif,
+    Jxl,
     Raw,
     Svg,
     Unknown,
@@ -39,6 +40,7 @@ impl ImageFormatType {
             "webp" => Self::WebP,
             "heic" | "heif" => Self::Heic,
             "avif" => Self::Avif,
+            "jxl" => Self::Jxl,
             "svg" => Self::Svg,
             "arw" | "cr2" | "nef" | "dng" | "orf" | "raf" | "srw" => Self::Raw,
             _ => Self::Unknown,
@@ -57,6 +59,7 @@ impl ImageFormatType {
             | Self::WebP
             | Self::Raw
             | Self::Avif
+            | Self::Jxl
             | Self::Svg => true,
             _ => false,
         }

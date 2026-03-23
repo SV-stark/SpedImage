@@ -26,26 +26,25 @@ impl ImageProcessor {
                 let dst_w = dst_w.max(1);
                 let dst_h = dst_h.max(1);
 
-                // Use zune-image for resizing
-                use zune_image::image::Image;
-                use zune_image::traits::OperationsTrait;
-                use zune_imageprocs::resize::{Resize, ResizeMethod};
+                // Use fast_image_resize for high-performance SIMD resizing
+                use fast_image_resize as fr;
 
-                let mut z_img = Image::from_u8(
-                    &img.rgba_data,
-                    img.width as usize,
-                    img.height as usize,
-                    zune_core::colorspace::ColorSpace::RGBA,
-                );
-                let resize = Resize::new(dst_w as usize, dst_h as usize, ResizeMethod::Lanczos3);
-                resize
-                    .execute(&mut z_img)
-                    .map_err(|e| eyre!("Zune resize failed: {e:?}"))?;
+                let src_image = fr::images::Image::from_vec_u8(
+                    img.width,
+                    img.height,
+                    img.rgba_data.clone(),
+                    fr::PixelType::U8x4,
+                ).map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
 
-                let (new_w, new_h) = z_img.dimensions();
-                img.width = new_w as u32;
-                img.height = new_h as u32;
-                img.rgba_data = z_img.flatten_to_u8()[0].clone();
+                let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
+                let mut resizer = fr::Resizer::new();
+
+                resizer.resize(&src_image, &mut dst_image, None)
+                    .map_err(|e| eyre!("Resize failed: {e:?}"))?;
+
+                img.width = dst_w;
+                img.height = dst_h;
+                img.rgba_data = dst_image.into_vec();
                 img.is_downsampled = true;
             }
 
@@ -69,7 +68,7 @@ impl ImageProcessor {
     /// Get list of supported file extensions
     pub fn supported_extensions() -> Vec<&'static str> {
         vec![
-            "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico", "avif", "svg", "arw",
+            "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico", "avif", "jxl", "svg", "arw",
             "cr2", "nef", "dng", "orf", "raf", "srw",
         ]
     }

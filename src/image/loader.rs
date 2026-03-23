@@ -25,39 +25,31 @@ impl ImageLoader {
             Self::load_gif(path, max_w, max_h)
         } else if ext == "svg" {
             Self::load_svg(path)
+        } else if ext == "jxl" {
+            Self::load_jxl(path)
         } else if ext == "tiff" || ext == "tif" {
             Self::load_tiff(path)
         } else if format_type == ImageFormatType::Raw {
             Err(eyre!("RAW support is temporarily disabled."))
-            /*
-            let raw_img = imagepipe::simple_decode_8bit(path, 0, 0)
-                .map_err(|e| eyre!("Imagepipe RAW decode failed for {path:?}: {e:?}"))?;
-
-            Ok((
-                vec![ImageData {
-                    path: path.to_path_buf(),
-                    rgba_data: raw_img.data,
-                    width: raw_img.width as u32,
-                    height: raw_img.height as u32,
-                    format: format_type,
-                    file_size_bytes: std::fs::metadata(path)?.len(),
-                    frame_delay_ms: 0,
-                    exif_info: None,
-                    exif_loaded: false,
-                    histogram: None,
-                }],
-                format_type,
-            ))
-            */
         } else {
             let mut img =
                 Image::open(path).map_err(|e| eyre!("Failed to open image {path:?}: {e:?}"))?;
+
+            // Extract ICC profile if available before flattening/converting
+            let icc_profile = img.metadata().icc_profile().map(|p| p.to_vec());
 
             // Ensure we are in RGBA8
             img.convert_color(zune_core::colorspace::ColorSpace::RGBA)?;
 
             let (w, h) = img.dimensions();
-            let rgba = img.flatten_to_u8()[0].clone();
+            let mut rgba = img.flatten_to_u8()[0].clone();
+
+            // Apply color management if ICC profile exists
+            if let Some(icc) = icc_profile {
+                if let Err(e) = Self::apply_color_profile(&mut rgba, &icc) {
+                    tracing::warn!("Failed to apply color profile: {:?}", e);
+                }
+            }
 
             Ok((
                 vec![ImageData {
@@ -76,6 +68,74 @@ impl ImageLoader {
                 format_type,
             ))
         }
+    }
+
+    fn apply_color_profile(rgba: &mut [u8], icc_data: &[u8]) -> Result<()> {
+        let mut in_profile = qcms::Profile::from_slice(icc_data)
+            .map_err(|_| eyre!("Failed to parse ICC profile"))?;
+        
+        let mut out_profile = qcms::Profile::new_sRGB();
+        
+        let transform = qcms::Transform::new(
+            &mut in_profile,
+            &mut out_profile,
+            qcms::DataType::RGBA8,
+            qcms::Intent::Perceptual,
+        ).map_err(|_| eyre!("Failed to create color transform"))?;
+
+        transform.apply_inplace(rgba);
+        Ok(())
+    }
+
+    fn load_jxl(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        use jxl_oxide::{JxlImage, Render};
+
+        let image = JxlImage::builder()
+            .open(path)
+            .map_err(|e| eyre!("Failed to open JXL: {e:?}"))?;
+        
+        let (width, height) = (image.width(), image.height());
+        let render = image.render_frame(0)
+            .map_err(|e| eyre!("Failed to render JXL frame: {e:?}"))?;
+        
+        let fb = render.image();
+        let mut rgba = vec![0u8; width as usize * height as usize * 4];
+        
+        // Convert to RGBA8
+        for (i, pixel) in fb.buf().chunks_exact(fb.channels()).enumerate() {
+            let r = (pixel[0].clamp(0.0, 1.0) * 255.0) as u8;
+            let g = (pixel[1].clamp(0.0, 1.0) * 255.0) as u8;
+            let b = (pixel[2].clamp(0.0, 1.0) * 255.0) as u8;
+            let a = if fb.channels() == 4 {
+                (pixel[3].clamp(0.0, 1.0) * 255.0) as u8
+            } else {
+                255
+            };
+            
+            rgba[i * 4] = r;
+            rgba[i * 4 + 1] = g;
+            rgba[i * 4 + 2] = b;
+            rgba[i * 4 + 3] = a;
+        }
+
+        let file_size = std::fs::metadata(path)?.len();
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: rgba,
+                width: width as u32,
+                height: height as u32,
+                format: ImageFormatType::Jxl,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: false,
+                histogram: None,
+                is_downsampled: false,
+            }],
+            ImageFormatType::Jxl,
+        ))
     }
 
     fn load_svg(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
@@ -235,22 +295,22 @@ impl ImageLoader {
             let is_downsampled = dst_w != w || dst_h != h;
             let mut final_rgba = canvas.clone();
             if is_downsampled {
-                use zune_image::image::Image;
-                use zune_image::traits::OperationsTrait;
-                use zune_imageprocs::resize::{Resize, ResizeMethod};
-
-                let mut z_img = Image::from_u8(
-                    &canvas,
-                    w as usize,
-                    h as usize,
-                    zune_core::colorspace::ColorSpace::RGBA,
-                );
-                if Resize::new(dst_w as usize, dst_h as usize, ResizeMethod::Lanczos3)
-                    .execute(&mut z_img)
-                    .is_ok()
-                {
-                    final_rgba = z_img.flatten_to_u8()[0].clone();
-                }
+                use fast_image_resize as fr;
+                
+                let src_image = fr::images::Image::from_vec_u8(
+                    w, 
+                    h, 
+                    canvas.clone(), 
+                    fr::PixelType::U8x4
+                ).map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
+                
+                let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
+                let mut resizer = fr::Resizer::new();
+                
+                resizer.resize(&src_image, &mut dst_image, None)
+                    .map_err(|e| eyre!("Resize failed: {e:?}"))?;
+                
+                final_rgba = dst_image.into_vec();
             }
 
             image_frames.push(ImageData {
