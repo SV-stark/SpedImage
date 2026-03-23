@@ -97,7 +97,7 @@ impl SpedImageApp {
                     self.load_image(path);
                 }
                 AppEvent::Prefetched(path, frames) => {
-                    self.navigation.prefetch_cache.insert(path, frames);
+                    self.navigation.prefetch_cache.insert(path, Arc::new(frames));
                 }
                 AppEvent::ThumbnailLoaded(path, rgba, w, h) => {
                     if let Some(ref mut renderer) = self.renderer {

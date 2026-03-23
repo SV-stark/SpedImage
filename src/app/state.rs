@@ -3,7 +3,7 @@ use crate::image::ImageData;
 use crate::render::Renderer;
 use crate::ui::UiState;
 use crossbeam_channel::{Receiver, Sender};
-use dashmap::DashMap;
+use quick_cache::sync::Cache;
 use notify_debouncer_full::notify;
 use notify_debouncer_full::{Debouncer, FileIdMap};
 use rayon::ThreadPool;
@@ -16,7 +16,7 @@ use winit::window::Window;
 pub struct NavigationState {
     pub(crate) held_key: Option<char>,
     pub(crate) last_advance_time: Option<std::time::Instant>,
-    pub(crate) prefetch_cache: Arc<DashMap<PathBuf, Vec<ImageData>>>,
+    pub(crate) prefetch_cache: Arc<Cache<PathBuf, Arc<Vec<ImageData>>>>,
     pub(crate) load_generation: Arc<AtomicU64>,
     pub(crate) thumb_scroll: f32,
 }
@@ -72,7 +72,7 @@ impl SpedImageApp {
             navigation: NavigationState {
                 held_key: None,
                 last_advance_time: None,
-                prefetch_cache: Arc::new(DashMap::new()),
+                prefetch_cache: Arc::new(Cache::new(100)),
                 load_generation: Arc::new(AtomicU64::new(0)),
                 thumb_scroll: 0.0,
             },

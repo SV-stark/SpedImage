@@ -255,9 +255,9 @@ impl SpedImageApp {
         let proxy = self.event_proxy.clone();
         let current_gen = self.navigation.load_generation.clone();
 
-        if let Some((_, cached_frames)) = self.navigation.prefetch_cache.remove(&path) {
+        if let Some(cached_frames) = self.navigation.prefetch_cache.get(&path) {
             if let Some(ref proxy) = self.event_proxy {
-                send_event(&self.event_tx, proxy, AppEvent::ImageLoaded(cached_frames));
+                send_event(&self.event_tx, proxy, AppEvent::ImageLoaded((*cached_frames).clone()));
             }
 
             for target_path in prefetch_targets {
