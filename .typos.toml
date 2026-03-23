@@ -1,0 +1,10 @@
+[default]
+extend-ignore-re = [
+    "(?Rm)^.*(#|//)\\s*spell-checker:disable-line.*$",
+]
+
+[files]
+extend-exclude = [
+    "*.log",
+    "tests/data",
+]

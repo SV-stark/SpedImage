@@ -26,14 +26,29 @@ jobs:
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
 
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@nextest
+
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@cargo-deny
+
+    - name: Install typos
+      uses: taiki-e/install-action@typos
+
+    - name: Check Spelling
+      run: typos
+
     - name: Cargo Format
       run: cargo fmt -- --check
 
     - name: Cargo Clippy
       run: cargo clippy -- -D warnings
 
-    - name: Cargo Test
-      run: cargo test --verbose
+    - name: Cargo Deny
+      run: cargo deny check
+
+    - name: Cargo Test (nextest)
+      run: cargo nextest run
 
     - name: Cargo Build
       run: cargo build --release --verbose
