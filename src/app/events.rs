@@ -28,6 +28,8 @@ impl SpedImageApp {
             match event {
                 AppEvent::ImageLoaded(frames) => {
                     self.loading = false;
+                    self.animation.transition_start = Some(std::time::Instant::now());
+                    self.animation.transition_factor = 0.0;
                     if let Some(first) = frames.first() {
                         let path = first.path.clone();
                         let dir = path.parent().unwrap_or(&path).to_path_buf();
@@ -290,6 +292,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     self.dirty = true;
                 }
             }
+            WindowEvent::DroppedFile(path) => {
+                self.load_image(path);
+            }
             WindowEvent::RedrawRequested => {
                 self.process_events();
                 let active_thumb = self.active_thumb_index();
@@ -323,11 +328,11 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         exif_text,
                         show_histogram: self.ui_state.show_histogram,
                         histogram_data: img.histogram.as_ref(),
-                    })
+                    }, self.animation.transition_factor)
                     .ok();
                     self.dirty = false;
                 } else if let Some(ref r) = self.renderer {
-                    r.render_loading().ok();
+                    r.render_loading(self.ui_state.current_file().as_deref()).ok();
                 }
             }
             WindowEvent::ModifiersChanged(m) => {
@@ -399,8 +404,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     } else {
                         0.0
                     };
-                    self.navigation.thumb_scroll =
-                        (self.navigation.thumb_scroll + d).clamp(0.0, max_scroll);
+                    self.navigation.thumb_velocity += d * 0.5;
                     self.dirty = true;
                 } else {
                     self.handle_mouse_wheel(delta, self.last_cursor_pos);
@@ -422,10 +426,42 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let mut needs_redraw = false;
         let mut next_wakeup: Option<std::time::Instant> = None;
+        let now = std::time::Instant::now();
 
         let mut update_wakeup = |time: std::time::Instant| {
             next_wakeup = Some(next_wakeup.map_or(time, |t| t.min(time)));
         };
+
+        // Handle Image Transition
+        if let Some(start) = self.animation.transition_start {
+            let elapsed = now.duration_since(start).as_millis() as f32;
+            let duration = 150.0; // 150ms transition
+            if elapsed < duration {
+                self.animation.transition_factor = elapsed / duration;
+                needs_redraw = true;
+                update_wakeup(now + std::time::Duration::from_millis(8)); // ~120fps sync
+            } else {
+                self.animation.transition_factor = 1.0;
+                self.animation.transition_start = None;
+            }
+        }
+
+        // Handle Momentum Scrolling
+        if self.navigation.thumb_velocity.abs() > 0.1 {
+            self.navigation.thumb_scroll += self.navigation.thumb_velocity;
+            self.navigation.thumb_velocity *= 0.92; // Friction
+            
+            let max_scroll = if let Some(ref r) = self.renderer {
+                (self.thumbnails.paths.len() as f32 * crate::render::THUMB_SLOT_W as f32
+                    - r.config.width as f32)
+                    .max(0.0)
+            } else {
+                0.0
+            };
+            self.navigation.thumb_scroll = self.navigation.thumb_scroll.clamp(0.0, max_scroll);
+            needs_redraw = true;
+            update_wakeup(now + std::time::Duration::from_millis(8));
+        }
 
         if let Some(next) = self.animation.next_frame_time {
             if std::time::Instant::now() >= next {

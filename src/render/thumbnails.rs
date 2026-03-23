@@ -79,6 +79,10 @@ impl Renderer {
                     binding: 2,
                     resource: BindingResource::TextureView(&view),
                 },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&view),
+                },
             ],
         }));
 

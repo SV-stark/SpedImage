@@ -216,7 +216,7 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn render_loading(&self) -> Result<()> {
+    pub fn render_loading(&self, path: Option<&std::path::Path>) -> Result<()> {
         let frame = self
             .surface
             .get_current_texture()
@@ -229,19 +229,62 @@ impl Renderer {
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("Loading Encoder"),
             });
-        {
+
+        // 1. Draw Placeholder if thumbnail exists
+        if let Some(path) = path {
+            if let Some(thumb) = self.thumbnails.iter().find(|t| t.path == path) {
+                // Prepare uniforms for upscaled thumbnail
+                let window_aspect_ratio = if self.config.height > 0 {
+                    self.config.width as f32 / self.config.height as f32
+                } else {
+                    1.0
+                };
+
+                let uniforms = Uniforms {
+                    rotation: 0.0,
+                    aspect_ratio: thumb.width as f32 / thumb.height as f32,
+                    window_aspect_ratio,
+                    crop_x: 0.0, crop_y: 0.0, crop_w: 1.0, crop_h: 1.0,
+                    brightness: 0.8, // Dim it slightly
+                    contrast: 1.0,
+                    saturation: 0.5, // Desaturate to look like "loading"
+                    hdr_toning: 0.0,
+                    transition_factor: 1.0,
+                    pos_offset: [0.0, 0.0],
+                    pos_scale: [1.0, 1.0],
+                };
+
+                self.queue.write_buffer(&thumb.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+
+                let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("Placeholder Pass"),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(wgpu::Color::BLACK),
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+                render_pass.set_pipeline(&self.pipeline);
+                render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                render_pass.set_bind_group(0, thumb.bind_group.as_ref(), &[]);
+                render_pass.draw(0..6, 0..1);
+            }
+        } else {
+            // Just clear to dark gray
             let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("Loading Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            a: 1.0,
-                        }),
+                        load: LoadOp::Clear(wgpu::Color { r: 0.05, g: 0.05, b: 0.05, a: 1.0 }),
                         store: StoreOp::Store,
                     },
                 })],
@@ -250,6 +293,54 @@ impl Renderer {
                 occlusion_query_set: None,
             });
         }
+
+        // 2. Draw egui spinner
+        let raw_input = self.egui_state.take_egui_input(&self._window);
+        let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
+            egui::Area::new(egui::Id::new("loader"))
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .show(ctx, |ui| {
+                    ui.add(egui::Spinner::new().size(40.0));
+                });
+        });
+
+        self.egui_state.handle_platform_output(&self._window, full_output.platform_output);
+        let tris = self.egui_state.egui_ctx().tessellate(full_output.shapes, full_output.pixels_per_point);
+        
+        for (id, image_delta) in full_output.textures_delta.set {
+            self.egui_renderer.update_texture(&self.device, &self.queue, id, &image_delta);
+        }
+
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.config.width, self.config.height],
+            pixels_per_point: self.scale_factor as f32,
+        };
+
+        self.egui_renderer.update_buffers(&self.device, &self.queue, &mut encoder, &tris, &screen_descriptor);
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("egui Loader Pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            self.egui_renderer.render(&mut render_pass.forget_lifetime(), &tris, &screen_descriptor);
+        }
+
+        for id in full_output.textures_delta.free {
+            self.egui_renderer.free_texture(&id);
+        }
+
         self.queue.submit([encoder.finish()]);
         frame.present();
         Ok(())
@@ -312,6 +403,10 @@ impl Renderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
                         resource: wgpu::BindingResource::TextureView(&view),
                     },
                 ],

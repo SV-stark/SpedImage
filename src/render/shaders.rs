@@ -16,7 +16,7 @@ struct Uniforms {
     contrast: f32,
     saturation: f32,
     hdr_toning: f32,
-    _padding: f32,
+    transition_factor: f32,
     pos_offset: vec2<f32>,
     pos_scale: vec2<f32>,
 };
@@ -24,6 +24,7 @@ struct Uniforms {
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var s: sampler;
 @group(0) @binding(2) var t: texture_2d<f32>;
+@group(0) @binding(3) var t_prev: texture_2d<f32>;
 
 @vertex
 fn vertex_main(
@@ -71,7 +72,10 @@ fn vertex_main(
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var color = textureSample(t, s, in.tex_coords);
+    let color_new = textureSample(t, s, in.tex_coords);
+    let color_old = textureSample(t_prev, s, in.tex_coords);
+    
+    var color = mix(color_old, color_new, uniforms.transition_factor);
     
     // 1. Adjust Brightness & Contrast
     color = vec4<f32>((color.rgb - 0.5) * uniforms.contrast + 0.5 + (uniforms.brightness - 1.0), color.a);

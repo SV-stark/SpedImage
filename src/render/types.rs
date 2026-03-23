@@ -23,7 +23,7 @@ pub struct Uniforms {
     pub contrast: f32,
     pub saturation: f32,
     pub hdr_toning: f32,
-    pub _padding: f32,
+    pub transition_factor: f32, // 0.0 (old) -> 1.0 (new)
     pub pos_offset: [f32; 2],
     pub pos_scale: [f32; 2],
 }
@@ -42,7 +42,7 @@ impl Uniforms {
             contrast: 1.0,
             saturation: 1.0,
             hdr_toning: 0.0,
-            _padding: 0.0,
+            transition_factor: 1.0,
             pos_offset: [0.0, 0.0],
             pos_scale: [1.0, 1.0],
         }

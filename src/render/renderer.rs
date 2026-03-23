@@ -20,8 +20,10 @@ pub struct Renderer {
     pub(crate) sampler: Sampler,
     pub(crate) sampler_nearest: Sampler,
     pub(crate) image_texture: Option<Texture>,
+    pub(crate) image_texture_prev: Option<Texture>,
     pub(crate) image_bind_group: Option<Arc<BindGroup>>,
     pub(crate) image_bind_group_nearest: Option<Arc<BindGroup>>,
+    pub(crate) image_bind_group_prev: Option<Arc<BindGroup>>,
     pub gif_textures: Vec<(Texture, Arc<BindGroup>)>,
     pub(crate) config: SurfaceConfiguration,
     pub(crate) image_size: Option<(u32, u32)>,
@@ -111,8 +113,10 @@ impl Renderer {
             sampler,
             sampler_nearest,
             image_texture: None,
+            image_texture_prev: None,
             image_bind_group: None,
             image_bind_group_nearest: None,
+            image_bind_group_prev: None,
             gif_textures: Vec::new(),
             config,
             image_size: None,
@@ -193,6 +197,16 @@ impl Renderer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -339,36 +353,81 @@ impl Renderer {
         let width = image_data.width;
         let height = image_data.height;
 
-        let needs_new_texture =
-            self.image_size != Some((width, height)) || self.image_texture.is_none();
-
-        if needs_new_texture {
-            if let Some(old_tex) = self.image_texture.take() {
-                old_tex.destroy();
+        // Move current to prev for transition
+        if let Some(current_tex) = self.image_texture.take() {
+            if let Some(old_prev) = self.image_texture_prev.replace(current_tex) {
+                old_prev.destroy();
             }
-            self.image_bind_group = None;
-            self.image_bind_group_nearest = None;
+        }
+        self.image_bind_group_prev = self.image_bind_group.take();
 
-            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("Image Texture"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Image Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        
+        let view_prev = self.image_texture_prev.as_ref().map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
+        
+        // If no prev view, create a tiny black texture so the shader doesn't crash
+        let black_tex = if view_prev.is_none() {
+             let t = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Black Texture"),
+                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
+            Some(t)
+        } else {
+            None
+        };
+        
+        let black_view = black_tex.as_ref().map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
+        let actual_view_prev = view_prev.as_ref().or(black_view.as_ref()).unwrap();
 
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let bind_group_layout = self.pipeline.get_bind_group_layout(0);
+        let bind_group_layout = self.pipeline.get_bind_group_layout(0);
 
-            let bind_group = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Image Bind Group"),
+        let bind_group = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Image Bind Group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(
+                        self.uniform_buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(actual_view_prev),
+                },
+            ],
+        }));
+
+        let bind_group_nearest =
+            Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Image Bind Group (Nearest)"),
                 layout: &bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -379,42 +438,23 @@ impl Renderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        resource: wgpu::BindingResource::Sampler(&self.sampler_nearest),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::TextureView(&view),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(actual_view_prev),
+                    },
                 ],
             }));
 
-            let bind_group_nearest =
-                Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Image Bind Group (Nearest)"),
-                    layout: &bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.uniform_buffer.as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&self.sampler_nearest),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::TextureView(&view),
-                        },
-                    ],
-                }));
-
-            self.image_texture = Some(texture);
-            self.image_bind_group = Some(bind_group);
-            self.image_bind_group_nearest = Some(bind_group_nearest);
-            self.image_size = Some((width, height));
-        }
+        self.image_texture = Some(texture);
+        self.image_bind_group = Some(bind_group);
+        self.image_bind_group_nearest = Some(bind_group_nearest);
+        self.image_size = Some((width, height));
 
         if let Some(texture) = &self.image_texture {
             self.queue.write_texture(
@@ -444,6 +484,7 @@ impl Renderer {
     pub(crate) fn encode_image(
         &self,
         adjustments: &ImageAdjustments,
+        transition_factor: f32,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -468,7 +509,7 @@ impl Renderer {
             contrast: adjustments.contrast,
             saturation: adjustments.saturation,
             hdr_toning: if adjustments.hdr_toning { 1.0 } else { 0.0 },
-            _padding: 0.0,
+            transition_factor,
             pos_offset: [0.0, 0.0],
             pos_scale: [1.0, 1.0],
         };

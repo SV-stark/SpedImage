@@ -19,12 +19,16 @@ pub struct NavigationState {
     pub(crate) prefetch_cache: Arc<Cache<PathBuf, Arc<Vec<ImageData>>>>,
     pub(crate) load_generation: Arc<AtomicU64>,
     pub(crate) thumb_scroll: f32,
+    pub(crate) thumb_velocity: f32,
+    pub(crate) thumb_target_scroll: f32,
 }
 
 pub struct AnimationState {
     pub(crate) frame_idx: usize,
     pub(crate) frame_delays: Vec<u32>,
     pub(crate) next_frame_time: Option<std::time::Instant>,
+    pub(crate) transition_start: Option<std::time::Instant>,
+    pub(crate) transition_factor: f32,
 }
 
 pub struct SlideshowState {
@@ -75,11 +79,15 @@ impl SpedImageApp {
                 prefetch_cache: Arc::new(Cache::new(100)),
                 load_generation: Arc::new(AtomicU64::new(0)),
                 thumb_scroll: 0.0,
+                thumb_velocity: 0.0,
+                thumb_target_scroll: 0.0,
             },
             animation: AnimationState {
                 frame_idx: 0,
                 frame_delays: Vec::new(),
                 next_frame_time: None,
+                transition_start: None,
+                transition_factor: 1.0,
             },
             slideshow: SlideshowState {
                 active: false,
