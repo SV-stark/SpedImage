@@ -107,13 +107,7 @@ impl ImageData {
         let mut r_hist = [0u32; 256];
         let mut g_hist = [0u32; 256];
         let mut b_hist = [0u32; 256];
-
-        for chunk in self.rgba_data.chunks_exact(4) {
-            r_hist[chunk[0] as usize] += 1;
-            g_hist[chunk[1] as usize] += 1;
-            b_hist[chunk[2] as usize] += 1;
-        }
-
+        compute_rgb_histogram(&self.rgba_data, &mut r_hist, &mut g_hist, &mut b_hist);
         self.histogram = Some((r_hist, g_hist, b_hist));
     }
 

@@ -276,6 +276,14 @@ impl ImageLoader {
 
         // A GIF frame might not cover the full canvas, so we need a canvas to compose them.
         let mut canvas = vec![0u8; (w * h * 4) as usize];
+        // Create resizer once outside the frame loop
+        let is_downsampled = dst_w != w || dst_h != h;
+        let mut resizer = if is_downsampled {
+            use fast_image_resize as fr;
+            Some(fr::Resizer::new())
+        } else {
+            None
+        };
 
         while let Ok(Some(frame)) = decoder.read_next_frame() {
             let delay_ms = frame.delay as u32 * 10;
@@ -299,16 +307,15 @@ impl ImageLoader {
             if is_downsampled {
                 use fast_image_resize as fr;
 
-                let src_image =
-                    fr::images::Image::from_vec_u8(w, h, canvas.clone(), fr::PixelType::U8x4)
-                        .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
+                let src_image = fr::images::ImageRef::new(w, h, &canvas, fr::PixelType::U8x4)
+                    .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
 
                 let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
-                let mut resizer = fr::Resizer::new();
 
-                resizer
-                    .resize(&src_image, &mut dst_image, None)
-                    .map_err(|e| eyre!("Resize failed: {e:?}"))?;
+                if let Some(ref mut r) = resizer {
+                    r.resize(&src_image, &mut dst_image, None)
+                        .map_err(|e| eyre!("Resize failed: {e:?}"))?;
+                }
 
                 final_rgba = dst_image.into_vec();
             }

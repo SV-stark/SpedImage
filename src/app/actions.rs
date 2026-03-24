@@ -130,14 +130,16 @@ impl SpedImageApp {
                                     let path = img.path.clone();
                                     let rgba = img.rgba_data.clone();
                                     self.thread_pool.spawn(move || {
+                                        // Reuse ImageData::compute_histogram logic via a closure
                                         let mut r_hist = [0u32; 256];
                                         let mut g_hist = [0u32; 256];
                                         let mut b_hist = [0u32; 256];
-                                        for chunk in rgba.chunks_exact(4) {
-                                            r_hist[chunk[0] as usize] += 1;
-                                            g_hist[chunk[1] as usize] += 1;
-                                            b_hist[chunk[2] as usize] += 1;
-                                        }
+                                        crate::image::compute_rgb_histogram(
+                                            &rgba,
+                                            &mut r_hist,
+                                            &mut g_hist,
+                                            &mut b_hist,
+                                        );
                                         if let Some(ref p) = proxy {
                                             send_event(
                                                 &tx,

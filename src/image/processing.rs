@@ -29,10 +29,10 @@ impl ImageProcessor {
                 // Use fast_image_resize for high-performance SIMD resizing
                 use fast_image_resize as fr;
 
-                let src_image = fr::images::Image::from_vec_u8(
+                let src_image = fr::images::ImageRef::new(
                     img.width,
                     img.height,
-                    img.rgba_data.clone(),
+                    &img.rgba_data,
                     fr::PixelType::U8x4,
                 )
                 .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;

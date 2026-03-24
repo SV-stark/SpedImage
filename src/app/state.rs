@@ -106,9 +106,13 @@ impl SpedImageApp {
             event_proxy: Some(proxy),
             thread_pool: Arc::new(
                 rayon::ThreadPoolBuilder::new()
-                    .num_threads(4)
+                    .num_threads(
+                        std::thread::available_parallelism()
+                            .map(|n| n.get().min(8))
+                            .unwrap_or(4),
+                    )
                     .build()
-                    .unwrap(),
+                    .expect("failed to build rayon thread pool"),
             ),
             file_watcher: None,
         }
