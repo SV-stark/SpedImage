@@ -33,7 +33,7 @@ thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rayon = "1.10"
-lru = "0.12"
+lru = "0.16"
 notify-debouncer-full = "0.3"
 rfd = "0.15"
 arboard = "3.4"
