@@ -303,8 +303,7 @@ impl ImageLoader {
             }
 
             let is_downsampled = dst_w != w || dst_h != h;
-            let mut final_rgba = canvas.clone();
-            if is_downsampled {
+            let final_rgba = if is_downsampled {
                 use fast_image_resize as fr;
 
                 let src_image = fr::images::ImageRef::new(w, h, &canvas, fr::PixelType::U8x4)
@@ -317,8 +316,10 @@ impl ImageLoader {
                         .map_err(|e| eyre!("Resize failed: {e:?}"))?;
                 }
 
-                final_rgba = dst_image.into_vec();
-            }
+                dst_image.into_vec()
+            } else {
+                canvas.clone()
+            };
 
             image_frames.push(ImageData {
                 path: path.to_path_buf(),

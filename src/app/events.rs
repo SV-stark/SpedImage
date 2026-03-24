@@ -1,3 +1,4 @@
+use crate::app::constants;
 use crate::app::state::SpedImageApp;
 use crate::app::types::{AppEvent, WakeUp, APP_ICON};
 use crate::render::{RenderParams, Renderer, STRIP_HEIGHT_PX};
@@ -96,7 +97,7 @@ impl SpedImageApp {
                     self.dirty = true;
                 }
                 AppEvent::OpenPath(path) => {
-                    self.load_image(path);
+                    self.load_image(&path);
                 }
                 AppEvent::Prefetched(path, frames) => {
                     self.navigation
@@ -137,8 +138,8 @@ impl SpedImageApp {
                             }
                         }
                     }
-                    let dir = new.parent().unwrap_or(&new).to_path_buf();
-                    self.load_directory_async(dir);
+                    let dir = new.parent().unwrap_or(&new);
+                    self.load_directory_async(dir.to_path_buf());
                     self.ui_state.set_status("File renamed");
                     self.dirty = true;
                 }
@@ -182,7 +183,7 @@ impl SpedImageApp {
                 }
             }
             count += 1;
-            if count >= 100 {
+            if count >= constants::MAX_EVENTS_PER_FRAME {
                 break;
             }
         }
@@ -197,16 +198,14 @@ impl SpedImageApp {
     }
 
     pub(crate) fn recompute_sidebar_text(&mut self) {
-        let mut text = String::new();
-        for (i, f) in self.ui_state.files.iter().enumerate() {
-            let prefix = if Some(i) == self.ui_state.current_file_index {
-                "> "
-            } else {
-                "  "
-            };
-            text.push_str(&format!("{}{}\n", prefix, f.name));
-        }
-        self.ui_state.sidebar_text = Some(text);
+        self.ui_state.sidebar_text = Some(
+            self.ui_state.files.iter().enumerate()
+                .map(|(i, f)| {
+                    let prefix = if Some(i) == self.ui_state.current_file_index { "> " } else { "  " };
+                    format!("{}{}\n", prefix, f.name)
+                })
+                .collect()
+        );
     }
 
     pub(crate) fn handle_left_click(&mut self, pos: winit::dpi::PhysicalPosition<f64>) {
@@ -228,9 +227,8 @@ impl SpedImageApp {
 
     pub(crate) fn handle_thumbnail_click(&mut self, idx: usize) {
         if let Some(file) = self.ui_state.files.get(idx) {
-            let path = file.path.clone();
             self.ui_state.current_file_index = Some(idx);
-            self.load_image(path);
+            self.load_image(&file.path);
         }
     }
 }
@@ -265,7 +263,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         self.renderer = Some(renderer);
 
         if let Some(path) = self.initial_path.take() {
-            self.load_image(path);
+            self.load_image(&path);
         }
     }
 
@@ -295,7 +293,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 }
             }
             WindowEvent::DroppedFile(path) => {
-                self.load_image(path);
+                self.load_image(&path);
             }
             WindowEvent::RedrawRequested => {
                 self.process_events();
@@ -441,7 +439,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         // Handle Image Transition
         if let Some(start) = self.animation.transition_start {
             let elapsed = now.duration_since(start).as_millis() as f32;
-            let duration = 150.0; // 150ms transition
+            let duration = constants::TRANSITION_DURATION_MS;
             if elapsed < duration {
                 self.animation.transition_factor = elapsed / duration;
                 needs_redraw = true;
@@ -455,7 +453,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         // Handle Momentum Scrolling
         if self.navigation.thumb_velocity.abs() > 0.1 {
             self.navigation.thumb_scroll += self.navigation.thumb_velocity;
-            self.navigation.thumb_velocity *= 0.92; // Friction
+            self.navigation.thumb_velocity *= constants::SCROLL_FRICTION;
 
             let max_scroll = if let Some(ref r) = self.renderer {
                 (self.thumbnails.paths.len() as f32 * crate::render::THUMB_SLOT_W as f32
@@ -504,7 +502,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
 
         if let Some(c) = self.navigation.held_key {
             if let Some(last) = self.navigation.last_advance_time {
-                let next = last + std::time::Duration::from_millis(200);
+                let next = last + constants::KEY_REPEAT_DELAY;
                 if std::time::Instant::now() >= next {
                     match c {
                         'd' | 's' => self.next_image(),
@@ -514,7 +512,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     self.navigation.last_advance_time = Some(std::time::Instant::now());
                     needs_redraw = true;
                     update_wakeup(
-                        std::time::Instant::now() + std::time::Duration::from_millis(200),
+                        std::time::Instant::now() + constants::KEY_REPEAT_DELAY,
                     );
                 } else {
                     update_wakeup(next);
@@ -527,7 +525,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             let target = self.ui_state.adjustments.crop_rect_target[i];
             let current = &mut self.ui_state.adjustments.crop_rect[i];
             if (*current - target).abs() > 0.001 {
-                *current = *current + (target - *current) * 0.2;
+                *current = *current + (target - *current) * constants::LERP_FACTOR;
                 needs_redraw = true;
                 is_lerping = true;
             } else {

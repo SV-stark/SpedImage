@@ -1,3 +1,4 @@
+use crate::app::constants;
 use crate::app::types::{AppEvent, KeyModifiers, WakeUp};
 use crate::image::ImageData;
 use crate::render::Renderer;
@@ -76,7 +77,7 @@ impl SpedImageApp {
             navigation: NavigationState {
                 held_key: None,
                 last_advance_time: None,
-                prefetch_cache: Arc::new(Cache::new(100)),
+                prefetch_cache: Arc::new(Cache::new(constants::PREFETCH_CACHE_SIZE)),
                 load_generation: Arc::new(AtomicU64::new(0)),
                 thumb_scroll: 0.0,
                 thumb_velocity: 0.0,
@@ -91,7 +92,7 @@ impl SpedImageApp {
             },
             slideshow: SlideshowState {
                 active: false,
-                interval: std::time::Duration::from_secs(3),
+                interval: constants::DEFAULT_SLIDESHOW_INTERVAL,
                 next_time: None,
             },
             thumbnails: ThumbnailState { paths: Vec::new() },
@@ -112,7 +113,7 @@ impl SpedImageApp {
                             .unwrap_or(4),
                     )
                     .build()
-                    .expect("failed to build rayon thread pool"),
+                    .expect("Failed to initialize Rayon thread pool. This is fatal."),
             ),
             file_watcher: None,
         }

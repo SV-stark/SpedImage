@@ -1,3 +1,4 @@
+use crate::app::constants;
 use crate::app::state::SpedImageApp;
 use crate::app::types::{send_event, AppEvent};
 use crate::image::ImageBackend;
@@ -191,7 +192,10 @@ impl SpedImageApp {
 
     pub(crate) fn adjust_slideshow_interval(&mut self, change: i32) {
         let current_secs = self.slideshow.interval.as_secs() as i32;
-        let new_secs = (current_secs + change).clamp(1, 120) as u64;
+        let new_secs = (current_secs + change).clamp(
+            constants::MIN_SLIDESHOW_INTERVAL_SECS as i32,
+            constants::MAX_SLIDESHOW_INTERVAL_SECS as i32,
+        ) as u64;
         self.slideshow.interval = std::time::Duration::from_secs(new_secs);
         if self.slideshow.active {
             self.slideshow.next_time = Some(std::time::Instant::now() + self.slideshow.interval);
@@ -222,7 +226,7 @@ impl SpedImageApp {
         }
     }
 
-    pub(crate) fn load_image(&mut self, path: PathBuf) {
+    pub(crate) fn load_image(&mut self, path: &std::path::Path) {
         let generation = self
             .navigation
             .load_generation
@@ -249,7 +253,7 @@ impl SpedImageApp {
                 let size = w.inner_size();
                 (size.width, size.height)
             }
-            None => (3840, 2160),
+            None => (constants::DEFAULT_MAX_WIDTH, constants::DEFAULT_MAX_HEIGHT),
         };
 
         let pool = self.thread_pool.clone();
@@ -290,18 +294,14 @@ impl SpedImageApp {
         self.dirty = true;
 
         if let Some(ref w) = self.window {
-            let name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("SpedImage");
-            w.set_title(&format!("SpedImage — {name}"));
+            w.set_title(&format!("SpedImage — {}", path.file_name().and_then(|n| n.to_str()).unwrap_or("SpedImage")));
         }
 
-        let path2 = path.clone();
+        let path_owned = path.to_path_buf();
         let pool_inner = pool.clone();
 
         pool.spawn(move || {
-            let result = ImageBackend::load_and_downsample(&path2, max_w, max_h);
+            let result = ImageBackend::load_and_downsample(&path_owned, max_w, max_h);
 
             if current_gen.load(Ordering::Relaxed) == generation {
                 let event = match result {
@@ -546,15 +546,15 @@ impl SpedImageApp {
 
     pub(crate) fn next_image(&mut self) {
         self.ui_state.next_file();
-        if let Some(file) = self.ui_state.current_file() {
-            self.load_image(file.clone().to_path_buf());
+        if let Some(path) = self.ui_state.current_file() {
+            self.load_image(path);
         }
     }
 
     pub(crate) fn prev_image(&mut self) {
         self.ui_state.prev_file();
-        if let Some(file) = self.ui_state.current_file() {
-            self.load_image(file.clone().to_path_buf());
+        if let Some(path) = self.ui_state.current_file() {
+            self.load_image(path);
         }
     }
 
