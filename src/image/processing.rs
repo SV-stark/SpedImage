@@ -34,12 +34,14 @@ impl ImageProcessor {
                     img.height,
                     img.rgba_data.clone(),
                     fr::PixelType::U8x4,
-                ).map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
+                )
+                .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
 
                 let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
                 let mut resizer = fr::Resizer::new();
 
-                resizer.resize(&src_image, &mut dst_image, None)
+                resizer
+                    .resize(&src_image, &mut dst_image, None)
                     .map_err(|e| eyre!("Resize failed: {e:?}"))?;
 
                 img.width = dst_w;
@@ -68,8 +70,8 @@ impl ImageProcessor {
     /// Get list of supported file extensions
     pub fn supported_extensions() -> Vec<&'static str> {
         vec![
-            "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico", "avif", "jxl", "svg", "arw",
-            "cr2", "nef", "dng", "orf", "raf", "srw",
+            "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico", "avif", "jxl", "svg",
+            "arw", "cr2", "nef", "dng", "orf", "raf", "srw",
         ]
     }
 

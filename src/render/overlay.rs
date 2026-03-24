@@ -107,7 +107,8 @@ impl Renderer {
                 label: Some("Frame Encoder"),
             });
 
-        self.profiler.begin_frame()
+        self.profiler
+            .begin_frame()
             .map_err(|e| eyre!("Failed to begin profiler frame: {e:?}"))?;
 
         // Image pass
@@ -208,7 +209,8 @@ impl Renderer {
         }
 
         self.profiler.resolve_queries(&mut encoder);
-        self.profiler.end_frame()
+        self.profiler
+            .end_frame()
             .map_err(|e| eyre!("Failed to end profiler frame: {e:?}"))?;
 
         self.queue.submit([encoder.finish()]);
@@ -244,7 +246,10 @@ impl Renderer {
                     rotation: 0.0,
                     aspect_ratio: thumb.width as f32 / thumb.height as f32,
                     window_aspect_ratio,
-                    crop_x: 0.0, crop_y: 0.0, crop_w: 1.0, crop_h: 1.0,
+                    crop_x: 0.0,
+                    crop_y: 0.0,
+                    crop_w: 1.0,
+                    crop_h: 1.0,
                     brightness: 0.8, // Dim it slightly
                     contrast: 1.0,
                     saturation: 0.5, // Desaturate to look like "loading"
@@ -254,7 +259,8 @@ impl Renderer {
                     pos_scale: [1.0, 1.0],
                 };
 
-                self.queue.write_buffer(&thumb.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+                self.queue
+                    .write_buffer(&thumb.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
                 let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                     label: Some("Placeholder Pass"),
@@ -284,7 +290,12 @@ impl Renderer {
                     view: &view,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(wgpu::Color { r: 0.05, g: 0.05, b: 0.05, a: 1.0 }),
+                        load: LoadOp::Clear(wgpu::Color {
+                            r: 0.05,
+                            g: 0.05,
+                            b: 0.05,
+                            a: 1.0,
+                        }),
                         store: StoreOp::Store,
                     },
                 })],
@@ -304,11 +315,16 @@ impl Renderer {
                 });
         });
 
-        self.egui_state.handle_platform_output(&self._window, full_output.platform_output);
-        let tris = self.egui_state.egui_ctx().tessellate(full_output.shapes, full_output.pixels_per_point);
-        
+        self.egui_state
+            .handle_platform_output(&self._window, full_output.platform_output);
+        let tris = self
+            .egui_state
+            .egui_ctx()
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
+
         for (id, image_delta) in full_output.textures_delta.set {
-            self.egui_renderer.update_texture(&self.device, &self.queue, id, &image_delta);
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, id, &image_delta);
         }
 
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
@@ -316,7 +332,13 @@ impl Renderer {
             pixels_per_point: self.scale_factor as f32,
         };
 
-        self.egui_renderer.update_buffers(&self.device, &self.queue, &mut encoder, &tris, &screen_descriptor);
+        self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &tris,
+            &screen_descriptor,
+        );
 
         {
             let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -334,7 +356,11 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
-            self.egui_renderer.render(&mut render_pass.forget_lifetime(), &tris, &screen_descriptor);
+            self.egui_renderer.render(
+                &mut render_pass.forget_lifetime(),
+                &tris,
+                &screen_descriptor,
+            );
         }
 
         for id in full_output.textures_delta.free {

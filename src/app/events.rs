@@ -99,7 +99,9 @@ impl SpedImageApp {
                     self.load_image(path);
                 }
                 AppEvent::Prefetched(path, frames) => {
-                    self.navigation.prefetch_cache.insert(path, Arc::new(frames));
+                    self.navigation
+                        .prefetch_cache
+                        .insert(path, Arc::new(frames));
                 }
                 AppEvent::ThumbnailLoaded(path, rgba, w, h) => {
                     if let Some(ref mut renderer) = self.renderer {
@@ -314,25 +316,29 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     };
 
                     let status = self.ui_state.get_status();
-                    r.render_frame(RenderParams {
-                        adjustments: &self.ui_state.adjustments,
-                        is_cropping: self.ui_state.is_cropping,
-                        crop_rect: self.ui_state.adjustments.crop_rect,
-                        status_text: Some(status),
-                        show_help: self.ui_state.show_help,
-                        sidebar_text,
-                        show_thumbnail_strip: self.ui_state.show_thumbnail_strip,
-                        thumb_scroll: self.navigation.thumb_scroll,
-                        active_thumb_idx: active_thumb,
-                        selected_indices: &self.ui_state.selected_indices,
-                        exif_text,
-                        show_histogram: self.ui_state.show_histogram,
-                        histogram_data: img.histogram.as_ref(),
-                    }, self.animation.transition_factor)
+                    r.render_frame(
+                        RenderParams {
+                            adjustments: &self.ui_state.adjustments,
+                            is_cropping: self.ui_state.is_cropping,
+                            crop_rect: self.ui_state.adjustments.crop_rect,
+                            status_text: Some(status),
+                            show_help: self.ui_state.show_help,
+                            sidebar_text,
+                            show_thumbnail_strip: self.ui_state.show_thumbnail_strip,
+                            thumb_scroll: self.navigation.thumb_scroll,
+                            active_thumb_idx: active_thumb,
+                            selected_indices: &self.ui_state.selected_indices,
+                            exif_text,
+                            show_histogram: self.ui_state.show_histogram,
+                            histogram_data: img.histogram.as_ref(),
+                        },
+                        self.animation.transition_factor,
+                    )
                     .ok();
                     self.dirty = false;
                 } else if let Some(ref r) = self.renderer {
-                    r.render_loading(self.ui_state.current_file().as_deref()).ok();
+                    r.render_loading(self.ui_state.current_file().as_deref())
+                        .ok();
                 }
             }
             WindowEvent::ModifiersChanged(m) => {
@@ -450,7 +456,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         if self.navigation.thumb_velocity.abs() > 0.1 {
             self.navigation.thumb_scroll += self.navigation.thumb_velocity;
             self.navigation.thumb_velocity *= 0.92; // Friction
-            
+
             let max_scroll = if let Some(ref r) = self.renderer {
                 (self.thumbnails.paths.len() as f32 * crate::render::THUMB_SLOT_W as f32
                     - r.config.width as f32)

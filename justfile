@@ -1,4 +1,5 @@
 set shell := ["pwsh.exe", "-NoProfile", "-Command"]
+set unstable := true
 
 # Show available commands
 default:
@@ -7,6 +8,7 @@ default:
 # Format code
 fmt:
     cargo fmt --all
+    just --fmt
 
 # Lint code using clippy
 lint:

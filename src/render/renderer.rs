@@ -44,9 +44,10 @@ impl Renderer {
     pub async fn new(window: Arc<Window>) -> Result<Self> {
         let (device, queue, surface, adapter) =
             Self::create_device_and_surface(window.clone()).await?;
-        
-        let profiler = wgpu_profiler::GpuProfiler::new(wgpu_profiler::GpuProfilerSettings::default())
-            .map_err(|e| eyre!("Failed to create GPU profiler: {e:?}"))?;
+
+        let profiler =
+            wgpu_profiler::GpuProfiler::new(wgpu_profiler::GpuProfilerSettings::default())
+                .map_err(|e| eyre!("Failed to create GPU profiler: {e:?}"))?;
 
         let capabilities = surface.get_capabilities(&adapter);
         let format = capabilities
@@ -377,15 +378,24 @@ impl Renderer {
         });
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        let view_prev = self.image_texture_prev.as_ref().map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
-        
+
+        let view_prev = self
+            .image_texture_prev
+            .as_ref()
+            .map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
+
         // If no prev view, create a tiny black texture so the shader doesn't crash
         let black_tex = if view_prev.is_none() {
-             let t = self.device.create_texture(&wgpu::TextureDescriptor {
+            let t = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("Black Texture"),
-                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
-                mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
@@ -394,8 +404,10 @@ impl Renderer {
         } else {
             None
         };
-        
-        let black_view = black_tex.as_ref().map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
+
+        let black_view = black_tex
+            .as_ref()
+            .map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
         let actual_view_prev = view_prev.as_ref().or(black_view.as_ref()).unwrap();
 
         let bind_group_layout = self.pipeline.get_bind_group_layout(0);

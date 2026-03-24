@@ -73,15 +73,16 @@ impl ImageLoader {
     fn apply_color_profile(rgba: &mut [u8], icc_data: &[u8]) -> Result<()> {
         let mut in_profile = qcms::Profile::from_slice(icc_data)
             .map_err(|_| eyre!("Failed to parse ICC profile"))?;
-        
+
         let mut out_profile = qcms::Profile::new_sRGB();
-        
+
         let transform = qcms::Transform::new(
             &mut in_profile,
             &mut out_profile,
             qcms::DataType::RGBA8,
             qcms::Intent::Perceptual,
-        ).map_err(|_| eyre!("Failed to create color transform"))?;
+        )
+        .map_err(|_| eyre!("Failed to create color transform"))?;
 
         transform.apply_inplace(rgba);
         Ok(())
@@ -93,14 +94,15 @@ impl ImageLoader {
         let image = JxlImage::builder()
             .open(path)
             .map_err(|e| eyre!("Failed to open JXL: {e:?}"))?;
-        
+
         let (width, height) = (image.width(), image.height());
-        let render = image.render_frame(0)
+        let render = image
+            .render_frame(0)
             .map_err(|e| eyre!("Failed to render JXL frame: {e:?}"))?;
-        
+
         let fb = render.image();
         let mut rgba = vec![0u8; width as usize * height as usize * 4];
-        
+
         // Convert to RGBA8
         for (i, pixel) in fb.buf().chunks_exact(fb.channels()).enumerate() {
             let r = (pixel[0].clamp(0.0, 1.0) * 255.0) as u8;
@@ -111,7 +113,7 @@ impl ImageLoader {
             } else {
                 255
             };
-            
+
             rgba[i * 4] = r;
             rgba[i * 4 + 1] = g;
             rgba[i * 4 + 2] = b;
@@ -296,20 +298,18 @@ impl ImageLoader {
             let mut final_rgba = canvas.clone();
             if is_downsampled {
                 use fast_image_resize as fr;
-                
-                let src_image = fr::images::Image::from_vec_u8(
-                    w, 
-                    h, 
-                    canvas.clone(), 
-                    fr::PixelType::U8x4
-                ).map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
-                
+
+                let src_image =
+                    fr::images::Image::from_vec_u8(w, h, canvas.clone(), fr::PixelType::U8x4)
+                        .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
+
                 let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
                 let mut resizer = fr::Resizer::new();
-                
-                resizer.resize(&src_image, &mut dst_image, None)
+
+                resizer
+                    .resize(&src_image, &mut dst_image, None)
                     .map_err(|e| eyre!("Resize failed: {e:?}"))?;
-                
+
                 final_rgba = dst_image.into_vec();
             }
 

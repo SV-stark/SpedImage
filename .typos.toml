@@ -7,4 +7,11 @@ extend-ignore-re = [
 extend-exclude = [
     "*.log",
     "tests/data",
+    "project_context.md",
 ]
+
+[default.extend-words]
+PN = "PN"
+numer = "numer"
+flate = "flate"
+ded = "ded"
