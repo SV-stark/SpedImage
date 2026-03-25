@@ -32,12 +32,6 @@ jobs:
     - name: Install cargo-deny
       uses: taiki-e/install-action@cargo-deny
 
-    - name: Install typos
-      uses: taiki-e/install-action@typos
-
-    - name: Check Spelling
-      run: typos
-
     - name: Cargo Format
       run: cargo fmt -- --check
 

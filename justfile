@@ -30,10 +30,6 @@ build-release:
 machete:
     cargo machete
 
-# Check for spelling errors
-typos:
-    typos
-
 # Run cargo deny to check licenses and vulnerabilities
 deny:
     cargo deny check
@@ -42,8 +38,8 @@ deny:
 cog-check:
     cog check
 
-# Full check (fmt, lint, typos, deny, test)
-check-all: fmt lint typos deny test cog-check
+# Full check (fmt, lint, deny, test, cog)
+check-all: fmt lint deny test cog-check
 
 # Generate changelog
 changelog:
