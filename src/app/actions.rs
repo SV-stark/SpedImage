@@ -294,7 +294,12 @@ impl SpedImageApp {
         self.dirty = true;
 
         if let Some(ref w) = self.window {
-            w.set_title(&format!("SpedImage — {}", path.file_name().and_then(|n| n.to_str()).unwrap_or("SpedImage")));
+            w.set_title(&format!(
+                "SpedImage — {}",
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("SpedImage")
+            ));
         }
 
         let path_owned = path.to_path_buf();

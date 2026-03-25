@@ -199,12 +199,19 @@ impl SpedImageApp {
 
     pub(crate) fn recompute_sidebar_text(&mut self) {
         self.ui_state.sidebar_text = Some(
-            self.ui_state.files.iter().enumerate()
+            self.ui_state
+                .files
+                .iter()
+                .enumerate()
                 .map(|(i, f)| {
-                    let prefix = if Some(i) == self.ui_state.current_file_index { "> " } else { "  " };
+                    let prefix = if Some(i) == self.ui_state.current_file_index {
+                        "> "
+                    } else {
+                        "  "
+                    };
                     format!("{}{}\n", prefix, f.name)
                 })
-                .collect()
+                .collect(),
         );
     }
 
@@ -511,9 +518,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     }
                     self.navigation.last_advance_time = Some(std::time::Instant::now());
                     needs_redraw = true;
-                    update_wakeup(
-                        std::time::Instant::now() + constants::KEY_REPEAT_DELAY,
-                    );
+                    update_wakeup(std::time::Instant::now() + constants::KEY_REPEAT_DELAY);
                 } else {
                     update_wakeup(next);
                 }
