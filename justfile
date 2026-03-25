@@ -11,6 +11,7 @@ fmt:
     just --fmt
 
 # Lint code using clippy
+alias clippy := lint
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
