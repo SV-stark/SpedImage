@@ -1,6 +1,6 @@
 use crate::app::constants;
 use crate::app::state::SpedImageApp;
-use crate::app::types::{send_event, AppEvent};
+use crate::app::types::{AppEvent, send_event};
 use crate::image::ImageBackend;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -639,8 +639,8 @@ impl SpedImageApp {
             if let Some(img) = &self.current_image {
                 use std::os::windows::ffi::OsStrExt;
                 use windows::Win32::UI::WindowsAndMessaging::{
-                    SystemParametersInfoW, SPIF_SENDWININICHANGE, SPIF_UPDATEINIFILE,
-                    SPI_SETDESKWALLPAPER,
+                    SPI_SETDESKWALLPAPER, SPIF_SENDWININICHANGE, SPIF_UPDATEINIFILE,
+                    SystemParametersInfoW,
                 };
 
                 let path = &img.path;
@@ -676,12 +676,12 @@ impl SpedImageApp {
     fn show_context_menu_windows(&mut self) {
         if let Some(ref w) = self.window {
             use std::os::windows::ffi::OsStrExt;
-            use windows::core::PCWSTR;
             use windows::Win32::Foundation::HWND;
             use windows::Win32::UI::WindowsAndMessaging::{
-                AppendMenuW, CreatePopupMenu, GetCursorPos, TrackPopupMenu, MF_STRING,
-                TPM_NONOTIFY, TPM_RETURNCMD,
+                AppendMenuW, CreatePopupMenu, GetCursorPos, MF_STRING, TPM_NONOTIFY, TPM_RETURNCMD,
+                TrackPopupMenu,
             };
+            use windows::core::PCWSTR;
             use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
             unsafe {
@@ -742,8 +742,8 @@ impl SpedImageApp {
     pub(crate) fn open_in_explorer(&self) {
         if let Some(img) = &self.current_image {
             use std::os::windows::ffi::OsStrExt;
-            use windows::core::PCWSTR;
             use windows::Win32::UI::Shell::ShellExecuteW;
+            use windows::core::PCWSTR;
             let arg = format!("/select,\"{}\"", img.path.display());
             let verb: Vec<u16> = std::ffi::OsStr::new("open")
                 .encode_wide()
@@ -774,8 +774,8 @@ impl SpedImageApp {
         #[cfg(windows)]
         if let Some(img) = &self.current_image {
             use std::os::windows::ffi::OsStrExt;
-            use windows::core::PCWSTR;
             use windows::Win32::UI::Shell::ShellExecuteW;
+            use windows::core::PCWSTR;
             let verb: Vec<u16> = std::ffi::OsStr::new("print")
                 .encode_wide()
                 .chain(std::iter::once(0))

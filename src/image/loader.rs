@@ -1,4 +1,4 @@
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{Result, eyre};
 use std::path::Path;
 use zune_image::image::Image;
 

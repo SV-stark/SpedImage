@@ -5,7 +5,7 @@
 use color_eyre::eyre::Result;
 use spedimage_lib::SpedImageApp;
 use std::path::PathBuf;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -27,11 +27,7 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let initial_path = if args.len() > 1 {
         let p = PathBuf::from(&args[1]);
-        if p.exists() {
-            Some(p)
-        } else {
-            None
-        }
+        if p.exists() { Some(p) } else { None }
     } else {
         None
     };

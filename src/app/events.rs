@@ -1,6 +1,6 @@
 use crate::app::constants;
 use crate::app::state::SpedImageApp;
-use crate::app::types::{AppEvent, WakeUp, APP_ICON};
+use crate::app::types::{APP_ICON, AppEvent, WakeUp};
 use crate::render::{RenderParams, Renderer, STRIP_HEIGHT_PX};
 use color_eyre::eyre::Result;
 use std::path::PathBuf;

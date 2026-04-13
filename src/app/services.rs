@@ -1,5 +1,5 @@
 use crate::app::state::SpedImageApp;
-use crate::app::types::{send_event, AppEvent, MAX_THUMBNAILS, THUMB_LOAD_SIZE};
+use crate::app::types::{AppEvent, MAX_THUMBNAILS, THUMB_LOAD_SIZE, send_event};
 use crate::image::ImageBackend;
 use std::path::{Path, PathBuf};
 

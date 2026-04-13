@@ -7,7 +7,7 @@ use wgpu::{
 };
 
 use super::renderer::Renderer;
-use super::types::{ThumbnailEntry, Uniforms, STRIP_HEIGHT_PX, THUMB_SLOT_W};
+use super::types::{STRIP_HEIGHT_PX, THUMB_SLOT_W, ThumbnailEntry, Uniforms};
 
 impl Renderer {
     pub fn upload_thumbnail(
@@ -211,10 +211,6 @@ impl Renderer {
         }
 
         let slot = ((x - start_x) / THUMB_SLOT_W as f64) as usize;
-        if slot < n {
-            Some(slot)
-        } else {
-            None
-        }
+        if slot < n { Some(slot) } else { None }
     }
 }
