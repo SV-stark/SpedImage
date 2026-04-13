@@ -51,17 +51,15 @@ cargo run --release -- <image_path>
 ### Key Dependencies (Cargo.toml)
 - **WGPU** - GPU rendering (Vulkan/Metal/DX12/OpenGL)
 - **winit** - Windowing system
-- **image crate** - Pure Rust image decoding
-- **wgpu_glyph** - Text rendering
+- **egui** - UI framework
+- **zune-image** - Image decoding and processing
 - **tracing** - Structured logging with environment filter
+- **quick_cache** - Lightweight prefetch caching
 
 ### Features Flags
 ```toml
-# src/Cargo.toml
-raw = ["rawler"]        # RAW camera format (e.g., DSLR sensors)
-svg = ["resvg"]        # SVG thumbnail rendering
-default = ["raw", "svg"]
-heif = []              # HEIF encoding/decoding
+# Cargo.toml
+# Note: The project currently manages features directly via dependencies.
 ```
 
 ## Technical Details
@@ -80,8 +78,8 @@ The application uses structured logging via the `tracing` crate:
 
 ### Memory Management
 - Zero-copy texture loading into WGPU
-- Images are decoded in-memory using the `image` crate, then transferred to GPU textures
-- Background threads preload thumbnails from neighboring images in a directory
+- Images are decoded in-memory using `zune-image`, then transferred to GPU textures
+- Background threads preload thumbnails from neighboring images in a directory using `quick_cache`
 
 ## Keyboard Shortcuts (User-facing)
 - `A/W` - Previous image
@@ -101,12 +99,12 @@ spedimage/
 ├── src/
 │   ├── main.rs          # CLI entry point, logging setup
 │   ├── lib.rs           # Module declarations for library crate
-│   ├── app.rs           # Application event loop & state coordination (SpedImageApp)
-│   ├── gpu_renderer.rs  # WGPU rendering pipeline with WGSL shaders
-│   ├── image_backend.rs # Pure Rust image decoding backend
-│   └── ui.rs            # UI state (sidebar, crop overlay, thumbnails)
-├── assets/               # Icon PNGs and shader files
-└── Cargo.toml           # Rust manifest with dependencies and features
+│   ├── app/             # Application logic and state management
+│   ├── image/           # Image loading and processing
+│   ├── render/          # WGPU rendering and shaders
+│   └── ui.rs            # UI layout and state
+├── assets/               # Assets, fonts, and icons
+└── Cargo.toml           # Rust manifest with dependencies
 ```
 
 ## Image Formats Supported

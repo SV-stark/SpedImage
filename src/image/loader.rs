@@ -45,11 +45,13 @@ impl ImageLoader {
             let mut rgba = img.flatten_to_u8()[0].clone();
 
             // Apply color management if ICC profile exists
+            /*
             if let Some(icc) = icc_profile {
                 if let Err(e) = Self::apply_color_profile(&mut rgba, &icc) {
                     tracing::warn!("Failed to apply color profile: {:?}", e);
                 }
             }
+            */
 
             Ok((
                 vec![ImageData {
@@ -70,6 +72,7 @@ impl ImageLoader {
         }
     }
 
+    /*
     fn apply_color_profile(rgba: &mut [u8], icc_data: &[u8]) -> Result<()> {
         let mut in_profile = qcms::Profile::from_slice(icc_data)
             .map_err(|_| eyre!("Failed to parse ICC profile"))?;
@@ -87,6 +90,7 @@ impl ImageLoader {
         transform.apply_inplace(rgba);
         Ok(())
     }
+    */
 
     fn load_jxl(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use jxl_oxide::{JxlImage, Render};

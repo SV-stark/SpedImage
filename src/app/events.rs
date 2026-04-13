@@ -234,8 +234,9 @@ impl SpedImageApp {
 
     pub(crate) fn handle_thumbnail_click(&mut self, idx: usize) {
         if let Some(file) = self.ui_state.files.get(idx) {
+            let path = file.path.clone();
             self.ui_state.current_file_index = Some(idx);
-            self.load_image(&file.path);
+            self.load_image(&path);
         }
     }
 }

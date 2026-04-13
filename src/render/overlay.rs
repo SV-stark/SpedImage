@@ -113,7 +113,7 @@ impl Renderer {
 
         // Image pass
         {
-            let _scope = wgpu_profiler::scope::Scope::start(
+            let _scope = wgpu_profiler::Scope::start(
                 "Image Render",
                 &mut self.profiler,
                 &mut encoder,
@@ -123,7 +123,7 @@ impl Renderer {
         }
 
         if params.show_thumbnail_strip && !self.thumbnails.is_empty() {
-            let _scope = wgpu_profiler::scope::Scope::start(
+            let _scope = wgpu_profiler::Scope::start(
                 "Thumbnails Render",
                 &mut self.profiler,
                 &mut encoder,
@@ -176,7 +176,7 @@ impl Renderer {
         );
 
         {
-            let _scope = wgpu_profiler::scope::Scope::start(
+            let _scope = wgpu_profiler::Scope::start(
                 "egui Render",
                 &mut self.profiler,
                 &mut encoder,
