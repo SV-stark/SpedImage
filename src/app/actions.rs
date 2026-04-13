@@ -135,7 +135,7 @@ impl SpedImageApp {
                                         let mut r_hist = [0u32; 256];
                                         let mut g_hist = [0u32; 256];
                                         let mut b_hist = [0u32; 256];
-                                        crate::image::compute_rgb_histogram(
+                                        crate::image::ImageData::compute_rgb_histogram(
                                             &rgba,
                                             &mut r_hist,
                                             &mut g_hist,
@@ -260,8 +260,9 @@ impl SpedImageApp {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         let current_gen = self.navigation.load_generation.clone();
+        let path_buf = path.to_path_buf();
 
-        if let Some(cached_frames) = self.navigation.prefetch_cache.get(&path) {
+        if let Some(cached_frames) = self.navigation.prefetch_cache.get(&path_buf) {
             if let Some(ref proxy) = self.event_proxy {
                 send_event(
                     &self.event_tx,
@@ -551,15 +552,17 @@ impl SpedImageApp {
 
     pub(crate) fn next_image(&mut self) {
         self.ui_state.next_file();
-        if let Some(path) = self.ui_state.current_file() {
-            self.load_image(path);
+        let path = self.ui_state.current_file().cloned();
+        if let Some(p) = path {
+            self.load_image(&p);
         }
     }
 
     pub(crate) fn prev_image(&mut self) {
         self.ui_state.prev_file();
-        if let Some(path) = self.ui_state.current_file() {
-            self.load_image(path);
+        let path = self.ui_state.current_file().cloned();
+        if let Some(p) = path {
+            self.load_image(&p);
         }
     }
 
@@ -853,7 +856,7 @@ impl SpedImageApp {
         let new_w = (old_w * factor).clamp(0.01, 1.0);
         let new_h = (old_h * factor).clamp(0.01, 1.0);
 
-        if let (Some(pos), Some(ref w)) = (cursor, &self.window) {
+        if let (Some(pos), Some(w)) = (cursor, &self.window) {
             let win_size = w.inner_size();
             if win_size.width > 0 && win_size.height > 0 {
                 let cx = (pos.x as f32 / win_size.width as f32)

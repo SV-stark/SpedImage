@@ -35,14 +35,11 @@ impl ImageLoader {
             let mut img =
                 Image::open(path).map_err(|e| eyre!("Failed to open image {path:?}: {e:?}"))?;
 
-            // Extract ICC profile if available before flattening/converting
-            let icc_profile = img.metadata().icc_profile().map(|p| p.to_vec());
-
             // Ensure we are in RGBA8
             img.convert_color(zune_core::colorspace::ColorSpace::RGBA)?;
 
             let (w, h) = img.dimensions();
-            let mut rgba = img.flatten_to_u8()[0].clone();
+            let rgba = img.flatten_to_u8()[0].clone();
 
             // Apply color management if ICC profile exists
             /*
@@ -93,7 +90,7 @@ impl ImageLoader {
     */
 
     fn load_jxl(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
-        use jxl_oxide::{JxlImage, Render};
+        use jxl_oxide::JxlImage;
 
         let image = JxlImage::builder()
             .open(path)
@@ -104,15 +101,24 @@ impl ImageLoader {
             .render_frame(0)
             .map_err(|e| eyre!("Failed to render JXL frame: {e:?}"))?;
 
-        let fb = render.image();
+        let frame_buffer = render.image_all_channels();
+        let fb = frame_buffer.buf();
         let mut rgba = vec![0u8; width as usize * height as usize * 4];
 
-        // Convert to RGBA8
-        for (i, pixel) in fb.buf().chunks_exact(fb.channels()).enumerate() {
+        let num_channels = frame_buffer.channels();
+        for (i, pixel) in fb.chunks_exact(num_channels).enumerate() {
             let r = (pixel[0].clamp(0.0, 1.0) * 255.0) as u8;
-            let g = (pixel[1].clamp(0.0, 1.0) * 255.0) as u8;
-            let b = (pixel[2].clamp(0.0, 1.0) * 255.0) as u8;
-            let a = if fb.channels() == 4 {
+            let g = if num_channels > 1 {
+                (pixel[1].clamp(0.0, 1.0) * 255.0) as u8
+            } else {
+                r
+            };
+            let b = if num_channels > 2 {
+                (pixel[2].clamp(0.0, 1.0) * 255.0) as u8
+            } else {
+                r
+            };
+            let a = if num_channels > 3 {
                 (pixel[3].clamp(0.0, 1.0) * 255.0) as u8
             } else {
                 255
@@ -130,8 +136,8 @@ impl ImageLoader {
             vec![ImageData {
                 path: path.to_path_buf(),
                 rgba_data: rgba,
-                width: width as u32,
-                height: height as u32,
+                width,
+                height,
                 format: ImageFormatType::Jxl,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
@@ -149,9 +155,8 @@ impl ImageLoader {
         use resvg::usvg;
 
         let svg_data = std::fs::read(path)?;
-        let fontdb = usvg::fontdb::Database::new();
 
-        let rtree = usvg::Tree::from_data(&svg_data, &usvg::Options::default(), &fontdb)
+        let rtree = usvg::Tree::from_data(&svg_data, &usvg::Options::default())
             .map_err(|e| eyre!("Failed to parse SVG: {e:?}"))?;
 
         let size = rtree.size();

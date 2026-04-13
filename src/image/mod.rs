@@ -5,7 +5,7 @@ mod types;
 
 pub use loader::ImageLoader;
 pub use processing::ImageProcessor;
-pub use types::{ImageData, ImageError, ImageFormatType, compute_rgb_histogram};
+pub use types::{ImageData, ImageError, ImageFormatType};
 
 use color_eyre::eyre::Result;
 

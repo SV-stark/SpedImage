@@ -107,8 +107,21 @@ impl ImageData {
         let mut r_hist = [0u32; 256];
         let mut g_hist = [0u32; 256];
         let mut b_hist = [0u32; 256];
-        compute_rgb_histogram(&self.rgba_data, &mut r_hist, &mut g_hist, &mut b_hist);
+        Self::compute_rgb_histogram(&self.rgba_data, &mut r_hist, &mut g_hist, &mut b_hist);
         self.histogram = Some((r_hist, g_hist, b_hist));
+    }
+
+    pub fn compute_rgb_histogram(
+        rgba: &[u8],
+        r_hist: &mut [u32; 256],
+        g_hist: &mut [u32; 256],
+        b_hist: &mut [u32; 256],
+    ) {
+        for pixel in rgba.chunks_exact(4) {
+            r_hist[pixel[0] as usize] += 1;
+            g_hist[pixel[1] as usize] += 1;
+            b_hist[pixel[2] as usize] += 1;
+        }
     }
 
     /// Get aspect ratio

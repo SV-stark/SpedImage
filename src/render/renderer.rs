@@ -1,4 +1,4 @@
-use color_eyre::eyre::{Context, ContextCompat, Result};
+use color_eyre::eyre::{Context, ContextCompat, Result, eyre};
 use std::sync::Arc;
 use wgpu::{
     BindGroup, Device, Queue, RenderPipeline, Sampler, Surface, SurfaceConfiguration, Texture,
@@ -37,6 +37,7 @@ pub struct Renderer {
     pub(crate) last_thumb_state: Option<(u32, u32, f32)>,
 
     // Profiling
+    #[allow(dead_code)]
     pub(crate) profiler: wgpu_profiler::GpuProfiler,
 }
 

@@ -21,6 +21,7 @@ pub struct NavigationState {
     pub(crate) load_generation: Arc<AtomicU64>,
     pub(crate) thumb_scroll: f32,
     pub(crate) thumb_velocity: f32,
+    #[allow(dead_code)]
     pub(crate) thumb_target_scroll: f32,
 }
 
@@ -77,7 +78,7 @@ impl SpedImageApp {
             navigation: NavigationState {
                 held_key: None,
                 last_advance_time: None,
-                prefetch_cache: Arc::new(Cache::new(constants::PREFETCH_CACHE_SIZE)),
+                prefetch_cache: Arc::new(Cache::new(constants::PREFETCH_CACHE_SIZE as usize)),
                 load_generation: Arc::new(AtomicU64::new(0)),
                 thumb_scroll: 0.0,
                 thumb_velocity: 0.0,

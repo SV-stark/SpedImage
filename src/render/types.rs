@@ -99,4 +99,5 @@ pub struct RenderParams<'a> {
     pub exif_text: Option<&'a str>,
     pub show_histogram: bool,
     pub histogram_data: Option<&'a ([u32; 256], [u32; 256], [u32; 256])>,
+    pub transition_factor: f32,
 }

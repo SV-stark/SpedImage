@@ -6,7 +6,7 @@ use wgpu::{
 };
 
 use super::renderer::Renderer;
-use super::types::{RenderParams, STRIP_HEIGHT_PX};
+use super::types::{RenderParams, STRIP_HEIGHT_PX, Uniforms};
 
 impl Renderer {
     pub(crate) fn render_ui_static(
@@ -107,28 +107,17 @@ impl Renderer {
                 label: Some("Frame Encoder"),
             });
 
-        self.profiler
-            .begin_frame()
-            .map_err(|e| eyre!("Failed to begin profiler frame: {e:?}"))?;
-
         // Image pass
         {
-            let _scope = wgpu_profiler::Scope::start(
-                "Image Render",
-                &mut self.profiler,
+            self.encode_image(
+                params.adjustments,
+                params.transition_factor,
+                &view,
                 &mut encoder,
-                &self.device,
             );
-            self.encode_image(params.adjustments, &view, &mut encoder);
         }
 
         if params.show_thumbnail_strip && !self.thumbnails.is_empty() {
-            let _scope = wgpu_profiler::Scope::start(
-                "Thumbnails Render",
-                &mut self.profiler,
-                &mut encoder,
-                &self.device,
-            );
             self.encode_thumbnail_strip(
                 params.active_thumb_idx,
                 params.selected_indices,
@@ -176,12 +165,6 @@ impl Renderer {
         );
 
         {
-            let _scope = wgpu_profiler::Scope::start(
-                "egui Render",
-                &mut self.profiler,
-                &mut encoder,
-                &self.device,
-            );
             let render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("egui Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
@@ -208,17 +191,12 @@ impl Renderer {
             self.egui_renderer.free_texture(&id);
         }
 
-        self.profiler.resolve_queries(&mut encoder);
-        self.profiler
-            .end_frame()
-            .map_err(|e| eyre!("Failed to end profiler frame: {e:?}"))?;
-
         self.queue.submit([encoder.finish()]);
         frame.present();
         Ok(())
     }
 
-    pub fn render_loading(&self, path: Option<&std::path::Path>) -> Result<()> {
+    pub fn render_loading(&mut self, path: Option<&std::path::Path>) -> Result<()> {
         let frame = self
             .surface
             .get_current_texture()
@@ -341,7 +319,7 @@ impl Renderer {
         );
 
         {
-            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            let render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("egui Loader Pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &view,
