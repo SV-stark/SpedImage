@@ -321,7 +321,7 @@ impl ImageLoader {
                 let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
 
                 if let Some(ref mut r) = resizer {
-                    r.resize(&src_image, &mut dst_image, None)
+                    r.resize(&src_image, &mut dst_image)
                         .map_err(|e| eyre!("Resize failed: {e:?}"))?;
                 }
 

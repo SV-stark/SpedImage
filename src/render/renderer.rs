@@ -102,7 +102,7 @@ impl Renderer {
             None,
         );
 
-        let egui_renderer = egui_wgpu::Renderer::new(&device, format, None, 1, false);
+        let egui_renderer = egui_wgpu::Renderer::new(&device, format, None, 1, &adapter);
 
         Ok(Self {
             _window: window.clone(),
