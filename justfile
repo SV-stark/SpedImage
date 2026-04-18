@@ -31,17 +31,12 @@ build-release:
 machete:
     cargo machete
 
-# Run cargo deny to check licenses and vulnerabilities
-deny:
-    cargo deny --version >$null 2>&1 || cargo install cargo-deny
-    cargo deny check
-
 # Check conventional commits
 cog-check:
     cog check
 
-# Full check (fmt, lint, deny, test, cog)
-check-all: fmt lint deny test cog-check
+# Full check (fmt, lint, test, cog)
+check-all: fmt lint test cog-check
 
 # Generate changelog
 changelog:

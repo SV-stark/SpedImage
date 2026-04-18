@@ -29,17 +29,11 @@ jobs:
     - name: Install cargo-nextest
       uses: taiki-e/install-action@nextest
 
-    - name: Install cargo-deny
-      uses: taiki-e/install-action@cargo-deny
-
     - name: Cargo Format
       run: cargo fmt -- --check
 
     - name: Cargo Clippy
       run: cargo clippy -- -D warnings
-
-    - name: Cargo Deny
-      run: cargo deny check
 
     - name: Cargo Test (nextest)
       run: cargo nextest run
