@@ -18,7 +18,7 @@ impl SpedImageApp {
                         files.push(crate::ui::FileEntry::new(path));
                     }
                 }
-                files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                files.sort_by_key(|a| a.name.to_lowercase());
 
                 if let Some(ref p) = proxy {
                     send_event(&tx, p, AppEvent::DirectoryLoaded(dir, files));
@@ -55,21 +55,19 @@ impl SpedImageApp {
                         &path_clone,
                         THUMB_LOAD_SIZE,
                         THUMB_LOAD_SIZE,
-                    ) {
-                        if let Some(frame) = frames.first() {
-                            if let Some(ref p) = proxy {
-                                send_event(
-                                    &tx,
-                                    p,
-                                    AppEvent::ThumbnailLoaded(
-                                        path_clone,
-                                        frame.rgba_data.clone(),
-                                        frame.width,
-                                        frame.height,
-                                    ),
-                                );
-                            }
-                        }
+                    ) && let Some(frame) = frames.first()
+                        && let Some(ref p) = proxy
+                    {
+                        send_event(
+                            &tx,
+                            p,
+                            AppEvent::ThumbnailLoaded(
+                                path_clone,
+                                frame.rgba_data.clone(),
+                                frame.width,
+                                frame.height,
+                            ),
+                        );
                     }
                 });
             }
@@ -90,10 +88,10 @@ impl SpedImageApp {
         let dir_clone = dir.clone();
         let mut debouncer =
             new_debouncer(std::time::Duration::from_millis(500), None, move |res| {
-                if let Ok(_events) = res {
-                    if let Some(ref p) = proxy {
-                        send_event(&tx, p, AppEvent::DirectoryChanged(dir_clone.clone()));
-                    }
+                if let Ok(_events) = res
+                    && let Some(ref p) = proxy
+                {
+                    send_event(&tx, p, AppEvent::DirectoryChanged(dir_clone.clone()));
                 }
             })
             .ok();

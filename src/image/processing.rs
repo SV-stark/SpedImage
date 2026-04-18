@@ -41,7 +41,7 @@ impl ImageProcessor {
                 let mut resizer = fr::Resizer::new();
 
                 resizer
-                    .resize(&src_image, &mut dst_image)
+                    .resize(&src_image, &mut dst_image, None)
                     .map_err(|e| eyre!("Resize failed: {e:?}"))?;
 
                 img.width = dst_w;

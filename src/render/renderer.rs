@@ -1,4 +1,4 @@
-use color_eyre::eyre::{Context, ContextCompat, Result, eyre};
+use color_eyre::eyre::{Context, Result, eyre};
 use std::sync::Arc;
 use wgpu::{
     BindGroup, Device, Queue, RenderPipeline, Sampler, Surface, SurfaceConfiguration, Texture,
@@ -47,7 +47,7 @@ impl Renderer {
             Self::create_device_and_surface(window.clone()).await?;
 
         let profiler =
-            wgpu_profiler::GpuProfiler::new(wgpu_profiler::GpuProfilerSettings::default())
+            wgpu_profiler::GpuProfiler::new(&device, wgpu_profiler::GpuProfilerSettings::default())
                 .map_err(|e| eyre!("Failed to create GPU profiler: {e:?}"))?;
 
         let capabilities = surface.get_capabilities(&adapter);
@@ -77,7 +77,7 @@ impl Renderer {
             label: Some("Image Sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
@@ -87,7 +87,7 @@ impl Renderer {
             label: Some("Image Sampler (Nearest)"),
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
@@ -102,7 +102,8 @@ impl Renderer {
             None,
         );
 
-        let egui_renderer = egui_wgpu::Renderer::new(&device, format, None, 1, &adapter);
+        let egui_renderer =
+            egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
 
         Ok(Self {
             _window: window.clone(),
@@ -139,7 +140,7 @@ impl Renderer {
         wgpu::Surface<'static>,
         wgpu::Adapter,
     )> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let surface = instance
             .create_surface(window.clone())
             .context("Failed to create WGPU surface")?;
@@ -154,15 +155,14 @@ impl Renderer {
             .context("Failed to request WGPU adapter")?;
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("SpedImage Device"),
-                    required_features: wgpu::Features::default(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("SpedImage Device"),
+                required_features: wgpu::Features::default(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                experimental_features: wgpu::ExperimentalFeatures::default(),
+                trace: wgpu::Trace::Off,
+            })
             .await
             .context("Failed to request WGPU device")?;
 
@@ -222,8 +222,8 @@ impl Renderer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -267,7 +267,7 @@ impl Renderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -279,7 +279,7 @@ impl Renderer {
         let crop_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Crop Pipeline Layout"),
             bind_group_layouts: &[],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let crop_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -312,7 +312,7 @@ impl Renderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -356,10 +356,10 @@ impl Renderer {
         let height = image_data.height;
 
         // Move current to prev for transition
-        if let Some(current_tex) = self.image_texture.take() {
-            if let Some(old_prev) = self.image_texture_prev.replace(current_tex) {
-                old_prev.destroy();
-            }
+        if let Some(current_tex) = self.image_texture.take()
+            && let Some(old_prev) = self.image_texture_prev.replace(current_tex)
+        {
+            old_prev.destroy();
         }
         self.image_bind_group_prev = self.image_bind_group.take();
 
@@ -539,10 +539,12 @@ impl Renderer {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         if let Some(bind_group) = &self.image_bind_group {

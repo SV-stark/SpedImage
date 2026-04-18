@@ -65,10 +65,10 @@ impl UiState {
     }
 
     pub fn get_status(&self) -> &str {
-        if let Some((ref msg, time)) = self.status_message {
-            if time.elapsed().as_secs() < 3 {
-                return msg;
-            }
+        if let Some((ref msg, time)) = self.status_message
+            && time.elapsed().as_secs() < 3
+        {
+            return msg;
         }
         ""
     }

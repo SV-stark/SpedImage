@@ -273,14 +273,14 @@ impl ImageLoader {
 
         let mut dst_w = w;
         let mut dst_h = h;
-        if let (Some(mw), Some(mh)) = (max_w, max_h) {
-            if w > mw || h > mh {
-                let ratio = (w as f32 / mw as f32).max(h as f32 / mh as f32);
-                dst_w = (w as f32 / ratio).round() as u32;
-                dst_h = (h as f32 / ratio).round() as u32;
-                dst_w = dst_w.max(1);
-                dst_h = dst_h.max(1);
-            }
+        if let (Some(mw), Some(mh)) = (max_w, max_h)
+            && (w > mw || h > mh)
+        {
+            let ratio = (w as f32 / mw as f32).max(h as f32 / mh as f32);
+            dst_w = (w as f32 / ratio).round() as u32;
+            dst_h = (h as f32 / ratio).round() as u32;
+            dst_w = dst_w.max(1);
+            dst_h = dst_h.max(1);
         }
 
         // A GIF frame might not cover the full canvas, so we need a canvas to compose them.
@@ -321,7 +321,7 @@ impl ImageLoader {
                 let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
 
                 if let Some(ref mut r) = resizer {
-                    r.resize(&src_image, &mut dst_image)
+                    r.resize(&src_image, &mut dst_image, None)
                         .map_err(|e| eyre!("Resize failed: {e:?}"))?;
                 }
 

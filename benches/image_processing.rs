@@ -1,5 +1,4 @@
 use divan::black_box;
-use spedimage_lib::image::metadata::get_exif_orientation;
 
 fn main() {
     divan::main();

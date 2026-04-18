@@ -31,26 +31,22 @@ impl SpedImageApp {
                     self.loading = false;
                     self.animation.transition_start = Some(std::time::Instant::now());
                     self.animation.transition_factor = 0.0;
+
                     if let Some(first) = frames.first() {
                         let path = first.path.clone();
                         let dir = path.parent().unwrap_or(&path).to_path_buf();
                         if self.ui_state.files.is_empty() || self.file_watcher.is_none() {
                             self.load_directory_async(dir.clone());
                             self.setup_file_watcher(&dir);
-                        } else {
-                            if let Some(idx) =
-                                self.ui_state.files.iter().position(|f| f.path == path)
-                            {
-                                if self.ui_state.current_file_index != Some(idx) {
-                                    self.ui_state.current_file_index = Some(idx);
-                                    file_list_or_selection_changed = true;
-                                }
-                            }
+                        } else if let Some(idx) =
+                            self.ui_state.files.iter().position(|f| f.path == path)
+                            && self.ui_state.current_file_index != Some(idx)
+                        {
+                            self.ui_state.current_file_index = Some(idx);
+                            file_list_or_selection_changed = true;
                         }
-                    }
 
-                    if let Some(ref mut renderer) = self.renderer {
-                        if let Some(first) = frames.first() {
+                        if let Some(ref mut renderer) = self.renderer {
                             renderer.load_image(first).ok();
                             if frames.len() > 1 {
                                 renderer.preload_gif_textures(&frames).ok();
@@ -126,16 +122,16 @@ impl SpedImageApp {
                     self.dirty = true;
                 }
                 AppEvent::FileRenamed(old, new) => {
-                    if let Some(ref mut img) = self.current_image {
-                        if img.path == old {
-                            img.path = new.clone();
-                            if let Some(ref w) = self.window {
-                                let name = new
-                                    .file_name()
-                                    .and_then(|n| n.to_str())
-                                    .unwrap_or("SpedImage");
-                                w.set_title(&format!("SpedImage — {name}"));
-                            }
+                    if let Some(ref mut img) = self.current_image
+                        && img.path == old
+                    {
+                        img.path = new.clone();
+                        if let Some(ref w) = self.window {
+                            let name = new
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("SpedImage");
+                            w.set_title(&format!("SpedImage — {name}"));
                         }
                     }
                     let dir = new.parent().unwrap_or(&new);
@@ -159,23 +155,23 @@ impl SpedImageApp {
                         let _ = std::fs::remove_file(path);
                     }
                     self.ui_state.selected_indices.clear();
-                    if let Some(current) = self.ui_state.current_file() {
-                        if let Some(parent) = current.parent() {
-                            self.load_directory_async(parent.to_path_buf());
-                        }
-                    } else if let Some(first) = selected.first() {
-                        if let Some(parent) = first.parent() {
-                            self.load_directory_async(parent.to_path_buf());
-                        }
+                    if let Some(current) = self.ui_state.current_file()
+                        && let Some(parent) = current.parent()
+                    {
+                        self.load_directory_async(parent.to_path_buf());
+                    } else if let Some(first) = selected.first()
+                        && let Some(parent) = first.parent()
+                    {
+                        self.load_directory_async(parent.to_path_buf());
                     }
                     self.dirty = true;
                 }
                 AppEvent::HistogramComputed(path, histogram) => {
-                    if let Some(ref mut img) = self.current_image {
-                        if img.path == path {
-                            img.histogram = Some(*histogram);
-                            self.dirty = true;
-                        }
+                    if let Some(ref mut img) = self.current_image
+                        && img.path == path
+                    {
+                        img.histogram = Some(*histogram);
+                        self.dirty = true;
                     }
                 }
                 AppEvent::DirectoryChanged(dir) => {
@@ -358,22 +354,22 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.last_cursor_pos = position;
-                if let Some(start) = self.mouse_drag_start {
-                    if let Some(ref r) = self.renderer {
-                        let dx = (position.x - start.x) as f32 / r.config.width as f32;
-                        let dy = (position.y - start.y) as f32 / r.config.height as f32;
+                if let Some(start) = self.mouse_drag_start
+                    && let Some(ref r) = self.renderer
+                {
+                    let dx = (position.x - start.x) as f32 / r.config.width as f32;
+                    let dy = (position.y - start.y) as f32 / r.config.height as f32;
 
-                        self.ui_state.adjustments.crop_rect[0] =
-                            (self.ui_state.adjustments.crop_rect[0] - dx)
-                                .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[2]);
-                        self.ui_state.adjustments.crop_rect[1] =
-                            (self.ui_state.adjustments.crop_rect[1] - dy)
-                                .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[3]);
-                        self.ui_state.adjustments.crop_rect_target =
-                            self.ui_state.adjustments.crop_rect;
-                        self.mouse_drag_start = Some(position);
-                        self.dirty = true;
-                    }
+                    self.ui_state.adjustments.crop_rect[0] =
+                        (self.ui_state.adjustments.crop_rect[0] - dx)
+                            .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[2]);
+                    self.ui_state.adjustments.crop_rect[1] =
+                        (self.ui_state.adjustments.crop_rect[1] - dy)
+                            .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[3]);
+                    self.ui_state.adjustments.crop_rect_target =
+                        self.ui_state.adjustments.crop_rect;
+                    self.mouse_drag_start = Some(position);
+                    self.dirty = true;
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -425,10 +421,10 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: WakeUp) {
         self.process_events();
-        if self.dirty {
-            if let Some(ref w) = self.window {
-                w.request_redraw();
-            }
+        if self.dirty
+            && let Some(ref w) = self.window
+        {
+            w.request_redraw();
         }
     }
 
@@ -491,35 +487,35 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
         }
 
-        if self.slideshow.active {
-            if let Some(next) = self.slideshow.next_time {
-                if std::time::Instant::now() >= next {
-                    self.next_image();
-                    let next_time = std::time::Instant::now() + self.slideshow.interval;
-                    self.slideshow.next_time = Some(next_time);
-                    needs_redraw = true;
-                    update_wakeup(next_time);
-                } else {
-                    update_wakeup(next);
-                }
+        if self.slideshow.active
+            && let Some(next) = self.slideshow.next_time
+        {
+            if std::time::Instant::now() >= next {
+                self.next_image();
+                let next_time = std::time::Instant::now() + self.slideshow.interval;
+                self.slideshow.next_time = Some(next_time);
+                needs_redraw = true;
+                update_wakeup(next_time);
+            } else {
+                update_wakeup(next);
             }
         }
 
-        if let Some(c) = self.navigation.held_key {
-            if let Some(last) = self.navigation.last_advance_time {
-                let next = last + constants::KEY_REPEAT_DELAY;
-                if std::time::Instant::now() >= next {
-                    match c {
-                        'd' | 's' => self.next_image(),
-                        'a' | 'w' => self.prev_image(),
-                        _ => {}
-                    }
-                    self.navigation.last_advance_time = Some(std::time::Instant::now());
-                    needs_redraw = true;
-                    update_wakeup(std::time::Instant::now() + constants::KEY_REPEAT_DELAY);
-                } else {
-                    update_wakeup(next);
+        if let Some(c) = self.navigation.held_key
+            && let Some(last) = self.navigation.last_advance_time
+        {
+            let next = last + constants::KEY_REPEAT_DELAY;
+            if std::time::Instant::now() >= next {
+                match c {
+                    'd' | 's' => self.next_image(),
+                    'a' | 'w' => self.prev_image(),
+                    _ => {}
                 }
+                self.navigation.last_advance_time = Some(std::time::Instant::now());
+                needs_redraw = true;
+                update_wakeup(std::time::Instant::now() + constants::KEY_REPEAT_DELAY);
+            } else {
+                update_wakeup(next);
             }
         }
 
@@ -544,11 +540,11 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         }
 
-        if needs_redraw || self.dirty {
+        if (needs_redraw || self.dirty)
+            && let Some(ref w) = self.window
+        {
             self.dirty = true;
-            if let Some(ref w) = self.window {
-                w.request_redraw();
-            }
+            w.request_redraw();
         }
     }
 }

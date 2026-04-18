@@ -1,4 +1,4 @@
-use color_eyre::eyre::{Context, Result};
+use color_eyre::eyre::{Result, eyre};
 use std::sync::Arc;
 use wgpu::{
     CommandEncoderDescriptor, LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor,
@@ -42,25 +42,25 @@ impl Renderer {
                 );
             });
 
-        if let Some(status) = params.status_text {
-            if !status.is_empty() {
-                egui::Window::new("Status")
-                    .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 10.0))
-                    .title_bar(false)
-                    .auto_sized()
-                    .frame(
-                        egui::Frame::NONE
-                            .fill(egui::Color32::from_black_alpha(150))
-                            .inner_margin(5.0),
-                    )
-                    .show(ctx, |ui| {
-                        ui.label(
-                            egui::RichText::new(status)
-                                .size(18.0)
-                                .color(egui::Color32::WHITE),
-                        );
-                    });
-            }
+        if let Some(status) = params.status_text
+            && !status.is_empty()
+        {
+            egui::Window::new("Status")
+                .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 10.0))
+                .title_bar(false)
+                .auto_sized()
+                .frame(
+                    egui::Frame::NONE
+                        .fill(egui::Color32::from_black_alpha(150))
+                        .inner_margin(5.0),
+                )
+                .show(ctx, |ui| {
+                    ui.label(
+                        egui::RichText::new(status)
+                            .size(18.0)
+                            .color(egui::Color32::WHITE),
+                    );
+                });
         }
 
         if params.show_help {
@@ -94,10 +94,11 @@ impl Renderer {
     }
 
     pub fn render_frame(&mut self, params: RenderParams) -> Result<()> {
-        let frame = self
-            .surface
-            .get_current_texture()
-            .context("Failed to get current surface texture")?;
+        let frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            e => return Err(eyre!("Failed to get current surface texture: {:?}", e)),
+        };
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -135,7 +136,7 @@ impl Renderer {
         let win_w = self.config.width;
         let win_h = self.config.height;
 
-        let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
+        let full_output = self.egui_state.egui_ctx().run_ui(raw_input, |ctx| {
             Self::render_ui_static(&params, ctx, has_thumbnails, win_w, win_h);
         });
 
@@ -174,10 +175,12 @@ impl Renderer {
                         load: LoadOp::Load,
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             self.egui_renderer.render(
@@ -197,10 +200,11 @@ impl Renderer {
     }
 
     pub fn render_loading(&mut self, path: Option<&std::path::Path>) -> Result<()> {
-        let frame = self
-            .surface
-            .get_current_texture()
-            .context("Failed to get current surface texture")?;
+        let frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            e => return Err(eyre!("Failed to get current surface texture: {:?}", e)),
+        };
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -249,10 +253,12 @@ impl Renderer {
                             load: LoadOp::Clear(wgpu::Color::BLACK),
                             store: StoreOp::Store,
                         },
+                        depth_slice: None,
                     })],
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
 
                 render_pass.set_pipeline(&self.pipeline);
@@ -276,16 +282,18 @@ impl Renderer {
                         }),
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
         }
 
         // 2. Draw egui spinner
         let raw_input = self.egui_state.take_egui_input(&self._window);
-        let full_output = self.egui_state.egui_ctx().run(raw_input, |ctx| {
+        let full_output = self.egui_state.egui_ctx().run_ui(raw_input, |ctx| {
             egui::Area::new(egui::Id::new("loader"))
                 .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
                 .show(ctx, |ui| {
@@ -328,10 +336,12 @@ impl Renderer {
                         load: LoadOp::Load,
                         store: StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             self.egui_renderer.render(

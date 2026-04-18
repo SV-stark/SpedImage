@@ -1,11 +1,13 @@
 # cargo-deny configuration
 
 [advisories]
+version = 2
 ignore = []
 
 [licenses]
+version = 2
 # MIT and Apache-2.0 are standard in Rust ecosystem
-unlicensed = "deny"
+# All licenses not in allow or exceptions are denied by default in version 2
 allow = [
     "MIT",
     "Apache-2.0",
@@ -14,12 +16,6 @@ allow = [
     "ISC",
     "Zlib",
     "CC0-1.0",
-]
-deny = [
-    "GPL-1.0",
-    "GPL-2.0",
-    "GPL-3.0",
-    "AGPL-3.0",
 ]
 
 [bans]
