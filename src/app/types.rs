@@ -1,6 +1,7 @@
 use crate::image::ImageData;
 use crossbeam_channel::Sender;
 use std::path::PathBuf;
+use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
 
 /// Wakeup token sent through EventLoopProxy to wake the sleeping event loop.
@@ -32,7 +33,7 @@ pub enum AppEvent {
     SaveComplete(PathBuf),
     SaveError(String),
     /// A thumbnail has finished loading: (path, rgba_bytes, width, height)
-    ThumbnailLoaded(PathBuf, Vec<u8>, u32, u32),
+    ThumbnailLoaded(PathBuf, Arc<Vec<u8>>, u32, u32),
     SetStatus(String),
     FileRenamed(PathBuf, PathBuf),
     DirectoryLoaded(PathBuf, Vec<crate::ui::FileEntry>),

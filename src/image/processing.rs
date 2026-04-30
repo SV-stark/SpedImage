@@ -1,5 +1,6 @@
 use color_eyre::eyre::{Result, eyre};
 use std::path::Path;
+use std::sync::Arc;
 
 use super::loader::ImageLoader;
 use super::types::ImageData;
@@ -46,7 +47,7 @@ impl ImageProcessor {
 
                 img.width = dst_w;
                 img.height = dst_h;
-                img.rgba_data = dst_image.into_vec();
+                img.rgba_data = Arc::new(dst_image.into_vec());
                 img.is_downsampled = true;
             }
 

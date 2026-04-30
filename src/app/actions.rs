@@ -807,7 +807,7 @@ impl SpedImageApp {
                 let image_data = arboard::ImageData {
                     width: w as usize,
                     height: h as usize,
-                    bytes: std::borrow::Cow::from(rgba),
+                    bytes: std::borrow::Cow::from(&rgba[..]),
                 };
                 if clipboard.set_image(image_data).is_ok()
                     && let Some(ref p) = proxy

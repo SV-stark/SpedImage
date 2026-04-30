@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -72,7 +73,7 @@ pub struct ImageData {
     pub width: u32,
     pub height: u32,
     pub format: ImageFormatType,
-    pub rgba_data: Vec<u8>,
+    pub rgba_data: Arc<Vec<u8>>,
     pub path: std::path::PathBuf,
     pub file_size_bytes: u64,
     pub frame_delay_ms: u32,

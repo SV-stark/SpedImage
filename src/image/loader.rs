@@ -1,5 +1,6 @@
 use color_eyre::eyre::{Result, eyre};
 use std::path::Path;
+use std::sync::Arc;
 use zune_image::image::Image;
 
 use super::types::{ImageData, ImageFormatType};
@@ -55,7 +56,7 @@ impl ImageLoader {
             Ok((
                 vec![ImageData {
                     path: path.to_path_buf(),
-                    rgba_data: rgba,
+                    rgba_data: Arc::new(rgba),
                     width: w as u32,
                     height: h as u32,
                     format: format_type,
@@ -137,7 +138,7 @@ impl ImageLoader {
         Ok((
             vec![ImageData {
                 path: path.to_path_buf(),
-                rgba_data: rgba,
+                rgba_data: Arc::new(rgba),
                 width,
                 height,
                 format: ImageFormatType::Jxl,
@@ -184,7 +185,7 @@ impl ImageLoader {
         Ok((
             vec![ImageData {
                 path: path.to_path_buf(),
-                rgba_data: pixmap.data().to_vec(),
+                rgba_data: Arc::new(pixmap.data().to_vec()),
                 width,
                 height,
                 format: ImageFormatType::Svg,
@@ -241,7 +242,7 @@ impl ImageLoader {
         Ok((
             vec![ImageData {
                 path: path.to_path_buf(),
-                rgba_data,
+                rgba_data: Arc::new(rgba_data),
                 width,
                 height,
                 format: ImageFormatType::Tiff,
@@ -280,7 +281,7 @@ impl ImageLoader {
         Ok((
             vec![ImageData {
                 path: path.to_path_buf(),
-                rgba_data: rgba,
+                rgba_data: Arc::new(rgba),
                 width,
                 height,
                 format: ImageFormatType::Heic,
@@ -373,7 +374,7 @@ impl ImageLoader {
 
             image_frames.push(ImageData {
                 path: path.to_path_buf(),
-                rgba_data: final_rgba,
+                rgba_data: Arc::new(final_rgba),
                 width: dst_w,
                 height: dst_h,
                 format: ImageFormatType::Gif,
