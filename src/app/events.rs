@@ -362,7 +362,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
 
                     let new_x = self.ui_state.adjustments.crop_rect[0] - dx;
                     let new_y = self.ui_state.adjustments.crop_rect[1] - dy;
-                    
+
                     let min_x = 0.0f32.min(1.0 - self.ui_state.adjustments.crop_rect[2]);
                     let max_x = 0.0f32.max(1.0 - self.ui_state.adjustments.crop_rect[2]);
                     let min_y = 0.0f32.min(1.0 - self.ui_state.adjustments.crop_rect[3]);
