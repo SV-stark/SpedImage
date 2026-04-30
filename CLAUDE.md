@@ -108,4 +108,4 @@ spedimage/
 ```
 
 ## Image Formats Supported
-The pure Rust `image` crate decodes: JPEG, PNG, GIF, BMP, TIFF, WebP, HEIF (optional), RAW (optional). Shaders support AVIF as well.
+The pure Rust `zune-image` and `jxl-oxide` crates decode: JPEG, PNG, GIF, BMP, TIFF, WebP, JXL. Native `heic` crate supports HEIC/HEIF. Shaders support AVIF as well.

@@ -59,9 +59,9 @@ impl ImageFormatType {
             | Self::WebP
             | Self::Raw
             | Self::Avif
+            | Self::Heic
             | Self::Jxl
             | Self::Svg => true,
-            _ => false,
         }
     }
 }

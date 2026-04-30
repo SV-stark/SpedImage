@@ -27,6 +27,8 @@ impl ImageLoader {
             Self::load_svg(path)
         } else if ext == "jxl" {
             Self::load_jxl(path)
+        } else if ext == "heic" || ext == "heif" {
+            Self::load_heic(path)
         } else if ext == "tiff" || ext == "tif" {
             Self::load_tiff(path)
         } else if format_type == ImageFormatType::Raw {
@@ -251,6 +253,45 @@ impl ImageLoader {
                 is_downsampled: false,
             }],
             ImageFormatType::Tiff,
+        ))
+    }
+
+    fn load_heic(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        let data = std::fs::read(path)?;
+
+        let info = heic::ImageInfo::from_bytes(&data)
+            .map_err(|e| eyre!("Failed to parse HEIC header: {:?}", e))?;
+
+        let layout = heic::PixelLayout::Rgba8;
+        let buffer_size = info
+            .output_buffer_size(layout)
+            .ok_or_else(|| eyre!("Could not determine HEIC buffer size"))?;
+
+        let mut rgba = vec![0u8; buffer_size];
+
+        let (width, height) = heic::DecoderConfig::new()
+            .decode_request(&data)
+            .with_output_layout(layout)
+            .decode_into(&mut rgba)
+            .map_err(|e| eyre!("HEIC decode failed: {:?}", e))?;
+
+        let file_size = std::fs::metadata(path)?.len();
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: rgba,
+                width,
+                height,
+                format: ImageFormatType::Heic,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: false,
+                histogram: None,
+                is_downsampled: false,
+            }],
+            ImageFormatType::Heic,
         ))
     }
 

@@ -51,6 +51,7 @@ crossbeam-channel = "0.5"
 parking_lot = "0.12"
 dashmap = "6.1"
 quick_cache = "0.6"
+heic = { git = "https://github.com/imazen/heic" }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
