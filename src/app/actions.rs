@@ -207,6 +207,10 @@ impl SpedImageApp {
         delta: MouseScrollDelta,
         cursor_pos: PhysicalPosition<f64>,
     ) {
+        if !self.modifiers.ctrl {
+            return;
+        }
+
         match delta {
             MouseScrollDelta::LineDelta(_, y) => {
                 if y > 0.0 {
@@ -850,27 +854,55 @@ impl SpedImageApp {
         let new_w = (old_w * factor).clamp(0.01, 5.0);
         let new_h = (old_h * factor).clamp(0.01, 5.0);
 
-        if let (Some(pos), Some(w)) = (cursor, &self.window) {
-            let win_size = w.inner_size();
-            if win_size.width > 0 && win_size.height > 0 {
-                let cx = (pos.x as f32 / win_size.width as f32)
-                    .mul_add(old_w, self.ui_state.adjustments.crop_rect_target[0]);
-                let cy = (pos.y as f32 / win_size.height as f32)
-                    .mul_add(old_h, self.ui_state.adjustments.crop_rect_target[1]);
-                
-                let target_x = cx - new_w * (pos.x as f32 / win_size.width as f32);
-                let target_y = cy - new_h * (pos.y as f32 / win_size.height as f32);
-                
-                let min_x = 0.0f32.min(1.0 - new_w);
-                let max_x = 0.0f32.max(1.0 - new_w);
-                let min_y = 0.0f32.min(1.0 - new_h);
-                let max_y = 0.0f32.max(1.0 - new_h);
+        let (win_w, win_h) = if let Some(ref w) = self.window {
+            let size = w.inner_size();
+            (size.width as f32, size.height as f32)
+        } else {
+            (1.0, 1.0)
+        };
 
-                self.ui_state.adjustments.crop_rect_target[0] = target_x.clamp(min_x, max_x);
-                self.ui_state.adjustments.crop_rect_target[1] = target_y.clamp(min_y, max_y);
+        let img_aspect = self
+            .current_image
+            .as_ref()
+            .map(|img| img.width as f32 / img.height as f32)
+            .unwrap_or(1.0);
+        let win_aspect = if win_h > 0.0 { win_w / win_h } else { 1.0 };
+        let ratio = img_aspect / win_aspect;
+
+        // Calculate the "normalized" mouse position relative to the actual image area
+        let (nx, ny) = if let Some(pos) = cursor {
+            let mut x_ratio = pos.x as f32 / win_w;
+            let mut y_ratio = pos.y as f32 / win_h;
+
+            if ratio > 1.0 {
+                // Width-limited (black bars on top/bottom)
+                let img_h_in_win = 1.0 / ratio;
+                let offset = (1.0 - img_h_in_win) / 2.0;
+                y_ratio = ((y_ratio - offset) * ratio).clamp(0.0, 1.0);
+            } else {
+                // Height-limited (black bars on sides)
+                let img_w_in_win = ratio;
+                let offset = (1.0 - img_w_in_win) / 2.0;
+                x_ratio = ((x_ratio - offset) / ratio).clamp(0.0, 1.0);
             }
-        }
+            (x_ratio, y_ratio)
+        } else {
+            (0.5, 0.5) // Zoom towards center if no cursor
+        };
 
+        let cx = nx.mul_add(old_w, self.ui_state.adjustments.crop_rect_target[0]);
+        let cy = ny.mul_add(old_h, self.ui_state.adjustments.crop_rect_target[1]);
+
+        let target_x = cx - new_w * nx;
+        let target_y = cy - new_h * ny;
+
+        let min_x = 0.0f32.min(1.0 - new_w);
+        let max_x = 0.0f32.max(1.0 - new_w);
+        let min_y = 0.0f32.min(1.0 - new_h);
+        let max_y = 0.0f32.max(1.0 - new_h);
+
+        self.ui_state.adjustments.crop_rect_target[0] = target_x.clamp(min_x, max_x);
+        self.ui_state.adjustments.crop_rect_target[1] = target_y.clamp(min_y, max_y);
         self.ui_state.adjustments.crop_rect_target[2] = new_w;
         self.ui_state.adjustments.crop_rect_target[3] = new_h;
         self.dirty = true;
