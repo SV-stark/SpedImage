@@ -66,10 +66,8 @@ impl SpedImageApp {
                         }
                     }
                     self.current_image = frames.into_iter().next();
-                    if let Some(ref mut img) = self.current_image {
-                        if self.ui_state.show_info {
-                            img.load_exif();
-                        }
+                    if let Some(ref mut img) = self.current_image && self.ui_state.show_info {
+                        img.load_exif();
                     }
                     self.dirty = true;
                 }
@@ -277,22 +275,19 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        // Special case: if Ctrl is held during a scroll, we want to zoom the image,
+        // Special case: if Ctrl is held during a scroll, we want to zoom the image, 
         // not scroll egui UI elements.
         let is_ctrl_scroll = matches!(event, WindowEvent::MouseWheel { .. }) && self.modifiers.ctrl;
 
-        if let Some(ref mut r) = self.renderer {
-            if !is_ctrl_scroll {
-                let response = r
-                    .egui_state
-                    .on_window_event(self.window.as_ref().unwrap(), &event);
-                if response.consumed {
-                    self.dirty = true;
-                    return;
-                }
+        if let Some(ref mut r) = self.renderer && !is_ctrl_scroll {
+            let response = r
+                .egui_state
+                .on_window_event(self.window.as_ref().unwrap(), &event);
+            if response.consumed {
+                self.dirty = true;
+                return;
             }
         }
-
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {

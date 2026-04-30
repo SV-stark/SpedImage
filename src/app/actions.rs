@@ -161,10 +161,8 @@ impl SpedImageApp {
                 }
                 "i" | "I" => {
                     self.ui_state.toggle_info();
-                    if self.ui_state.show_info {
-                        if let Some(ref mut img) = self.current_image {
-                            img.load_exif();
-                        }
+                    if self.ui_state.show_info && let Some(ref mut img) = self.current_image {
+                        img.load_exif();
                     }
                     self.dirty = true;
                 }
