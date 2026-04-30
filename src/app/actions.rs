@@ -212,6 +212,8 @@ impl SpedImageApp {
         delta: MouseScrollDelta,
         cursor_pos: PhysicalPosition<f64>,
     ) {
+        // Ensure Ctrl is actually pressed. 
+        // We use our tracked modifiers which are updated via ModifiersChanged.
         if !self.modifiers.ctrl {
             return;
         }
@@ -225,6 +227,7 @@ impl SpedImageApp {
                 }
             }
             MouseScrollDelta::PixelDelta(pos) => {
+                // Some touchpads or high-precision mice send PixelDelta
                 if pos.y > 0.0 {
                     self.zoom_in(Some(cursor_pos));
                 } else if pos.y < 0.0 {
