@@ -66,6 +66,11 @@ impl SpedImageApp {
                         }
                     }
                     self.current_image = frames.into_iter().next();
+                    if let Some(ref mut img) = self.current_image {
+                        if self.ui_state.show_info {
+                            img.load_exif();
+                        }
+                    }
                     self.dirty = true;
                 }
                 AppEvent::DirectoryLoaded(_dir, files) => {
