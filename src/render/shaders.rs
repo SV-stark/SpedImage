@@ -72,6 +72,9 @@ fn vertex_main(
 
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    if (in.tex_coords.x < 0.0 || in.tex_coords.x > 1.0 || in.tex_coords.y < 0.0 || in.tex_coords.y > 1.0) {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0); // Black background for zoomed out areas
+    }
     let color_new = textureSample(t, s, in.tex_coords);
     let color_old = textureSample(t_prev, s, in.tex_coords);
     

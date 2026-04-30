@@ -360,12 +360,16 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let dx = (position.x - start.x) as f32 / r.config.width as f32;
                     let dy = (position.y - start.y) as f32 / r.config.height as f32;
 
-                    self.ui_state.adjustments.crop_rect[0] =
-                        (self.ui_state.adjustments.crop_rect[0] - dx)
-                            .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[2]);
-                    self.ui_state.adjustments.crop_rect[1] =
-                        (self.ui_state.adjustments.crop_rect[1] - dy)
-                            .clamp(0.0, 1.0 - self.ui_state.adjustments.crop_rect[3]);
+                    let new_x = self.ui_state.adjustments.crop_rect[0] - dx;
+                    let new_y = self.ui_state.adjustments.crop_rect[1] - dy;
+                    
+                    let min_x = 0.0f32.min(1.0 - self.ui_state.adjustments.crop_rect[2]);
+                    let max_x = 0.0f32.max(1.0 - self.ui_state.adjustments.crop_rect[2]);
+                    let min_y = 0.0f32.min(1.0 - self.ui_state.adjustments.crop_rect[3]);
+                    let max_y = 0.0f32.max(1.0 - self.ui_state.adjustments.crop_rect[3]);
+
+                    self.ui_state.adjustments.crop_rect[0] = new_x.clamp(min_x, max_x);
+                    self.ui_state.adjustments.crop_rect[1] = new_y.clamp(min_y, max_y);
                     self.ui_state.adjustments.crop_rect_target =
                         self.ui_state.adjustments.crop_rect;
                     self.mouse_drag_start = Some(position);

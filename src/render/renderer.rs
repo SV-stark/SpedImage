@@ -24,7 +24,7 @@ pub struct Renderer {
     pub(crate) image_bind_group: Option<Arc<BindGroup>>,
     pub(crate) image_bind_group_nearest: Option<Arc<BindGroup>>,
     pub(crate) image_bind_group_prev: Option<Arc<BindGroup>>,
-    pub gif_textures: Vec<(Texture, Arc<BindGroup>)>,
+    pub gif_textures: Vec<(Texture, Arc<BindGroup>, Arc<BindGroup>)>,
     pub(crate) config: SurfaceConfiguration,
     pub(crate) image_size: Option<(u32, u32)>,
     pub scale_factor: f64,
@@ -563,9 +563,10 @@ impl Renderer {
     }
 
     pub fn swap_gif_frame(&mut self, idx: usize) {
-        if let Some((tex, bg)) = self.gif_textures.get(idx) {
+        if let Some((tex, bg_linear, bg_nearest)) = self.gif_textures.get(idx) {
             self.image_size = Some((tex.width(), tex.height()));
-            self.image_bind_group = Some(Arc::clone(bg));
+            self.image_bind_group = Some(Arc::clone(bg_linear));
+            self.image_bind_group_nearest = Some(Arc::clone(bg_nearest));
         }
     }
 

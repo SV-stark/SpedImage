@@ -361,7 +361,7 @@ impl Renderer {
     }
 
     pub fn preload_gif_textures(&mut self, frames: &[crate::image::ImageData]) -> Result<()> {
-        for (tex, _) in self.gif_textures.drain(..) {
+        for (tex, _, _) in self.gif_textures.drain(..) {
             tex.destroy();
         }
         let layout = self.pipeline.get_bind_group_layout(0);
@@ -402,7 +402,7 @@ impl Renderer {
             );
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
             let bind_group = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("GIF Frame Bind Group"),
+                label: Some("GIF Frame Bind Group (Linear)"),
                 layout: &layout,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -425,7 +425,35 @@ impl Renderer {
                     },
                 ],
             }));
-            self.gif_textures.push((texture, bind_group));
+
+            let bind_group_nearest =
+                Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("GIF Frame Bind Group (Nearest)"),
+                    layout: &layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::Buffer(
+                                self.uniform_buffer.as_entire_buffer_binding(),
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler_nearest),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(&view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::TextureView(&view),
+                        },
+                    ],
+                }));
+
+            self.gif_textures
+                .push((texture, bind_group, bind_group_nearest));
         }
         Ok(())
     }

@@ -847,8 +847,8 @@ impl SpedImageApp {
     pub(crate) fn zoom_by(&mut self, factor: f32, cursor: Option<PhysicalPosition<f64>>) {
         let old_w = self.ui_state.adjustments.crop_rect_target[2];
         let old_h = self.ui_state.adjustments.crop_rect_target[3];
-        let new_w = (old_w * factor).clamp(0.01, 1.0);
-        let new_h = (old_h * factor).clamp(0.01, 1.0);
+        let new_w = (old_w * factor).clamp(0.01, 5.0);
+        let new_h = (old_h * factor).clamp(0.01, 5.0);
 
         if let (Some(pos), Some(w)) = (cursor, &self.window) {
             let win_size = w.inner_size();
@@ -857,10 +857,17 @@ impl SpedImageApp {
                     .mul_add(old_w, self.ui_state.adjustments.crop_rect_target[0]);
                 let cy = (pos.y as f32 / win_size.height as f32)
                     .mul_add(old_h, self.ui_state.adjustments.crop_rect_target[1]);
-                self.ui_state.adjustments.crop_rect_target[0] =
-                    (cx - new_w * (pos.x as f32 / win_size.width as f32)).clamp(0.0, 1.0 - new_w);
-                self.ui_state.adjustments.crop_rect_target[1] =
-                    (cy - new_h * (pos.y as f32 / win_size.height as f32)).clamp(0.0, 1.0 - new_h);
+                
+                let target_x = cx - new_w * (pos.x as f32 / win_size.width as f32);
+                let target_y = cy - new_h * (pos.y as f32 / win_size.height as f32);
+                
+                let min_x = 0.0f32.min(1.0 - new_w);
+                let max_x = 0.0f32.max(1.0 - new_w);
+                let min_y = 0.0f32.min(1.0 - new_h);
+                let max_y = 0.0f32.max(1.0 - new_h);
+
+                self.ui_state.adjustments.crop_rect_target[0] = target_x.clamp(min_x, max_x);
+                self.ui_state.adjustments.crop_rect_target[1] = target_y.clamp(min_y, max_y);
             }
         }
 
