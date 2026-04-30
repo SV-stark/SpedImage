@@ -277,7 +277,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        // Special case: if Ctrl is held during a scroll, we want to zoom the image, 
+        // Special case: if Ctrl is held during a scroll, we want to zoom the image,
         // not scroll egui UI elements.
         let is_ctrl_scroll = matches!(event, WindowEvent::MouseWheel { .. }) && self.modifiers.ctrl;
 
