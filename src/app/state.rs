@@ -4,9 +4,9 @@ use crate::image::ImageData;
 use crate::render::Renderer;
 use crate::ui::UiState;
 use crossbeam_channel::{Receiver, Sender};
+use moka::sync::Cache;
 use notify_debouncer_full::notify;
 use notify_debouncer_full::{Debouncer, FileIdMap};
-use quick_cache::sync::Cache;
 use rayon::ThreadPool;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,6 +19,7 @@ pub struct NavigationState {
     pub(crate) last_advance_time: Option<std::time::Instant>,
     pub(crate) prefetch_cache: Arc<Cache<PathBuf, Arc<Vec<ImageData>>>>,
     pub(crate) load_generation: Arc<AtomicU64>,
+    pub(crate) cancelled_generation: Arc<AtomicU64>,
     pub(crate) thumb_scroll: f32,
     pub(crate) thumb_velocity: f32,
     #[allow(dead_code)]
@@ -78,8 +79,20 @@ impl SpedImageApp {
             navigation: NavigationState {
                 held_key: None,
                 last_advance_time: None,
-                prefetch_cache: Arc::new(Cache::new(constants::PREFETCH_CACHE_SIZE as usize)),
+                prefetch_cache: Arc::new(
+                    Cache::builder()
+                        .max_capacity(constants::PREFETCH_CACHE_BYTES)
+                        .weigher(|_k, v: &Arc<Vec<ImageData>>| {
+                            let mut size = 0;
+                            for frame in v.iter() {
+                                size += frame.rgba_data.len() as u32;
+                            }
+                            size as u32
+                        })
+                        .build(),
+                ),
                 load_generation: Arc::new(AtomicU64::new(0)),
+                cancelled_generation: Arc::new(AtomicU64::new(0)),
                 thumb_scroll: 0.0,
                 thumb_velocity: 0.0,
                 thumb_target_scroll: 0.0,
@@ -118,5 +131,73 @@ impl SpedImageApp {
             ),
             file_watcher: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::event_loop::EventLoop;
+
+    #[test]
+    fn test_app_creation() {
+        let event_loop = EventLoop::<WakeUp>::with_user_event().build().unwrap();
+        let proxy = event_loop.create_proxy();
+        let app = SpedImageApp::new(proxy);
+
+        assert!(app.window.is_none());
+        assert!(app.renderer.is_none());
+        assert!(app.current_image.is_none());
+        assert!(app.ui_state.files.is_empty());
+        assert_eq!(app.ui_state.current_file_index, None);
+        assert!(!app.dirty);
+        assert!(!app.loading);
+        assert!(app.initial_path.is_none());
+        assert!(app.navigation.held_key.is_none());
+        assert!(app.animation.frame_delays.is_empty());
+        assert_eq!(app.animation.transition_factor, 1.0);
+        assert!(!app.slideshow.active);
+        assert!(app.thumbnails.paths.is_empty());
+        assert!(!app.modifiers.ctrl);
+        assert!(!app.modifiers.shift);
+        assert!(!app.modifiers.alt);
+    }
+
+    #[test]
+    fn test_navigation_state_creation() {
+        let event_loop = EventLoop::<WakeUp>::with_user_event().build().unwrap();
+        let proxy = event_loop.create_proxy();
+        let app = SpedImageApp::new(proxy);
+
+        assert_eq!(app.navigation.thumb_scroll, 0.0);
+        assert_eq!(app.navigation.thumb_velocity, 0.0);
+        assert_eq!(app.navigation.thumb_target_scroll, 0.0);
+        assert!(app.navigation.last_advance_time.is_none());
+        assert!(app.navigation.held_key.is_none());
+        assert_eq!(app.navigation.load_generation.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_animation_state_creation() {
+        let event_loop = EventLoop::<WakeUp>::with_user_event().build().unwrap();
+        let proxy = event_loop.create_proxy();
+        let app = SpedImageApp::new(proxy);
+
+        assert_eq!(app.animation.frame_idx, 0);
+        assert!(app.animation.frame_delays.is_empty());
+        assert!(app.animation.next_frame_time.is_none());
+        assert!(app.animation.transition_start.is_none());
+        assert!((app.animation.transition_factor - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_slideshow_state_creation() {
+        let event_loop = EventLoop::<WakeUp>::with_user_event().build().unwrap();
+        let proxy = event_loop.create_proxy();
+        let app = SpedImageApp::new(proxy);
+
+        assert!(!app.slideshow.active);
+        assert_eq!(app.slideshow.interval, std::time::Duration::from_secs(3));
+        assert!(app.slideshow.next_time.is_none());
     }
 }

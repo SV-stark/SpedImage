@@ -1,4 +1,4 @@
-use color_eyre::eyre::{Context, Result, eyre};
+use color_eyre::eyre::{Context, Result};
 use std::sync::Arc;
 use wgpu::{
     BindGroup, Device, Queue, RenderPipeline, Sampler, Surface, SurfaceConfiguration, Texture,
@@ -35,20 +35,12 @@ pub struct Renderer {
 
     pub thumbnails: Vec<ThumbnailEntry>,
     pub(crate) last_thumb_state: Option<(u32, u32, f32)>,
-
-    // Profiling
-    #[allow(dead_code)]
-    pub(crate) profiler: wgpu_profiler::GpuProfiler,
 }
 
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Result<Self> {
         let (device, queue, surface, adapter) =
             Self::create_device_and_surface(window.clone()).await?;
-
-        let profiler =
-            wgpu_profiler::GpuProfiler::new(&device, wgpu_profiler::GpuProfilerSettings::default())
-                .map_err(|e| eyre!("Failed to create GPU profiler: {e:?}"))?;
 
         let capabilities = surface.get_capabilities(&adapter);
         let format = capabilities
@@ -128,10 +120,31 @@ impl Renderer {
             egui_renderer,
             thumbnails: Vec::new(),
             last_thumb_state: None,
-            profiler,
         })
     }
+}
 
+impl Drop for Renderer {
+    fn drop(&mut self) {
+        // Destroy previous texture if it exists
+        if let Some(tex) = self.image_texture_prev.take() {
+            tex.destroy();
+        }
+
+        // Destroy all thumbnail textures and uniform buffers
+        for thumb in self.thumbnails.drain(..) {
+            thumb.texture.destroy();
+            thumb.uniform_buffer.destroy();
+        }
+
+        // Destroy all GIF textures
+        for (tex, _, _) in self.gif_textures.drain(..) {
+            tex.destroy();
+        }
+    }
+}
+
+impl Renderer {
     async fn create_device_and_surface(
         window: Arc<Window>,
     ) -> Result<(

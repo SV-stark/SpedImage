@@ -169,7 +169,13 @@ impl SpedImageApp {
                     self.dirty = true;
                 }
                 "p" | "P" if ctrl => self.print_image(),
-                "+" | "=" => self.zoom_in(None),
+                "+" | "=" => {
+                    if self.modifiers.ctrl {
+                        self.zoom_in(None);
+                    } else {
+                        self.zoom_in(None);
+                    }
+                }
                 "-" => self.zoom_out(None),
                 "0" => self.zoom_fit(),
                 " " => self.toggle_slideshow(),
@@ -214,9 +220,8 @@ impl SpedImageApp {
     ) {
         // Ensure Ctrl is actually pressed.
         // We use our tracked modifiers which are updated via ModifiersChanged.
-        if !self.modifiers.ctrl {
-            return;
-        }
+        // Always zoom on scroll if mouse is over the image area
+        // (Removing the Ctrl requirement for more intuitive viewing)
 
         match delta {
             MouseScrollDelta::LineDelta(_, y) => {
@@ -243,6 +248,9 @@ impl SpedImageApp {
             .load_generation
             .fetch_add(1, Ordering::SeqCst)
             + 1;
+        self.navigation
+            .cancelled_generation
+            .store(generation, Ordering::SeqCst);
 
         // Compute prefetch targets
         let mut prefetch_targets = Vec::new();
@@ -287,6 +295,11 @@ impl SpedImageApp {
                 let proxy_p = proxy.clone();
                 let gen_p = current_gen.clone();
                 pool.spawn(move || {
+                    // Early exit check
+                    if gen_p.load(Ordering::Relaxed) != generation {
+                        return;
+                    }
+
                     if let Ok(frames) =
                         ImageBackend::load_and_downsample(&target_path, max_w, max_h)
                         && gen_p.load(Ordering::Relaxed) == generation
@@ -316,6 +329,11 @@ impl SpedImageApp {
         let pool_inner = pool.clone();
 
         pool.spawn(move || {
+            // Early exit check
+            if current_gen.load(Ordering::Relaxed) != generation {
+                return;
+            }
+
             let result = ImageBackend::load_and_downsample(&path_owned, max_w, max_h);
 
             if current_gen.load(Ordering::Relaxed) == generation {
@@ -333,6 +351,11 @@ impl SpedImageApp {
                     let proxy_p = proxy.clone();
                     let gen_p = current_gen.clone();
                     pool_inner.spawn(move || {
+                        // Early exit check
+                        if gen_p.load(Ordering::Relaxed) != generation {
+                            return;
+                        }
+
                         if let Ok(frames) =
                             ImageBackend::load_and_downsample(&target_path, max_w, max_h)
                             && gen_p.load(Ordering::Relaxed) == generation
@@ -493,8 +516,9 @@ impl SpedImageApp {
 
         self.thread_pool.spawn(move || {
             let mut saved_count = 0;
+            let mut failed_paths = Vec::new();
             for path in &selected {
-                let _ = (|| -> color_eyre::eyre::Result<()> {
+                match (|| -> color_eyre::eyre::Result<()> {
                     use zune_image::image::Image;
                     let img = Image::open(path)
                         .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?;
@@ -511,17 +535,36 @@ impl SpedImageApp {
                         let (w, h) = img.dimensions();
                         let rgba = img.flatten_to_u8()[0].clone();
                         ImageBackend::save(&save_path, &rgba, w as u32, h as u32)?;
+                        saved_count += 1;
                     }
                     Ok(())
-                })();
-                saved_count += 1;
+                })() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        failed_paths.push(format!("{}: {}", path.display(), e));
+                    }
+                }
             }
+
             if let Some(ref proxy) = proxy {
-                send_event(
-                    &tx,
-                    proxy,
-                    AppEvent::SetStatus(format!("Batch save complete: {} images", saved_count)),
-                );
+                if failed_paths.is_empty() {
+                    send_event(
+                        &tx,
+                        proxy,
+                        AppEvent::SetStatus(format!("Batch save complete: {} images", saved_count)),
+                    );
+                } else {
+                    send_event(
+                        &tx,
+                        proxy,
+                        AppEvent::SetStatus(format!(
+                            "Saved {} of {}. Failures:\n{}",
+                            saved_count,
+                            selected.len(),
+                            failed_paths.join("\n")
+                        )),
+                    );
+                }
             }
         });
     }

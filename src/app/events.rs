@@ -1,6 +1,7 @@
 use crate::app::constants;
 use crate::app::state::SpedImageApp;
 use crate::app::types::{APP_ICON, AppEvent, WakeUp};
+use crate::config::AppConfig;
 use crate::render::{RenderParams, Renderer, STRIP_HEIGHT_PX};
 use color_eyre::eyre::Result;
 use std::path::PathBuf;
@@ -256,17 +257,36 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             winit::window::Icon::from_rgba(rgba, w as u32, h as u32).ok()
         })();
 
+        let config = AppConfig::load();
+
         let window = Arc::new(
             event_loop
                 .create_window(
                     WindowAttributes::default()
                         .with_title("SpedImage")
                         .with_window_icon(icon)
-                        .with_inner_size(winit::dpi::LogicalSize::new(1200.0, 800.0)),
+                        .with_inner_size(winit::dpi::LogicalSize::new(
+                            if config.window_width > 0 {
+                                config.window_width as f64
+                            } else {
+                                1200.0
+                            },
+                            if config.window_height > 0 {
+                                config.window_height as f64
+                            } else {
+                                800.0
+                            },
+                        )),
                 )
                 .unwrap(),
         );
         self.window = Some(window.clone());
+
+        // Apply config to UI state
+        self.ui_state.show_sidebar = config.show_sidebar;
+        self.ui_state.show_thumbnail_strip = config.show_thumbnail_strip;
+        self.ui_state.show_info = config.show_info;
+        self.ui_state.show_histogram = config.show_histogram;
 
         let renderer = pollster::block_on(Renderer::new(window.clone())).unwrap();
         self.renderer = Some(renderer);
@@ -293,7 +313,22 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
         }
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                // Save config on exit
+                let mut config = AppConfig::load();
+                if let Some(ref w) = self.window {
+                    let size = w.inner_size();
+                    config.window_width = size.width;
+                    config.window_height = size.height;
+                }
+                config.show_sidebar = self.ui_state.show_sidebar;
+                config.show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
+                config.show_info = self.ui_state.show_info;
+                config.show_histogram = self.ui_state.show_histogram;
+                config.save();
+
+                event_loop.exit();
+            }
             WindowEvent::Resized(size) => {
                 if let Some(ref mut r) = self.renderer {
                     r.resize(size);

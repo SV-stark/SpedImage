@@ -1,5 +1,5 @@
 use crate::app::state::SpedImageApp;
-use crate::app::types::{AppEvent, MAX_THUMBNAILS, THUMB_LOAD_SIZE, send_event};
+use crate::app::types::{AppEvent, MAX_THUMBNAILS, MAX_THUMB_THREADS, THUMB_LOAD_SIZE, send_event};
 use crate::image::ImageBackend;
 use std::path::{Path, PathBuf};
 
@@ -42,15 +42,33 @@ impl SpedImageApp {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         let pool = self.thread_pool.clone();
-        let pool_outer = self.thread_pool.clone();
 
-        pool_outer.spawn(move || {
-            for path in files.into_iter().take(MAX_THUMBNAILS) {
-                let tx = tx.clone();
-                let proxy = proxy.clone();
-                let path_clone = path.clone();
+        // Current generation for cancellation
+        use std::sync::atomic::Ordering;
+        let generation = self.navigation.load_generation.load(Ordering::SeqCst);
+        let current_gen = self.navigation.load_generation.clone();
 
-                pool.spawn(move || {
+        // Create a work queue
+        let (tx_work, rx_work) = crossbeam_channel::unbounded();
+        for path in files.into_iter().take(MAX_THUMBNAILS) {
+            tx_work.send(path).ok();
+        }
+        drop(tx_work); // Close producer so workers exit when queue is empty
+
+        // Spawn a fixed number of workers
+        for _ in 0..MAX_THUMB_THREADS {
+            let rx = rx_work.clone();
+            let tx = tx.clone();
+            let proxy = proxy.clone();
+            let gen_check = current_gen.clone();
+
+            pool.spawn(move || {
+                while let Ok(path_clone) = rx.recv() {
+                    // Early exit check
+                    if gen_check.load(Ordering::Relaxed) != generation {
+                        break;
+                    }
+
                     if let Ok(frames) = ImageBackend::load_and_downsample(
                         &path_clone,
                         THUMB_LOAD_SIZE,
@@ -58,6 +76,11 @@ impl SpedImageApp {
                     ) && let Some(frame) = frames.first()
                         && let Some(ref p) = proxy
                     {
+                        // Check again after expensive load
+                        if gen_check.load(Ordering::Relaxed) != generation {
+                            break;
+                        }
+
                         send_event(
                             &tx,
                             p,
@@ -69,9 +92,9 @@ impl SpedImageApp {
                             ),
                         );
                     }
-                });
-            }
-        });
+                }
+            });
+        }
     }
 
     pub(crate) fn setup_file_watcher(&mut self, path: &Path) {

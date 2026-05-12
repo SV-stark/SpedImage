@@ -4,6 +4,7 @@
 //! Features GPU-accelerated image processing and a modern native UI.
 
 pub mod app;
+pub mod config;
 pub mod image;
 pub mod render;
 pub mod ui;

@@ -192,7 +192,10 @@ impl Renderer {
     }
 
     pub fn clear_thumbnails(&mut self) {
-        self.thumbnails.clear();
+        for thumb in self.thumbnails.drain(..) {
+            thumb.texture.destroy();
+            thumb.uniform_buffer.destroy();
+        }
         self.last_thumb_state = None;
     }
 

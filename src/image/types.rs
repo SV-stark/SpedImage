@@ -135,3 +135,138 @@ impl ImageData {
         self.width * self.height
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_image_format_from_extension() {
+        assert_eq!(ImageFormatType::from_extension("jpg"), ImageFormatType::Jpeg);
+        assert_eq!(ImageFormatType::from_extension("jpeg"), ImageFormatType::Jpeg);
+        assert_eq!(ImageFormatType::from_extension("png"), ImageFormatType::Png);
+        assert_eq!(ImageFormatType::from_extension("gif"), ImageFormatType::Gif);
+        assert_eq!(ImageFormatType::from_extension("bmp"), ImageFormatType::Bmp);
+        assert_eq!(ImageFormatType::from_extension("tiff"), ImageFormatType::Tiff);
+        assert_eq!(ImageFormatType::from_extension("tif"), ImageFormatType::Tiff);
+        assert_eq!(ImageFormatType::from_extension("webp"), ImageFormatType::WebP);
+        assert_eq!(ImageFormatType::from_extension("heic"), ImageFormatType::Heic);
+        assert_eq!(ImageFormatType::from_extension("heif"), ImageFormatType::Heic);
+        assert_eq!(ImageFormatType::from_extension("avif"), ImageFormatType::Avif);
+        assert_eq!(ImageFormatType::from_extension("jxl"), ImageFormatType::Jxl);
+        assert_eq!(ImageFormatType::from_extension("svg"), ImageFormatType::Svg);
+        assert_eq!(ImageFormatType::from_extension("arw"), ImageFormatType::Raw);
+        assert_eq!(ImageFormatType::from_extension("cr2"), ImageFormatType::Raw);
+        assert_eq!(ImageFormatType::from_extension("nef"), ImageFormatType::Raw);
+        assert_eq!(ImageFormatType::from_extension("dng"), ImageFormatType::Raw);
+        assert_eq!(ImageFormatType::from_extension("txt"), ImageFormatType::Unknown);
+    }
+
+    #[test]
+    fn test_image_format_case_insensitive() {
+        assert_eq!(ImageFormatType::from_extension("JPG"), ImageFormatType::Jpeg);
+        assert_eq!(ImageFormatType::from_extension("PNG"), ImageFormatType::Png);
+        assert_eq!(ImageFormatType::from_extension("GIF"), ImageFormatType::Gif);
+    }
+
+    #[test]
+    fn test_image_format_is_supported() {
+        assert!(ImageFormatType::Jpeg.is_supported());
+        assert!(ImageFormatType::Png.is_supported());
+        assert!(ImageFormatType::Gif.is_supported());
+        assert!(ImageFormatType::Bmp.is_supported());
+        assert!(ImageFormatType::Tiff.is_supported());
+        assert!(ImageFormatType::WebP.is_supported());
+        assert!(ImageFormatType::Heic.is_supported());
+        assert!(ImageFormatType::Avif.is_supported());
+        assert!(ImageFormatType::Jxl.is_supported());
+        assert!(ImageFormatType::Svg.is_supported());
+        assert!(ImageFormatType::Raw.is_supported());
+        assert!(!ImageFormatType::Unknown.is_supported());
+    }
+
+    #[test]
+    fn test_image_data_aspect_ratio() {
+        let img = ImageData {
+            width: 1920,
+            height: 1080,
+            format: ImageFormatType::Png,
+            rgba_data: Arc::new(vec![0; 1920 * 1080 * 4]),
+            path: std::path::PathBuf::from("test.png"),
+            file_size_bytes: 1000,
+            frame_delay_ms: 0,
+            exif_info: None,
+            exif_loaded: false,
+            histogram: None,
+            is_downsampled: false,
+        };
+        let ratio = img.aspect_ratio();
+        assert!((ratio - 1920.0 / 1080.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_image_data_pixel_count() {
+        let img = ImageData {
+            width: 100,
+            height: 200,
+            format: ImageFormatType::Png,
+            rgba_data: Arc::new(vec![0; 100 * 200 * 4]),
+            path: std::path::PathBuf::from("test.png"),
+            file_size_bytes: 1000,
+            frame_delay_ms: 0,
+            exif_info: None,
+            exif_loaded: false,
+            histogram: None,
+            is_downsampled: false,
+        };
+        assert_eq!(img.pixel_count(), 20000);
+    }
+
+    #[test]
+    fn test_image_data_aspect_ratio_square() {
+        let img = ImageData {
+            width: 512,
+            height: 512,
+            format: ImageFormatType::Png,
+            rgba_data: Arc::new(vec![0; 512 * 512 * 4]),
+            path: std::path::PathBuf::from("test.png"),
+            file_size_bytes: 500,
+            frame_delay_ms: 0,
+            exif_info: None,
+            exif_loaded: false,
+            histogram: None,
+            is_downsampled: false,
+        };
+        assert!((img.aspect_ratio() - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_image_data_empty_histogram() {
+        let mut img = ImageData {
+            width: 2,
+            height: 2,
+            format: ImageFormatType::Png,
+            rgba_data: Arc::new(vec![
+                255, 0, 0, 255,
+                255, 0, 0, 255,
+                0, 255, 0, 255,
+                0, 255, 0, 255,
+            ]),
+            path: std::path::PathBuf::from("test.png"),
+            file_size_bytes: 100,
+            frame_delay_ms: 0,
+            exif_info: None,
+            exif_loaded: false,
+            histogram: None,
+            is_downsampled: false,
+        };
+        assert!(img.histogram.is_none());
+        img.compute_histogram();
+        assert!(img.histogram.is_some());
+        let (r, g, b) = img.histogram.unwrap();
+        assert_eq!(r[255], 2);
+        assert_eq!(g[255], 2);
+        assert_eq!(b[0], 4); // all 4 pixels have 0 blue
+    }
+}

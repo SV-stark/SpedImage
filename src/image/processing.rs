@@ -89,3 +89,59 @@ impl ImageProcessor {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_supported_extensions_includes_common_formats() {
+        let exts = ImageProcessor::supported_extensions();
+        assert!(exts.contains(&"jpg"));
+        assert!(exts.contains(&"jpeg"));
+        assert!(exts.contains(&"png"));
+        assert!(exts.contains(&"gif"));
+        assert!(exts.contains(&"bmp"));
+        assert!(exts.contains(&"tiff"));
+        assert!(exts.contains(&"webp"));
+        assert!(exts.contains(&"avif"));
+        assert!(exts.contains(&"jxl"));
+        assert!(exts.contains(&"svg"));
+    }
+
+    #[test]
+    fn test_supported_extensions_includes_raw_formats() {
+        let exts = ImageProcessor::supported_extensions();
+        assert!(exts.contains(&"arw"));
+        assert!(exts.contains(&"cr2"));
+        assert!(exts.contains(&"nef"));
+        assert!(exts.contains(&"dng"));
+        assert!(exts.contains(&"orf"));
+        assert!(exts.contains(&"raf"));
+        assert!(exts.contains(&"srw"));
+    }
+
+    #[test]
+    fn test_is_supported_positive() {
+        assert!(ImageProcessor::is_supported(&PathBuf::from("photo.jpg")));
+        assert!(ImageProcessor::is_supported(&PathBuf::from("photo.PNG")));
+        assert!(ImageProcessor::is_supported(&PathBuf::from("photo.Gif")));
+        assert!(ImageProcessor::is_supported(&PathBuf::from("photo.webp")));
+        assert!(ImageProcessor::is_supported(&PathBuf::from("photo.svg")));
+    }
+
+    #[test]
+    fn test_is_supported_negative() {
+        assert!(!ImageProcessor::is_supported(&PathBuf::from("document.txt")));
+        assert!(!ImageProcessor::is_supported(&PathBuf::from("data.csv")));
+        assert!(!ImageProcessor::is_supported(&PathBuf::from("archive.zip")));
+        assert!(!ImageProcessor::is_supported(&PathBuf::from("noextension")));
+    }
+
+    #[test]
+    fn test_is_supported_empty_extension() {
+        assert!(!ImageProcessor::is_supported(&PathBuf::from(".")));
+        assert!(!ImageProcessor::is_supported(&PathBuf::from("Makefile")));
+    }
+}

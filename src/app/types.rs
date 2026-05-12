@@ -49,3 +49,61 @@ pub fn send_event(tx: &Sender<AppEvent>, proxy: &EventLoopProxy<WakeUp>, event: 
     tx.send(event).ok();
     proxy.send_event(WakeUp).ok();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_key_modifiers_default() {
+        let mods = KeyModifiers::default();
+        assert!(!mods.ctrl);
+        assert!(!mods.shift);
+        assert!(!mods.alt);
+    }
+
+    #[test]
+    fn test_key_modifiers_set_individually() {
+        let mut mods = KeyModifiers::default();
+        mods.ctrl = true;
+        assert!(mods.ctrl);
+        assert!(!mods.shift);
+        assert!(!mods.alt);
+
+        mods.shift = true;
+        assert!(mods.ctrl);
+        assert!(mods.shift);
+        assert!(!mods.alt);
+
+        mods.alt = true;
+        assert!(mods.ctrl);
+        assert!(mods.shift);
+        assert!(mods.alt);
+    }
+
+    #[test]
+    fn test_key_modifiers_copy() {
+        let mut mods = KeyModifiers::default();
+        mods.ctrl = true;
+        mods.shift = true;
+        let copied = mods;
+        assert!(copied.ctrl);
+        assert!(copied.shift);
+        assert!(!copied.alt);
+    }
+
+    #[test]
+    fn test_thumb_constants() {
+        assert!(THUMB_LOAD_SIZE > 0);
+        assert!(MAX_THUMB_THREADS > 0);
+        assert!(MAX_THUMBNAILS > 0);
+        assert!(MAX_THUMBNAILS >= MAX_THUMB_THREADS);
+    }
+
+    #[test]
+    fn test_wake_up_debug() {
+        let w = WakeUp;
+        // Just verify it implements Debug (compile-time check via derive)
+        let _ = format!("{:?}", w);
+    }
+}

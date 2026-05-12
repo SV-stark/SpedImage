@@ -1,20 +1,22 @@
-// Unit tests for core modules
-
 #[cfg(test)]
 mod tests {
+    use spedimage_lib::image::ImageData;
 
     #[test]
-    fn test_image_backend() {
-        // Add your test logic here
-    }
+    fn test_histogram_computation() {
+        let rgba = vec![
+            255, 0, 0, 255, // red
+            0, 255, 0, 255, // green
+            0, 0, 255, 255, // blue
+            255, 0, 0, 255, // red again
+        ];
+        let mut r = [0u32; 256];
+        let mut g = [0u32; 256];
+        let mut b = [0u32; 256];
+        ImageData::compute_rgb_histogram(&rgba, &mut r, &mut g, &mut b);
 
-    #[test]
-    fn test_ui_state() {
-        // Add your test logic here
-    }
-
-    #[test]
-    fn test_app_types() {
-        // Add your test logic here
+        assert_eq!(r[255], 2); // two red pixels
+        assert_eq!(g[255], 1); // one green pixel
+        assert_eq!(b[255], 1); // one blue pixel
     }
 }

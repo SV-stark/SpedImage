@@ -11,8 +11,6 @@ rust-version = "1.94.0"
 # Performance and Features Integrations
 mimalloc = "0.1.43"
 fast_image_resize = "6.0"
-# tracing-tracy = "0.11"
-wgpu-profiler = "0.27"
 jxl-oxide = "0.11"
 # # qcms = "0.2"
 
@@ -27,14 +25,13 @@ zune-imageprocs = "0.5"
 tiff = "0.9"
 gif = "0.13"
 resvg = "0.47"
-half = "2.4"
 pollster = "0.3"
 color-eyre = "0.6"
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rayon = "1.10"
-lru = "0.16"
+dirs = "5.0"
 notify-debouncer-full = "0.3"
 rfd = "0.15"
 arboard = "3.4"
@@ -49,8 +46,8 @@ bytemuck = { version = "1.19", features = ["derive"] }
 # Concurrency
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
-dashmap = "6.1"
 quick_cache = "0.6"
+moka = { version = "0.12", features = ["sync"] }
 heic = { git = "https://github.com/imazen/heic" }
 
 [target.'cfg(windows)'.dependencies]
