@@ -162,7 +162,11 @@ mod tests {
     #[test]
     fn test_ui_state_next_file() {
         let mut ui = UiState::default();
-        ui.files = vec![make_entry("a.jpg"), make_entry("b.jpg"), make_entry("c.jpg")];
+        ui.files = vec![
+            make_entry("a.jpg"),
+            make_entry("b.jpg"),
+            make_entry("c.jpg"),
+        ];
 
         // First call: 0 -> 1
         ui.next_file();
@@ -187,7 +191,11 @@ mod tests {
     #[test]
     fn test_ui_state_prev_file() {
         let mut ui = UiState::default();
-        ui.files = vec![make_entry("a.jpg"), make_entry("b.jpg"), make_entry("c.jpg")];
+        ui.files = vec![
+            make_entry("a.jpg"),
+            make_entry("b.jpg"),
+            make_entry("c.jpg"),
+        ];
 
         // First call: default(0) -> 2 (wraps)
         ui.prev_file();

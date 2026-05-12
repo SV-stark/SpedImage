@@ -143,29 +143,59 @@ mod tests {
 
     #[test]
     fn test_image_format_from_extension() {
-        assert_eq!(ImageFormatType::from_extension("jpg"), ImageFormatType::Jpeg);
-        assert_eq!(ImageFormatType::from_extension("jpeg"), ImageFormatType::Jpeg);
+        assert_eq!(
+            ImageFormatType::from_extension("jpg"),
+            ImageFormatType::Jpeg
+        );
+        assert_eq!(
+            ImageFormatType::from_extension("jpeg"),
+            ImageFormatType::Jpeg
+        );
         assert_eq!(ImageFormatType::from_extension("png"), ImageFormatType::Png);
         assert_eq!(ImageFormatType::from_extension("gif"), ImageFormatType::Gif);
         assert_eq!(ImageFormatType::from_extension("bmp"), ImageFormatType::Bmp);
-        assert_eq!(ImageFormatType::from_extension("tiff"), ImageFormatType::Tiff);
-        assert_eq!(ImageFormatType::from_extension("tif"), ImageFormatType::Tiff);
-        assert_eq!(ImageFormatType::from_extension("webp"), ImageFormatType::WebP);
-        assert_eq!(ImageFormatType::from_extension("heic"), ImageFormatType::Heic);
-        assert_eq!(ImageFormatType::from_extension("heif"), ImageFormatType::Heic);
-        assert_eq!(ImageFormatType::from_extension("avif"), ImageFormatType::Avif);
+        assert_eq!(
+            ImageFormatType::from_extension("tiff"),
+            ImageFormatType::Tiff
+        );
+        assert_eq!(
+            ImageFormatType::from_extension("tif"),
+            ImageFormatType::Tiff
+        );
+        assert_eq!(
+            ImageFormatType::from_extension("webp"),
+            ImageFormatType::WebP
+        );
+        assert_eq!(
+            ImageFormatType::from_extension("heic"),
+            ImageFormatType::Heic
+        );
+        assert_eq!(
+            ImageFormatType::from_extension("heif"),
+            ImageFormatType::Heic
+        );
+        assert_eq!(
+            ImageFormatType::from_extension("avif"),
+            ImageFormatType::Avif
+        );
         assert_eq!(ImageFormatType::from_extension("jxl"), ImageFormatType::Jxl);
         assert_eq!(ImageFormatType::from_extension("svg"), ImageFormatType::Svg);
         assert_eq!(ImageFormatType::from_extension("arw"), ImageFormatType::Raw);
         assert_eq!(ImageFormatType::from_extension("cr2"), ImageFormatType::Raw);
         assert_eq!(ImageFormatType::from_extension("nef"), ImageFormatType::Raw);
         assert_eq!(ImageFormatType::from_extension("dng"), ImageFormatType::Raw);
-        assert_eq!(ImageFormatType::from_extension("txt"), ImageFormatType::Unknown);
+        assert_eq!(
+            ImageFormatType::from_extension("txt"),
+            ImageFormatType::Unknown
+        );
     }
 
     #[test]
     fn test_image_format_case_insensitive() {
-        assert_eq!(ImageFormatType::from_extension("JPG"), ImageFormatType::Jpeg);
+        assert_eq!(
+            ImageFormatType::from_extension("JPG"),
+            ImageFormatType::Jpeg
+        );
         assert_eq!(ImageFormatType::from_extension("PNG"), ImageFormatType::Png);
         assert_eq!(ImageFormatType::from_extension("GIF"), ImageFormatType::Gif);
     }
@@ -248,10 +278,7 @@ mod tests {
             height: 2,
             format: ImageFormatType::Png,
             rgba_data: Arc::new(vec![
-                255, 0, 0, 255,
-                255, 0, 0, 255,
-                0, 255, 0, 255,
-                0, 255, 0, 255,
+                255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
             ]),
             path: std::path::PathBuf::from("test.png"),
             file_size_bytes: 100,

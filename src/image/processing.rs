@@ -133,7 +133,9 @@ mod tests {
 
     #[test]
     fn test_is_supported_negative() {
-        assert!(!ImageProcessor::is_supported(&PathBuf::from("document.txt")));
+        assert!(!ImageProcessor::is_supported(&PathBuf::from(
+            "document.txt"
+        )));
         assert!(!ImageProcessor::is_supported(&PathBuf::from("data.csv")));
         assert!(!ImageProcessor::is_supported(&PathBuf::from("archive.zip")));
         assert!(!ImageProcessor::is_supported(&PathBuf::from("noextension")));

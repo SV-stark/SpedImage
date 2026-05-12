@@ -174,7 +174,12 @@ mod tests {
         assert_eq!(app.navigation.thumb_target_scroll, 0.0);
         assert!(app.navigation.last_advance_time.is_none());
         assert!(app.navigation.held_key.is_none());
-        assert_eq!(app.navigation.load_generation.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(
+            app.navigation
+                .load_generation
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
     }
 
     #[test]
