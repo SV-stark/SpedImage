@@ -682,36 +682,21 @@ impl SpedImageApp {
     }
 
     pub(crate) fn set_as_wallpaper(&mut self) {
-        #[cfg(windows)]
-        {
-            if let Some(img) = &self.current_image {
-                use std::os::windows::ffi::OsStrExt;
-                use windows::Win32::UI::WindowsAndMessaging::{
-                    SPI_SETDESKWALLPAPER, SPIF_SENDWININICHANGE, SPIF_UPDATEINIFILE,
-                    SystemParametersInfoW,
-                };
+        if let Some(img) = &self.current_image {
+            let path = &img.path;
+            let abs_path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                std::env::current_dir().unwrap_or_default().join(path)
+            };
 
-                let path = &img.path;
-                let abs_path = if path.is_absolute() {
-                    path.to_path_buf()
-                } else {
-                    std::env::current_dir().unwrap_or_default().join(path)
-                };
-
-                let mut path_wide: Vec<u16> = abs_path.as_os_str().encode_wide().collect();
-                path_wide.push(0);
-
-                unsafe {
-                    let _ = SystemParametersInfoW(
-                        SPI_SETDESKWALLPAPER,
-                        0,
-                        Some(path_wide.as_mut_ptr() as *mut _),
-                        SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE,
-                    );
-                }
+            if let Err(e) = wallpaper::set_from_path(&abs_path.to_string_lossy()) {
+                self.ui_state
+                    .set_status(format!("Failed to set wallpaper: {e}"));
+            } else {
                 self.ui_state.set_status("Desktop wallpaper set!");
-                self.dirty = true;
             }
+            self.dirty = true;
         }
     }
 
