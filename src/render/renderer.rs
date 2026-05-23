@@ -395,6 +395,8 @@ impl Renderer {
             recycled_texture = Some(self.texture_pool.remove(pos));
         }
 
+        let mip_level_count = (((width.max(height) as f32).log2().floor() as u32) + 1).min(4);
+
         let texture = recycled_texture.unwrap_or_else(|| {
             self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("Image Texture"),
@@ -403,7 +405,7 @@ impl Renderer {
                     height,
                     depth_or_array_layers: 1,
                 },
-                mip_level_count: 1,
+                mip_level_count,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -523,6 +525,56 @@ impl Renderer {
                     depth_or_array_layers: 1,
                 },
             );
+
+            // Generate and upload mip levels 1 to N
+            let mip_level_count = texture.mip_level_count();
+            let mut prev_width = width;
+            let mut prev_height = height;
+            let mut prev_rgba = image_data.as_rgba().to_vec();
+
+            for mip in 1..mip_level_count {
+                let mip_w = (prev_width / 2).max(1);
+                let mip_h = (prev_height / 2).max(1);
+
+                use fast_image_resize as fr;
+                let src_image = fr::images::ImageRef::new(
+                    prev_width,
+                    prev_height,
+                    &prev_rgba,
+                    fr::PixelType::U8x4,
+                )
+                .ok();
+                let mut dst_image = fr::images::Image::new(mip_w, mip_h, fr::PixelType::U8x4);
+
+                if let Some(src) = src_image {
+                    let mut resizer = fr::Resizer::new();
+                    if resizer.resize(&src, &mut dst_image, None).is_ok() {
+                        let dst_rgba = dst_image.into_vec();
+                        self.queue.write_texture(
+                            wgpu::TexelCopyTextureInfo {
+                                texture,
+                                mip_level: mip,
+                                origin: wgpu::Origin3d::ZERO,
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            &dst_rgba,
+                            wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(mip_w * 4),
+                                rows_per_image: Some(mip_h),
+                            },
+                            wgpu::Extent3d {
+                                width: mip_w,
+                                height: mip_h,
+                                depth_or_array_layers: 1,
+                            },
+                        );
+                        prev_rgba = dst_rgba;
+                    }
+                }
+                prev_width = mip_w;
+                prev_height = mip_h;
+            }
         }
 
         Ok(())

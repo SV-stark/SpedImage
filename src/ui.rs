@@ -115,7 +115,6 @@ impl UiState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     fn make_entry(name: &str) -> FileEntry {
         FileEntry {

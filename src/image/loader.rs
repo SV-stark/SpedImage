@@ -42,16 +42,15 @@ impl ImageLoader {
             img.convert_color(zune_core::colorspace::ColorSpace::RGBA)?;
 
             let (w, h) = img.dimensions();
-            let rgba = img.flatten_to_u8()[0].clone();
+            let mut rgba = img.flatten_to_u8()[0].clone();
 
             // Apply color management if ICC profile exists
-            /*
-            if let Some(icc) = icc_profile {
-                if let Err(e) = Self::apply_color_profile(&mut rgba, &icc) {
+            if let Some(icc) = img.metadata().icc_chunk() {
+                let res = Self::apply_color_profile(&mut rgba, icc);
+                if let Err(e) = res {
                     tracing::warn!("Failed to apply color profile: {:?}", e);
                 }
             }
-            */
 
             let exif_info = crate::image::metadata::extract_exif_lazy(path);
 
@@ -74,25 +73,23 @@ impl ImageLoader {
         }
     }
 
-    /*
     fn apply_color_profile(rgba: &mut [u8], icc_data: &[u8]) -> Result<()> {
-        let mut in_profile = qcms::Profile::from_slice(icc_data)
-            .map_err(|_| eyre!("Failed to parse ICC profile"))?;
+        let in_profile = qcms::Profile::new_from_slice(icc_data, false)
+            .ok_or_else(|| eyre!("Failed to parse ICC profile"))?;
 
-        let mut out_profile = qcms::Profile::new_sRGB();
+        let out_profile = qcms::Profile::new_sRGB();
 
         let transform = qcms::Transform::new(
-            &mut in_profile,
-            &mut out_profile,
+            &in_profile,
+            &out_profile,
             qcms::DataType::RGBA8,
             qcms::Intent::Perceptual,
         )
-        .map_err(|_| eyre!("Failed to create color transform"))?;
+        .ok_or_else(|| eyre!("Failed to create color transform"))?;
 
-        transform.apply_inplace(rgba);
+        transform.apply(rgba);
         Ok(())
     }
-    */
 
     fn load_jxl(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use jxl_oxide::JxlImage;
