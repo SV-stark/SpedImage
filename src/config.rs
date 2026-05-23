@@ -19,13 +19,11 @@ impl AppConfig {
     }
 
     pub fn load() -> Self {
-        match Self::config_path() {
-            Some(path) => {
-                if let Ok(data) = std::fs::read_to_string(&path) {
-                    return serde_json::from_str(&data).unwrap_or_default();
-                }
-            }
-            None => {}
+        let Some(path) = Self::config_path() else {
+            return Self::default();
+        };
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            return serde_json::from_str(&data).unwrap_or_default();
         }
         Self::default()
     }

@@ -41,7 +41,7 @@ impl SpedImageApp {
 
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
-        let pool = self.thread_pool.clone();
+        let pool = self.thumbnail_pool.clone();
 
         // Current generation for cancellation
         use std::sync::atomic::Ordering;

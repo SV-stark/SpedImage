@@ -3901,6 +3901,7 @@ dependencies = [
  "heic",
  "jxl-oxide 0.11.4",
  "kamadak-exif 0.5.5",
+ "memmap2",
  "mimalloc",
  "moka",
  "notify-debouncer-full",

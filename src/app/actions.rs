@@ -169,13 +169,7 @@ impl SpedImageApp {
                     self.dirty = true;
                 }
                 "p" | "P" if ctrl => self.print_image(),
-                "+" | "=" => {
-                    if self.modifiers.ctrl {
-                        self.zoom_in(None);
-                    } else {
-                        self.zoom_in(None);
-                    }
-                }
+                "+" | "=" => self.zoom_in(None),
                 "-" => self.zoom_out(None),
                 "0" => self.zoom_fit(),
                 " " => self.toggle_slideshow(),
@@ -276,6 +270,7 @@ impl SpedImageApp {
         };
 
         let pool = self.thread_pool.clone();
+        let prefetch_pool = self.prefetch_pool.clone();
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         let current_gen = self.navigation.load_generation.clone();
@@ -294,7 +289,7 @@ impl SpedImageApp {
                 let tx_p = tx.clone();
                 let proxy_p = proxy.clone();
                 let gen_p = current_gen.clone();
-                pool.spawn(move || {
+                prefetch_pool.spawn(move || {
                     // Early exit check
                     if gen_p.load(Ordering::Relaxed) != generation {
                         return;
@@ -326,7 +321,7 @@ impl SpedImageApp {
         }
 
         let path_owned = path.to_path_buf();
-        let pool_inner = pool.clone();
+        let prefetch_pool_inner = prefetch_pool.clone();
 
         pool.spawn(move || {
             // Early exit check
@@ -350,7 +345,7 @@ impl SpedImageApp {
                     let tx_p = tx.clone();
                     let proxy_p = proxy.clone();
                     let gen_p = current_gen.clone();
-                    pool_inner.spawn(move || {
+                    prefetch_pool_inner.spawn(move || {
                         // Early exit check
                         if gen_p.load(Ordering::Relaxed) != generation {
                             return;

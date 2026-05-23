@@ -25,6 +25,7 @@ pub struct Renderer {
     pub(crate) image_bind_group_nearest: Option<Arc<BindGroup>>,
     pub(crate) image_bind_group_prev: Option<Arc<BindGroup>>,
     pub gif_textures: Vec<(Texture, Arc<BindGroup>, Arc<BindGroup>)>,
+    pub(crate) texture_pool: Vec<Texture>,
     pub(crate) config: SurfaceConfiguration,
     pub(crate) image_size: Option<(u32, u32)>,
     pub scale_factor: f64,
@@ -113,6 +114,7 @@ impl Renderer {
             image_bind_group_nearest: None,
             image_bind_group_prev: None,
             gif_textures: Vec::new(),
+            texture_pool: Vec::new(),
             config,
             image_size: None,
             scale_factor: window.scale_factor(),
@@ -128,6 +130,11 @@ impl Drop for Renderer {
     fn drop(&mut self) {
         // Destroy previous texture if it exists
         if let Some(tex) = self.image_texture_prev.take() {
+            tex.destroy();
+        }
+
+        // Destroy all textures in the reuse pool
+        for tex in self.texture_pool.drain(..) {
             tex.destroy();
         }
 
@@ -372,23 +379,37 @@ impl Renderer {
         if let Some(current_tex) = self.image_texture.take()
             && let Some(old_prev) = self.image_texture_prev.replace(current_tex)
         {
-            old_prev.destroy();
+            if self.texture_pool.len() < 4 {
+                self.texture_pool.push(old_prev);
+            } else {
+                old_prev.destroy();
+            }
         }
         self.image_bind_group_prev = self.image_bind_group.take();
 
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Image Texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
+        let mut recycled_texture = None;
+        if let Some(pos) = self.texture_pool.iter().position(|t| {
+            let size = t.size();
+            size.width == width && size.height == height
+        }) {
+            recycled_texture = Some(self.texture_pool.remove(pos));
+        }
+
+        let texture = recycled_texture.unwrap_or_else(|| {
+            self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Image Texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            })
         });
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

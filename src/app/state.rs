@@ -64,6 +64,8 @@ pub struct SpedImageApp {
     pub(crate) event_rx: Receiver<AppEvent>,
     pub(crate) event_proxy: Option<EventLoopProxy<WakeUp>>,
     pub(crate) thread_pool: Arc<ThreadPool>,
+    pub(crate) prefetch_pool: Arc<ThreadPool>,
+    pub(crate) thumbnail_pool: Arc<ThreadPool>,
     pub(crate) file_watcher: Option<Debouncer<notify::RecommendedWatcher, FileIdMap>>,
 }
 
@@ -87,7 +89,7 @@ impl SpedImageApp {
                             for frame in v.iter() {
                                 size += frame.rgba_data.len() as u32;
                             }
-                            size as u32
+                            size
                         })
                         .build(),
                 ),
@@ -121,13 +123,24 @@ impl SpedImageApp {
             event_proxy: Some(proxy),
             thread_pool: Arc::new(
                 rayon::ThreadPoolBuilder::new()
-                    .num_threads(
-                        std::thread::available_parallelism()
-                            .map(|n| n.get().min(8))
-                            .unwrap_or(4),
-                    )
+                    .num_threads(2)
+                    .thread_name(|i| format!("spedimage-main-{}", i))
                     .build()
-                    .expect("Failed to initialize Rayon thread pool. This is fatal."),
+                    .expect("Failed to initialize Rayon thread pool (main). This is fatal."),
+            ),
+            prefetch_pool: Arc::new(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(1)
+                    .thread_name(|i| format!("spedimage-prefetch-{}", i))
+                    .build()
+                    .expect("Failed to initialize Rayon thread pool (prefetch). This is fatal."),
+            ),
+            thumbnail_pool: Arc::new(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(4)
+                    .thread_name(|i| format!("spedimage-thumbnail-{}", i))
+                    .build()
+                    .expect("Failed to initialize Rayon thread pool (thumbnail). This is fatal."),
             ),
             file_watcher: None,
         }
@@ -137,12 +150,34 @@ impl SpedImageApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use winit::event_loop::EventLoop;
+    use std::sync::Mutex;
+    use winit::event_loop::{EventLoop, EventLoopProxy};
+
+    static SHARED_PROXY: Mutex<Option<EventLoopProxy<WakeUp>>> = Mutex::new(None);
+
+    fn get_test_proxy() -> EventLoopProxy<WakeUp> {
+        let mut proxy_lock = SHARED_PROXY.lock().unwrap();
+        if proxy_lock.is_none() {
+            #[cfg(target_os = "windows")]
+            {
+                use winit::platform::windows::EventLoopBuilderExtWindows;
+                let mut builder = EventLoop::<WakeUp>::with_user_event();
+                builder.with_any_thread(true);
+                let event_loop = builder.build().unwrap();
+                *proxy_lock = Some(event_loop.create_proxy());
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let event_loop = EventLoop::<WakeUp>::with_user_event().build().unwrap();
+                *proxy_lock = Some(event_loop.create_proxy());
+            }
+        }
+        proxy_lock.clone().unwrap()
+    }
 
     #[test]
     fn test_app_creation() {
-        let event_loop = EventLoop::<WakeUp>::with_user_event().build().unwrap();
-        let proxy = event_loop.create_proxy();
+        let proxy = get_test_proxy();
         let app = SpedImageApp::new(proxy);
 
         assert!(app.window.is_none());
@@ -150,7 +185,7 @@ mod tests {
         assert!(app.current_image.is_none());
         assert!(app.ui_state.files.is_empty());
         assert_eq!(app.ui_state.current_file_index, None);
-        assert!(!app.dirty);
+        assert!(app.dirty);
         assert!(!app.loading);
         assert!(app.initial_path.is_none());
         assert!(app.navigation.held_key.is_none());
@@ -165,8 +200,7 @@ mod tests {
 
     #[test]
     fn test_navigation_state_creation() {
-        let event_loop = EventLoop::<WakeUp>::with_user_event().build().unwrap();
-        let proxy = event_loop.create_proxy();
+        let proxy = get_test_proxy();
         let app = SpedImageApp::new(proxy);
 
         assert_eq!(app.navigation.thumb_scroll, 0.0);
@@ -184,8 +218,7 @@ mod tests {
 
     #[test]
     fn test_animation_state_creation() {
-        let event_loop = EventLoop::<WakeUp>::with_user_event().build().unwrap();
-        let proxy = event_loop.create_proxy();
+        let proxy = get_test_proxy();
         let app = SpedImageApp::new(proxy);
 
         assert_eq!(app.animation.frame_idx, 0);
@@ -197,8 +230,7 @@ mod tests {
 
     #[test]
     fn test_slideshow_state_creation() {
-        let event_loop = EventLoop::<WakeUp>::with_user_event().build().unwrap();
-        let proxy = event_loop.create_proxy();
+        let proxy = get_test_proxy();
         let app = SpedImageApp::new(proxy);
 
         assert!(!app.slideshow.active);

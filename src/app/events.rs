@@ -12,11 +12,34 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::{WindowAttributes, WindowId};
 
 impl SpedImageApp {
-    pub fn run(initial_path: Option<PathBuf>) -> Result<()> {
+    pub fn run(initial_path: Option<PathBuf>, listener: std::net::TcpListener) -> Result<()> {
         use winit::event_loop::EventLoop;
         let event_loop = EventLoop::<WakeUp>::with_user_event().build()?;
         let mut app = SpedImageApp::new(event_loop.create_proxy());
         app.initial_path = initial_path;
+
+        // Spawn single-instance background listener for image paths
+        let tx = app.event_tx.clone();
+        let proxy = app.event_proxy.clone();
+        std::thread::Builder::new()
+            .name("spedimage-single-instance".to_string())
+            .spawn(move || {
+                while let Ok((mut stream, _)) = listener.accept() {
+                    use std::io::Read;
+                    let mut buf = String::new();
+                    if stream.read_to_string(&mut buf).is_ok() {
+                        let path = PathBuf::from(buf.trim());
+                        if path.exists() {
+                            let proxy_ref = proxy.as_ref();
+                            if let Some(p) = proxy_ref {
+                                crate::app::types::send_event(&tx, p, AppEvent::OpenPath(path));
+                            }
+                        }
+                    }
+                }
+            })
+            .ok();
+
         event_loop.run_app(&mut app)?;
         Ok(())
     }

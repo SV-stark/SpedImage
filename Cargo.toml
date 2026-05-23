@@ -12,6 +12,7 @@ rust-version = "1.94.0"
 mimalloc = "0.1.43"
 fast_image_resize = "6.0"
 jxl-oxide = "0.11"
+memmap2 = "0.9"
 # # qcms = "0.2"
 
 # UI and Windowing

@@ -53,6 +53,8 @@ impl ImageLoader {
             }
             */
 
+            let exif_info = crate::image::metadata::extract_exif_lazy(path);
+
             Ok((
                 vec![ImageData {
                     path: path.to_path_buf(),
@@ -62,8 +64,8 @@ impl ImageLoader {
                     format: format_type,
                     file_size_bytes: std::fs::metadata(path)?.len(),
                     frame_delay_ms: 0,
-                    exif_info: None,
-                    exif_loaded: false,
+                    exif_info,
+                    exif_loaded: true,
                     histogram: None,
                     is_downsampled: false,
                 }],
@@ -134,6 +136,7 @@ impl ImageLoader {
         }
 
         let file_size = std::fs::metadata(path)?.len();
+        let exif_info = crate::image::metadata::extract_exif_lazy(path);
 
         Ok((
             vec![ImageData {
@@ -144,8 +147,8 @@ impl ImageLoader {
                 format: ImageFormatType::Jxl,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
-                exif_info: None,
-                exif_loaded: false,
+                exif_info,
+                exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
             }],
@@ -157,9 +160,11 @@ impl ImageLoader {
         use resvg::tiny_skia;
         use resvg::usvg;
 
-        let svg_data = std::fs::read(path)?;
+        let file = std::fs::File::open(path)?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        let svg_data = &mmap[..];
 
-        let rtree = usvg::Tree::from_data(&svg_data, &usvg::Options::default())
+        let rtree = usvg::Tree::from_data(svg_data, &usvg::Options::default())
             .map_err(|e| eyre!("Failed to parse SVG: {e:?}"))?;
 
         let size = rtree.size();
@@ -192,7 +197,7 @@ impl ImageLoader {
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
                 exif_info: None,
-                exif_loaded: false,
+                exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
             }],
@@ -203,8 +208,10 @@ impl ImageLoader {
     fn load_tiff(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use tiff::decoder::{Decoder, DecodingResult};
         let file = std::fs::File::open(path)?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        let cursor = std::io::Cursor::new(&mmap[..]);
         let mut decoder =
-            Decoder::new(file).map_err(|e| eyre!("TIFF decoder init failed: {e:?}"))?;
+            Decoder::new(cursor).map_err(|e| eyre!("TIFF decoder init failed: {e:?}"))?;
 
         let (width, height) = decoder
             .dimensions()
@@ -238,6 +245,7 @@ impl ImageLoader {
         };
 
         let file_size = std::fs::metadata(path)?.len();
+        let exif_info = crate::image::metadata::extract_exif_lazy(path);
 
         Ok((
             vec![ImageData {
@@ -248,8 +256,8 @@ impl ImageLoader {
                 format: ImageFormatType::Tiff,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
-                exif_info: None,
-                exif_loaded: false,
+                exif_info,
+                exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
             }],
@@ -258,9 +266,11 @@ impl ImageLoader {
     }
 
     fn load_heic(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
-        let data = std::fs::read(path)?;
+        let file = std::fs::File::open(path)?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        let data = &mmap[..];
 
-        let info = heic::ImageInfo::from_bytes(&data)
+        let info = heic::ImageInfo::from_bytes(data)
             .map_err(|e| eyre!("Failed to parse HEIC header: {:?}", e))?;
 
         let layout = heic::PixelLayout::Rgba8;
@@ -271,12 +281,13 @@ impl ImageLoader {
         let mut rgba = vec![0u8; buffer_size];
 
         let (width, height) = heic::DecoderConfig::new()
-            .decode_request(&data)
+            .decode_request(data)
             .with_output_layout(layout)
             .decode_into(&mut rgba)
             .map_err(|e| eyre!("HEIC decode failed: {:?}", e))?;
 
         let file_size = std::fs::metadata(path)?.len();
+        let exif_info = crate::image::metadata::extract_exif_lazy(path);
 
         Ok((
             vec![ImageData {
@@ -287,8 +298,8 @@ impl ImageLoader {
                 format: ImageFormatType::Heic,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
-                exif_info: None,
-                exif_loaded: false,
+                exif_info,
+                exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
             }],
@@ -381,7 +392,7 @@ impl ImageLoader {
                 file_size_bytes: file_size,
                 frame_delay_ms: delay_ms,
                 exif_info: None,
-                exif_loaded: false,
+                exif_loaded: true,
                 histogram: None,
                 is_downsampled,
             });
