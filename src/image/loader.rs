@@ -434,7 +434,11 @@ impl ImageLoader {
                 let g2_idx = (y * 2 + 1) * width + (x * 2);
                 let b_idx = (y * 2 + 1) * width + (x * 2 + 1);
 
-                if r_idx < raw_data.len() && g1_idx < raw_data.len() && g2_idx < raw_data.len() && b_idx < raw_data.len() {
+                if r_idx < raw_data.len()
+                    && g1_idx < raw_data.len()
+                    && g2_idx < raw_data.len()
+                    && b_idx < raw_data.len()
+                {
                     let r_raw = raw_data[r_idx];
                     let g1_raw = raw_data[g1_idx];
                     let g2_raw = raw_data[g2_idx];

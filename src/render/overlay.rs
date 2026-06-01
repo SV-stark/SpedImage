@@ -119,19 +119,17 @@ impl Renderer {
                     .show(ctx, |ui| {
                         let width = 256.0;
                         let height = 100.0;
-                        let (rect, _response) = ui.allocate_exact_size(
-                            egui::vec2(width, height),
-                            egui::Sense::hover(),
-                        );
-                        
+                        let (rect, _response) =
+                            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+
                         let painter = ui.painter_at(rect);
                         painter.rect_filled(rect, 4.0, egui::Color32::from_black_alpha(150));
-                        
+
                         let mut max_val = 1u32;
                         for i in 0..256 {
                             max_val = max_val.max(r_hist[i]).max(g_hist[i]).max(b_hist[i]);
                         }
-                        
+
                         let draw_channel = |hist: &[u32; 256], color: egui::Color32| {
                             let mut points = Vec::with_capacity(256);
                             for i in 0..256 {
@@ -140,13 +138,25 @@ impl Renderer {
                                 points.push(egui::pos2(x, y));
                             }
                             for j in 0..255 {
-                                painter.line_segment([points[j], points[j+1]], egui::Stroke::new(1.5, color));
+                                painter.line_segment(
+                                    [points[j], points[j + 1]],
+                                    egui::Stroke::new(1.5, color),
+                                );
                             }
                         };
-                        
-                        draw_channel(r_hist, egui::Color32::from_rgba_unmultiplied(255, 100, 100, 180));
-                        draw_channel(g_hist, egui::Color32::from_rgba_unmultiplied(100, 255, 100, 180));
-                        draw_channel(b_hist, egui::Color32::from_rgba_unmultiplied(100, 100, 255, 180));
+
+                        draw_channel(
+                            r_hist,
+                            egui::Color32::from_rgba_unmultiplied(255, 100, 100, 180),
+                        );
+                        draw_channel(
+                            g_hist,
+                            egui::Color32::from_rgba_unmultiplied(100, 255, 100, 180),
+                        );
+                        draw_channel(
+                            b_hist,
+                            egui::Color32::from_rgba_unmultiplied(100, 100, 255, 180),
+                        );
                     });
             }
         }
