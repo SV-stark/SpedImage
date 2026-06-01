@@ -119,6 +119,7 @@ impl SpedImageApp {
                     self.dirty = true;
                 }
                 "c" | "C" if ctrl => self.copy_to_clipboard(),
+                "v" | "V" if ctrl => self.paste_from_clipboard(),
                 "c" | "C" => self.toggle_crop(),
                 "h" | "H" => {
                     if self.modifiers.shift {
@@ -855,6 +856,68 @@ impl SpedImageApp {
                 }
             });
         }
+    }
+
+    pub(crate) fn paste_from_clipboard(&mut self) {
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+
+        self.thread_pool.spawn(move || {
+            let mut clipboard = match arboard::Clipboard::new() {
+                Ok(c) => c,
+                Err(e) => {
+                    if let Some(ref p) = proxy {
+                        send_event(
+                            &tx,
+                            p,
+                            AppEvent::ImageError(format!("Failed to open clipboard: {}", e)),
+                        );
+                    }
+                    return;
+                }
+            };
+
+            match clipboard.get_image() {
+                Ok(img) => {
+                    let rgba_data = img.bytes.into_owned();
+                    let width = img.width as u32;
+                    let height = img.height as u32;
+
+                    use std::sync::Arc;
+                    let image_data = crate::image::ImageData {
+                        path: PathBuf::from("Clipboard"),
+                        rgba_data: Arc::new(rgba_data),
+                        width,
+                        height,
+                        format: crate::image::ImageFormatType::Png,
+                        file_size_bytes: 0,
+                        frame_delay_ms: 0,
+                        exif_info: None,
+                        exif_loaded: true,
+                        histogram: None,
+                        is_downsampled: false,
+                    };
+
+                    if let Some(ref p) = proxy {
+                        send_event(&tx, p, AppEvent::ImageLoaded(vec![image_data]));
+                        send_event(
+                            &tx,
+                            p,
+                            AppEvent::SetStatus("Pasted image from clipboard".to_string()),
+                        );
+                    }
+                }
+                Err(e) => {
+                    if let Some(ref p) = proxy {
+                        send_event(
+                            &tx,
+                            p,
+                            AppEvent::ImageError(format!("No image in clipboard: {}", e)),
+                        );
+                    }
+                }
+            }
+        });
     }
 
     pub(crate) fn open_file_dialog(&mut self) {

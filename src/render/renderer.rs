@@ -637,7 +637,7 @@ impl Renderer {
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-            if adjustments.pixel_perfect {
+            if adjustments.pixel_perfect || adjustments.crop_rect[2] < 0.2 {
                 if let Some(bg) = &self.image_bind_group_nearest {
                     render_pass.set_bind_group(0, bg.as_ref(), &[]);
                 }
