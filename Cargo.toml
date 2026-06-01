@@ -50,6 +50,7 @@ parking_lot = "0.12"
 wallpaper = "3.2"
 moka = { version = "0.12", features = ["sync"] }
 heic = { git = "https://github.com/imazen/heic", features = ["backend-rust", "backend-mediafoundation", "av1"] }
+rawloader = "0.37.1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

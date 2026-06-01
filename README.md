@@ -53,11 +53,13 @@ All adjustments are applied in real-time using **WGPU Shaders**—no CPU process
 | Format | Decoding Engine | OS Support |
 |--------|-----------------|------------|
 | JPEG, PNG, GIF, BMP, TIFF, WebP, JXL | Pure Rust (`zune-image` / `jxl-oxide`) | All Platforms |
-| RAW (CR2, NEF, ARW, DNG, etc.) | `zune-image` (Basic) | All Platforms |
+| RAW (CR2, NEF, ARW, DNG, etc.)* | Pure Rust (`rawloader` crate) | All Platforms |
 | SVG | `resvg` crate | All Platforms |
 | HEIC / AVIF | Pure Rust (`heic` crate with `av1` feature) | All Platforms |
 
 </div>
+
+*\* Supported RAW formats include Canon (CR2, CRW), Sony (ARW, SRF, SR2), Nikon (NEF, NRW), Fujifilm (RAF), Olympus (ORF), Pentax (PEF), Samsung (SRW), Minolta (MRW), Kodak (KDC, DCR), Panasonic/Leica (RW2), and Adobe DNG.*
 
 ---
 

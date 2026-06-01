@@ -33,7 +33,7 @@ impl ImageLoader {
         } else if ext == "tiff" || ext == "tif" {
             Self::load_tiff(path)
         } else if format_type == ImageFormatType::Raw {
-            Err(eyre!("RAW support is temporarily disabled."))
+            Self::load_raw(path)
         } else {
             let mut img =
                 Image::open(path).map_err(|e| eyre!("Failed to open image {path:?}: {e:?}"))?;
@@ -399,5 +399,80 @@ impl ImageLoader {
         }
 
         Ok((image_frames, ImageFormatType::Gif))
+    }
+
+    fn load_raw(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        let image = rawloader::decode_file(path)
+            .map_err(|e| eyre!("Failed to decode RAW file: {:?}", e))?;
+
+        let width = image.width;
+        let height = image.height;
+
+        let raw_data = match &image.data {
+            rawloader::RawImageData::Integer(data) => data,
+            _ => return Err(eyre!("Unsupported non-integer RAW image data")),
+        };
+
+        // Do a fast half-size downsampled demosaicing (RGGB binned pixels)
+        let out_w = width / 2;
+        let out_h = height / 2;
+
+        if out_w == 0 || out_h == 0 {
+            return Err(eyre!("RAW image dimensions are too small"));
+        }
+
+        let mut rgba = vec![0u8; out_w * out_h * 4];
+
+        let black = image.blacklevels[0] as f32;
+        let white = image.whitelevels[0] as f32;
+        let range = (white - black).max(1.0);
+
+        for y in 0..out_h {
+            for x in 0..out_w {
+                let r_idx = (y * 2) * width + (x * 2);
+                let g1_idx = (y * 2) * width + (x * 2 + 1);
+                let g2_idx = (y * 2 + 1) * width + (x * 2);
+                let b_idx = (y * 2 + 1) * width + (x * 2 + 1);
+
+                if r_idx < raw_data.len() && g1_idx < raw_data.len() && g2_idx < raw_data.len() && b_idx < raw_data.len() {
+                    let r_raw = raw_data[r_idx];
+                    let g1_raw = raw_data[g1_idx];
+                    let g2_raw = raw_data[g2_idx];
+                    let b_raw = raw_data[b_idx];
+
+                    let g_raw = ((g1_raw as u32 + g2_raw as u32) / 2) as u16;
+
+                    let r = (((r_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
+                    let g = (((g_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
+                    let b = (((b_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
+
+                    let out_idx = (y * out_w + x) * 4;
+                    rgba[out_idx] = r;
+                    rgba[out_idx + 1] = g;
+                    rgba[out_idx + 2] = b;
+                    rgba[out_idx + 3] = 255;
+                }
+            }
+        }
+
+        let file_size = std::fs::metadata(path)?.len();
+        let exif_info = crate::image::metadata::extract_exif_lazy(path);
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: Arc::new(rgba),
+                width: out_w as u32,
+                height: out_h as u32,
+                format: ImageFormatType::Raw,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info,
+                exif_loaded: true,
+                histogram: None,
+                is_downsampled: true,
+            }],
+            ImageFormatType::Raw,
+        ))
     }
 }
