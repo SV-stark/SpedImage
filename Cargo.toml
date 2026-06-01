@@ -49,7 +49,7 @@ crossbeam-channel = "0.5"
 parking_lot = "0.12"
 wallpaper = "3.2"
 moka = { version = "0.12", features = ["sync"] }
-heic = { git = "https://github.com/imazen/heic", features = ["backend-rust", "backend-mediafoundation"] }
+heic = { git = "https://github.com/imazen/heic", features = ["backend-rust", "backend-mediafoundation", "av1"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

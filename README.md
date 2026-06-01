@@ -55,10 +55,7 @@ All adjustments are applied in real-time using **WGPU Shaders**—no CPU process
 | JPEG, PNG, GIF, BMP, TIFF, WebP, JXL | Pure Rust (`zune-image` / `jxl-oxide`) | All Platforms |
 | RAW (CR2, NEF, ARW, DNG, etc.) | `zune-image` (Basic) | All Platforms |
 | SVG | `resvg` crate | All Platforms |
-| HEIC | Pure Rust (`heic` crate) | All Platforms |
-| AVIF | Native OS Codecs (WIC) | Windows Only* |
-
-*\* On Windows, AVIF requires the appropriate AV1 extensions installed from the Microsoft Store.*
+| HEIC / AVIF | Pure Rust (`heic` crate with `av1` feature) | All Platforms |
 
 </div>
 

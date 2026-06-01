@@ -28,8 +28,8 @@ impl ImageLoader {
             Self::load_svg(path)
         } else if ext == "jxl" {
             Self::load_jxl(path)
-        } else if ext == "heic" || ext == "heif" {
-            Self::load_heic(path)
+        } else if ext == "heic" || ext == "heif" || ext == "avif" {
+            Self::load_heic(path, format_type)
         } else if ext == "tiff" || ext == "tif" {
             Self::load_tiff(path)
         } else if format_type == ImageFormatType::Raw {
@@ -262,18 +262,21 @@ impl ImageLoader {
         ))
     }
 
-    fn load_heic(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    fn load_heic(
+        path: &Path,
+        format_type: ImageFormatType,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         let file = std::fs::File::open(path)?;
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
         let data = &mmap[..];
 
         let info = heic::ImageInfo::from_bytes(data)
-            .map_err(|e| eyre!("Failed to parse HEIC header: {:?}", e))?;
+            .map_err(|e| eyre!("Failed to parse HEIC/AVIF header: {:?}", e))?;
 
         let layout = heic::PixelLayout::Rgba8;
         let buffer_size = info
             .output_buffer_size(layout)
-            .ok_or_else(|| eyre!("Could not determine HEIC buffer size"))?;
+            .ok_or_else(|| eyre!("Could not determine HEIC/AVIF buffer size"))?;
 
         let mut rgba = vec![0u8; buffer_size];
 
@@ -281,7 +284,7 @@ impl ImageLoader {
             .decode_request(data)
             .with_output_layout(layout)
             .decode_into(&mut rgba)
-            .map_err(|e| eyre!("HEIC decode failed: {:?}", e))?;
+            .map_err(|e| eyre!("HEIC/AVIF decode failed: {:?}", e))?;
 
         let file_size = std::fs::metadata(path)?.len();
         let exif_info = crate::image::metadata::extract_exif_lazy(path);
@@ -292,7 +295,7 @@ impl ImageLoader {
                 rgba_data: Arc::new(rgba),
                 width,
                 height,
-                format: ImageFormatType::Heic,
+                format: format_type,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
                 exif_info,
@@ -300,7 +303,7 @@ impl ImageLoader {
                 histogram: None,
                 is_downsampled: false,
             }],
-            ImageFormatType::Heic,
+            format_type,
         ))
     }
 
