@@ -42,6 +42,7 @@ pub enum AppEvent {
     ConfirmBatchDelete(Vec<PathBuf>),
     HistogramComputed(PathBuf, Box<([u32; 256], [u32; 256], [u32; 256])>),
     DirectoryChanged(PathBuf),
+    TriggerOpenFileDialog,
 }
 
 /// Helper: send an AppEvent through the data channel, then wake the event loop.

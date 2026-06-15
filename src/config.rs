@@ -11,6 +11,7 @@ pub struct AppConfig {
     pub show_histogram: bool,
     pub last_open_dir: Option<String>,
     pub max_preview_dimension: Option<u32>, // None = auto from window
+    pub scroll_to_zoom: Option<bool>,
 }
 
 impl AppConfig {

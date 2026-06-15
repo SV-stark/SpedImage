@@ -57,6 +57,7 @@ pub struct ImageAdjustments {
     pub rotation: f32,
     pub crop_rect: [f32; 4],
     pub crop_rect_target: [f32; 4],
+    pub crop_rect_actual: Option<[f32; 4]>,
     pub hdr_toning: bool,
     pub pixel_perfect: bool,
 }
@@ -70,6 +71,7 @@ impl Default for ImageAdjustments {
             rotation: 0.0,
             crop_rect: [0.0, 0.0, 1.0, 1.0],
             crop_rect_target: [0.0, 0.0, 1.0, 1.0],
+            crop_rect_actual: None,
             hdr_toning: false,
             pixel_perfect: false,
         }
@@ -86,7 +88,7 @@ pub struct ThumbnailEntry {
 }
 
 pub struct RenderParams<'a> {
-    pub adjustments: &'a ImageAdjustments,
+    pub adjustments: &'a mut ImageAdjustments,
     pub is_cropping: bool,
     pub crop_rect: [f32; 4],
     pub status_text: Option<&'a str>,
@@ -100,4 +102,13 @@ pub struct RenderParams<'a> {
     pub show_histogram: bool,
     pub histogram_data: Option<&'a ([u32; 256], [u32; 256], [u32; 256])>,
     pub transition_factor: f32,
+    pub files: &'a [crate::ui::FileEntry],
+    pub event_tx: &'a crossbeam_channel::Sender<crate::app::types::AppEvent>,
+    pub event_proxy: &'a winit::event_loop::EventLoopProxy<crate::app::types::WakeUp>,
+    pub is_loading: bool,
+    pub has_image: bool,
+    pub config: &'a mut crate::config::AppConfig,
+    pub slideshow_active: &'a mut bool,
+    pub slideshow_interval_secs: &'a mut u64,
+    pub slideshow_progress: Option<f32>,
 }

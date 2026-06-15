@@ -213,26 +213,34 @@ impl SpedImageApp {
         delta: MouseScrollDelta,
         cursor_pos: PhysicalPosition<f64>,
     ) {
-        // Ensure Ctrl is actually pressed.
-        // We use our tracked modifiers which are updated via ModifiersChanged.
-        // Always zoom on scroll if mouse is over the image area
-        // (Removing the Ctrl requirement for more intuitive viewing)
+        let y = match delta {
+            MouseScrollDelta::LineDelta(_, y) => y,
+            MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+        };
 
-        match delta {
-            MouseScrollDelta::LineDelta(_, y) => {
-                if y > 0.0 {
-                    self.zoom_in(Some(cursor_pos));
-                } else if y < 0.0 {
-                    self.zoom_out(Some(cursor_pos));
-                }
+        if y == 0.0 {
+            return;
+        }
+
+        let scroll_to_zoom = self.config.scroll_to_zoom.unwrap_or(true);
+
+        let do_zoom = if scroll_to_zoom {
+            !self.modifiers.ctrl
+        } else {
+            self.modifiers.ctrl
+        };
+
+        if do_zoom {
+            if y > 0.0 {
+                self.zoom_in(Some(cursor_pos));
+            } else {
+                self.zoom_out(Some(cursor_pos));
             }
-            MouseScrollDelta::PixelDelta(pos) => {
-                // Some touchpads or high-precision mice send PixelDelta
-                if pos.y > 0.0 {
-                    self.zoom_in(Some(cursor_pos));
-                } else if pos.y < 0.0 {
-                    self.zoom_out(Some(cursor_pos));
-                }
+        } else {
+            if y > 0.0 {
+                self.prev_image();
+            } else {
+                self.next_image();
             }
         }
     }
@@ -437,12 +445,12 @@ impl SpedImageApp {
                     };
 
                     // Initial crop and rotate
-                    if adjustments.crop_rect != [0.0, 0.0, 1.0, 1.0] {
+                    if let Some(crop_rect) = adjustments.crop_rect_actual {
                         let (w, h) = img.dimensions();
-                        let crop_x = (adjustments.crop_rect[0] * w as f32) as usize;
-                        let crop_y = (adjustments.crop_rect[1] * h as f32) as usize;
-                        let crop_w = (adjustments.crop_rect[2] * w as f32) as usize;
-                        let crop_h = (adjustments.crop_rect[3] * h as f32) as usize;
+                        let crop_x = (crop_rect[0] * w as f32) as usize;
+                        let crop_y = (crop_rect[1] * h as f32) as usize;
+                        let crop_w = (crop_rect[2] * w as f32) as usize;
+                        let crop_h = (crop_rect[3] * h as f32) as usize;
 
                         Crop::new(crop_w, crop_h, crop_x, crop_y)
                             .execute(&mut img)

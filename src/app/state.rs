@@ -67,6 +67,7 @@ pub struct SpedImageApp {
     pub(crate) prefetch_pool: Arc<ThreadPool>,
     pub(crate) thumbnail_pool: Arc<ThreadPool>,
     pub(crate) file_watcher: Option<Debouncer<notify::RecommendedWatcher, FileIdMap>>,
+    pub(crate) config: crate::config::AppConfig,
 }
 
 impl SpedImageApp {
@@ -143,6 +144,7 @@ impl SpedImageApp {
                     .expect("Failed to initialize Rayon thread pool (thumbnail). This is fatal."),
             ),
             file_watcher: None,
+            config: crate::config::AppConfig::load(),
         }
     }
 }

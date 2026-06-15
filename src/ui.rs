@@ -252,10 +252,20 @@ mod tests {
         ui.adjustments.brightness = 1.5;
         ui.adjustments.contrast = 1.3;
         ui.adjustments.rotation = std::f32::consts::FRAC_PI_2;
+        ui.adjustments.crop_rect_actual = Some([0.1, 0.1, 0.8, 0.8]);
         ui.reset_adjustments();
         assert_eq!(ui.adjustments.brightness, 1.0);
         assert_eq!(ui.adjustments.contrast, 1.0);
         assert_eq!(ui.adjustments.rotation, 0.0);
+        assert_eq!(ui.adjustments.crop_rect_actual, None);
+    }
+
+    #[test]
+    fn test_ui_state_crop_decoupling() {
+        let mut ui = UiState::default();
+        assert_eq!(ui.adjustments.crop_rect_actual, None);
+        ui.adjustments.crop_rect_actual = Some([0.2, 0.2, 0.6, 0.6]);
+        assert_eq!(ui.adjustments.crop_rect_actual, Some([0.2, 0.2, 0.6, 0.6]));
     }
 
     #[test]

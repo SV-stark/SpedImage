@@ -169,7 +169,7 @@ impl SpedImageApp {
                     self.dirty = true;
                 }
                 AppEvent::ConfirmDelete(path) => {
-                    if let Err(e) = std::fs::remove_file(&path) {
+                    if let Err(e) = trash::delete(&path) {
                         self.ui_state.set_status(format!("Delete failed: {}", e));
                     } else {
                         self.current_image = None;
@@ -180,8 +180,15 @@ impl SpedImageApp {
                     self.dirty = true;
                 }
                 AppEvent::ConfirmBatchDelete(selected) => {
+                    let mut failed = Vec::new();
                     for path in &selected {
-                        let _ = std::fs::remove_file(path);
+                        if let Err(e) = trash::delete(path) {
+                            failed.push(format!("{}: {}", path.display(), e));
+                        }
+                    }
+                    if !failed.is_empty() {
+                        self.ui_state
+                            .set_status(format!("Failed to delete some: {}", failed.join(", ")));
                     }
                     self.ui_state.selected_indices.clear();
                     if let Some(current) = self.ui_state.current_file()
@@ -205,6 +212,9 @@ impl SpedImageApp {
                 }
                 AppEvent::DirectoryChanged(dir) => {
                     self.load_directory_async(dir);
+                }
+                AppEvent::TriggerOpenFileDialog => {
+                    self.open_file_dialog();
                 }
             }
             count += 1;
@@ -280,7 +290,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             winit::window::Icon::from_rgba(rgba, w as u32, h as u32).ok()
         })();
 
-        let config = AppConfig::load();
+        let config = &self.config;
 
         let window = Arc::new(
             event_loop
@@ -368,44 +378,109 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 self.load_image(&path);
             }
             WindowEvent::RedrawRequested => {
+                self.ui_state.show_sidebar = self.config.show_sidebar;
+                self.ui_state.show_thumbnail_strip = self.config.show_thumbnail_strip;
+                self.ui_state.show_info = self.config.show_info;
+                self.ui_state.show_histogram = self.config.show_histogram;
+
                 self.process_events();
                 let active_thumb = self.active_thumb_index();
 
-                if let (Some(r), Some(img)) = (&mut self.renderer, &self.current_image) {
+                if let Some(r) = &mut self.renderer {
                     let sidebar_text = if self.ui_state.show_sidebar {
                         self.ui_state.sidebar_text.as_deref()
                     } else {
                         None
                     };
 
-                    let exif_text = if self.ui_state.show_info {
+                    let exif_text = if self.ui_state.show_info
+                        && let Some(ref img) = self.current_image
+                    {
                         img.exif_info.as_deref()
                     } else {
                         None
                     };
 
-                    let status = self.ui_state.get_status();
-                    r.render_frame(RenderParams {
-                        adjustments: &self.ui_state.adjustments,
-                        is_cropping: self.ui_state.is_cropping,
-                        crop_rect: self.ui_state.adjustments.crop_rect,
-                        status_text: Some(status),
-                        show_help: self.ui_state.show_help,
-                        sidebar_text,
-                        show_thumbnail_strip: self.ui_state.show_thumbnail_strip,
-                        thumb_scroll: self.navigation.thumb_scroll,
-                        active_thumb_idx: active_thumb,
-                        selected_indices: &self.ui_state.selected_indices,
-                        exif_text,
-                        show_histogram: self.ui_state.show_histogram,
-                        histogram_data: img.histogram.as_ref(),
-                        transition_factor: self.animation.transition_factor,
-                    })
-                    .ok();
-                    self.dirty = false;
-                } else if let Some(ref mut r) = self.renderer {
-                    r.render_loading(self.ui_state.current_file().map(|p| p.as_ref()))
+                    let histogram_data = self
+                        .current_image
+                        .as_ref()
+                        .and_then(|img| img.histogram.as_ref());
+                    let transition_factor = self.animation.transition_factor;
+                    let has_image = self.current_image.is_some();
+                    let is_loading = self.loading;
+
+                    let status_str = self.ui_state.get_status().to_string();
+                    let is_cropping = self.ui_state.is_cropping;
+                    let crop_rect = self.ui_state.adjustments.crop_rect;
+                    let show_help = self.ui_state.show_help;
+                    let show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
+                    let show_histogram = self.ui_state.show_histogram;
+                    let mut slideshow_interval_secs = self.slideshow.interval.as_secs();
+                    let old_slideshow_active = self.slideshow.active;
+                    let slideshow_progress = if self.slideshow.active
+                        && let Some(next) = self.slideshow.next_time
+                    {
+                        let now = std::time::Instant::now();
+                        if next > now {
+                            let remaining = next.duration_since(now).as_secs_f32();
+                            let total = self.slideshow.interval.as_secs_f32();
+                            Some(((total - remaining) / total).clamp(0.0, 1.0))
+                        } else {
+                            Some(1.0)
+                        }
+                    } else {
+                        None
+                    };
+
+                    if let Some(ref proxy) = self.event_proxy {
+                        r.render_frame(RenderParams {
+                            adjustments: &mut self.ui_state.adjustments,
+                            is_cropping,
+                            crop_rect,
+                            status_text: Some(&status_str),
+                            show_help,
+                            sidebar_text,
+                            show_thumbnail_strip,
+                            thumb_scroll: self.navigation.thumb_scroll,
+                            active_thumb_idx: active_thumb,
+                            selected_indices: &self.ui_state.selected_indices,
+                            exif_text,
+                            show_histogram,
+                            histogram_data,
+                            transition_factor,
+                            files: &self.ui_state.files,
+                            event_tx: &self.event_tx,
+                            event_proxy: proxy,
+                            is_loading,
+                            has_image,
+                            config: &mut self.config,
+                            slideshow_active: &mut self.slideshow.active,
+                            slideshow_interval_secs: &mut slideshow_interval_secs,
+                            slideshow_progress,
+                        })
                         .ok();
+                    }
+
+                    if self.slideshow.active != old_slideshow_active {
+                        if self.slideshow.active {
+                            self.slideshow.next_time =
+                                Some(std::time::Instant::now() + self.slideshow.interval);
+                        } else {
+                            self.slideshow.next_time = None;
+                        }
+                        self.dirty = true;
+                    }
+                    if slideshow_interval_secs != self.slideshow.interval.as_secs() {
+                        self.slideshow.interval =
+                            std::time::Duration::from_secs(slideshow_interval_secs.max(1));
+                        if self.slideshow.active {
+                            self.slideshow.next_time =
+                                Some(std::time::Instant::now() + self.slideshow.interval);
+                        }
+                        self.dirty = true;
+                    }
+
+                    self.dirty = false;
                 }
             }
             WindowEvent::ModifiersChanged(m) => {

@@ -10,12 +10,119 @@ use super::types::{RenderParams, STRIP_HEIGHT_PX, Uniforms};
 
 impl Renderer {
     pub(crate) fn render_ui_static(
-        params: &RenderParams,
+        params: &mut RenderParams,
         ctx: &egui::Context,
         has_thumbnails: bool,
         win_w: u32,
         win_h: u32,
     ) {
+        if !params.has_image {
+            if params.is_loading {
+                egui::Area::new(egui::Id::new("loading_screen"))
+                    .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                    .show(ctx, |ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.add(egui::Spinner::new().size(50.0));
+                            ui.add_space(15.0);
+                            ui.label(
+                                egui::RichText::new("Loading Image...")
+                                    .size(24.0)
+                                    .color(egui::Color32::WHITE),
+                            );
+                        });
+                    });
+            } else {
+                egui::Window::new("Welcome to SpedImage")
+                    .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                    .collapsible(false)
+                    .resizable(false)
+                    .title_bar(true)
+                    .show(ctx, |ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(10.0);
+                            ui.label(
+                                egui::RichText::new("🖼️ SpedImage")
+                                    .size(32.0)
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(100, 200, 255)),
+                            );
+                            ui.label(
+                                egui::RichText::new(
+                                    "Ultra-Lightweight GPU-Accelerated Image Viewer",
+                                )
+                                .size(14.0)
+                                .italics()
+                                .color(egui::Color32::LIGHT_GRAY),
+                            );
+                            ui.add_space(20.0);
+
+                            if ui
+                                .button(egui::RichText::new("📂 Open Image...").size(18.0))
+                                .clicked()
+                            {
+                                crate::app::types::send_event(
+                                    params.event_tx,
+                                    params.event_proxy,
+                                    crate::app::types::AppEvent::TriggerOpenFileDialog,
+                                );
+                            }
+
+                            ui.add_space(15.0);
+                            ui.label(
+                                egui::RichText::new(
+                                    "Drag & Drop an image here or press 'O' to open.",
+                                )
+                                .size(13.0)
+                                .color(egui::Color32::GRAY),
+                            );
+                            ui.add_space(20.0);
+
+                            ui.separator();
+                            ui.add_space(10.0);
+                            ui.label(egui::RichText::new("Common Keyboard Shortcuts:").strong());
+                            ui.add_space(5.0);
+
+                            egui::Grid::new("shortcuts_grid")
+                                .striped(true)
+                                .spacing(egui::vec2(40.0, 10.0))
+                                .show(ui, |ui| {
+                                    ui.label("O");
+                                    ui.label("Open file dialog");
+                                    ui.end_row();
+                                    ui.label("F");
+                                    ui.label("Toggle sidebar / edits");
+                                    ui.end_row();
+                                    ui.label("T");
+                                    ui.label("Toggle thumbnails");
+                                    ui.end_row();
+                                    ui.label("H");
+                                    ui.label("Toggle HDR Toning");
+                                    ui.end_row();
+                                    ui.label("Esc");
+                                    ui.label("Quit application");
+                                    ui.end_row();
+                                });
+                            ui.add_space(10.0);
+                        });
+                    });
+            }
+            return;
+        }
+
+        if params.is_loading {
+            egui::Area::new(egui::Id::new("subtle_loading"))
+                .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-10.0, -10.0))
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Spinner::new().size(20.0));
+                        ui.label(
+                            egui::RichText::new("Loading...")
+                                .size(14.0)
+                                .color(egui::Color32::LIGHT_GRAY),
+                        );
+                    });
+                });
+        }
         let nav_y = if params.show_thumbnail_strip && has_thumbnails {
             (win_h as f32 - STRIP_HEIGHT_PX as f32) / 2.0
         } else {
@@ -92,18 +199,205 @@ impl Renderer {
                 });
         }
 
-        if let Some(sidebar_text) = params.sidebar_text {
+        if params.config.show_sidebar {
             egui::Window::new("File Browser")
                 .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 10.0))
                 .default_width(220.0)
                 .default_height(300.0)
                 .show(ctx, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new(sidebar_text)
-                                .font(egui::FontId::monospace(13.0))
-                                .color(egui::Color32::from_rgb(220, 220, 220)),
+                        for (idx, file) in params.files.iter().enumerate() {
+                            let is_selected = Some(idx) == params.active_thumb_idx;
+                            let text = if is_selected {
+                                format!("> {}", file.name)
+                            } else {
+                                format!("  {}", file.name)
+                            };
+                            if ui.selectable_label(is_selected, text).clicked() {
+                                crate::app::types::send_event(
+                                    params.event_tx,
+                                    params.event_proxy,
+                                    crate::app::types::AppEvent::OpenPath(file.path.clone()),
+                                );
+                            }
+                        }
+                    });
+                });
+
+            // Interactive Sliders for Adjustments
+            egui::Window::new("Image Adjustments")
+                .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 250.0))
+                .default_width(220.0)
+                .title_bar(true)
+                .show(ctx, |ui| {
+                    let mut changed = false;
+                    if ui.add(egui::Slider::new(&mut params.adjustments.brightness, 0.1..=3.0).text("Brightness")).changed() {
+                        changed = true;
+                    }
+                    if ui.add(egui::Slider::new(&mut params.adjustments.contrast, 0.1..=3.0).text("Contrast")).changed() {
+                        changed = true;
+                    }
+                    if ui.add(egui::Slider::new(&mut params.adjustments.saturation, 0.0..=3.0).text("Saturation")).changed() {
+                        changed = true;
+                    }
+
+                    let mut rot_deg = params.adjustments.rotation.to_degrees().round();
+                    if ui.add(egui::Slider::new(&mut rot_deg, 0.0..=360.0).text("Rotation (°)")).changed() {
+                        params.adjustments.rotation = rot_deg.to_radians();
+                        changed = true;
+                    }
+
+                    ui.separator();
+                    if ui.button("✂ Crop to Zoomed Area").clicked() {
+                        params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
+                        crate::app::types::send_event(
+                            params.event_tx,
+                            params.event_proxy,
+                            crate::app::types::AppEvent::SetStatus("Crop applied! Save (Ctrl+S) to commit crop.".to_string()),
                         );
+                    }
+                    if params.adjustments.crop_rect_actual.is_some()
+                        && ui.button("↩ Reset Crop").clicked()
+                    {
+                        params.adjustments.crop_rect_actual = None;
+                        crate::app::types::send_event(
+                            params.event_tx,
+                            params.event_proxy,
+                            crate::app::types::AppEvent::SetStatus("Crop reset".to_string()),
+                        );
+                    }
+                    ui.separator();
+
+                    if ui.button("Reset All").clicked() {
+                        params.adjustments.brightness = 1.0;
+                        params.adjustments.contrast = 1.0;
+                        params.adjustments.saturation = 1.0;
+                        params.adjustments.rotation = 0.0;
+                        params.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
+                        params.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
+                        params.adjustments.crop_rect_actual = None;
+                        changed = true;
+                    }
+
+                    if changed {
+                        crate::app::types::send_event(
+                            params.event_tx,
+                            params.event_proxy,
+                            crate::app::types::AppEvent::SetStatus(params.status_text.unwrap_or("").to_string()),
+                        );
+                    }
+
+                    // Collapsible Slideshow Controls (Suggestion 7)
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.collapsing("Slideshow Controls", |ui| {
+                        ui.horizontal(|ui| {
+                            let play_label = if *params.slideshow_active { "⏸ Pause Slideshow" } else { "▶ Play Slideshow" };
+                            if ui.button(play_label).clicked() {
+                                *params.slideshow_active = !*params.slideshow_active;
+                            }
+                        });
+
+                        ui.add_space(5.0);
+
+                        ui.horizontal(|ui| {
+                            ui.label("Interval:");
+                            ui.add(egui::Slider::new(params.slideshow_interval_secs, 1..=15).suffix("s"));
+                        });
+
+                        if let Some(progress) = params.slideshow_progress {
+                            ui.add_space(5.0);
+                            ui.add(egui::ProgressBar::new(progress).text("Next slide"));
+                        }
+                    });
+
+                    // Collapsible EXIF Inspector (Suggestion 9)
+                    if let Some(exif) = params.exif_text {
+                        ui.add_space(5.0);
+                        ui.collapsing("EXIF Metadata", |ui| {
+                            egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
+                                egui::Grid::new("exif_grid_sidebar")
+                                    .striped(true)
+                                    .spacing(egui::vec2(10.0, 5.0))
+                                    .show(ui, |ui| {
+                                        for line in exif.lines() {
+                                            if let Some((key, val)) = line.split_once(": ") {
+                                                ui.label(egui::RichText::new(key).strong());
+                                                ui.label(val);
+                                                if ui.button("📋").on_hover_text("Copy value to clipboard").clicked() {
+                                                    ui.ctx().copy_text(val.to_string());
+                                                }
+                                                ui.end_row();
+                                            } else {
+                                                ui.label(line);
+                                                ui.label("");
+                                                if ui.button("📋").on_hover_text("Copy line to clipboard").clicked() {
+                                                    ui.ctx().copy_text(line.to_string());
+                                                }
+                                                ui.end_row();
+                                            }
+                                        }
+                                    });
+                            });
+                        });
+                    }
+
+                    // Collapsible Preferences Panel (Suggestion 10)
+                    ui.add_space(5.0);
+                    ui.collapsing("Preferences", |ui| {
+                        let mut pref_changed = false;
+
+                        if ui.checkbox(&mut params.config.show_sidebar, "Show Sidebar").changed() {
+                            pref_changed = true;
+                        }
+                        if ui.checkbox(&mut params.config.show_thumbnail_strip, "Show Thumbnail Strip").changed() {
+                            pref_changed = true;
+                        }
+                        if ui.checkbox(&mut params.config.show_info, "Show Info / EXIF").changed() {
+                            pref_changed = true;
+                        }
+                        if ui.checkbox(&mut params.config.show_histogram, "Show RGB Histogram").changed() {
+                            pref_changed = true;
+                        }
+
+                        ui.separator();
+
+                        let mut scroll_to_zoom = params.config.scroll_to_zoom.unwrap_or(true);
+                        if ui.checkbox(&mut scroll_to_zoom, "Scroll wheel zooms").on_hover_text("Uncheck to navigate next/prev using scroll wheel (Ctrl+Scroll will zoom)").changed() {
+                            params.config.scroll_to_zoom = Some(scroll_to_zoom);
+                            pref_changed = true;
+                        }
+
+                        ui.separator();
+
+                        ui.horizontal(|ui| {
+                            ui.label("Default Width:");
+                            if ui.add(egui::DragValue::new(&mut params.config.window_width).range(800..=3840)).changed() {
+                                pref_changed = true;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Default Height:");
+                            if ui.add(egui::DragValue::new(&mut params.config.window_height).range(600..=2160)).changed() {
+                                pref_changed = true;
+                            }
+                        });
+
+                        ui.add_space(5.0);
+                        let mut max_dim = params.config.max_preview_dimension.unwrap_or(0);
+                        if ui.add(egui::Slider::new(&mut max_dim, 0..=4096).text("Max Preview Size (0=Auto)")).changed() {
+                            params.config.max_preview_dimension = if max_dim > 0 { Some(max_dim) } else { None };
+                            pref_changed = true;
+                        }
+
+                        if pref_changed {
+                            params.config.save();
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::SetStatus(params.status_text.unwrap_or("").to_string()),
+                            );
+                        }
                     });
                 });
         }
@@ -205,8 +499,9 @@ impl Renderer {
         let win_w = self.config.width;
         let win_h = self.config.height;
 
+        let mut params = params;
         let full_output = self.egui_state.egui_ctx().run_ui(raw_input, |ctx| {
-            Self::render_ui_static(&params, ctx, has_thumbnails, win_w, win_h);
+            Self::render_ui_static(&mut params, ctx, has_thumbnails, win_w, win_h);
         });
 
         self.egui_state
