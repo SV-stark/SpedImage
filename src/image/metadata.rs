@@ -51,3 +51,21 @@ pub fn extract_exif_lazy(path: &std::path::Path) -> Option<String> {
         Some(out.trim_end().to_string())
     }
 }
+
+pub fn extract_orientation(path: &std::path::Path) -> Option<u32> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut bufreader = std::io::BufReader::new(&file);
+    let exifreader = exif::Reader::new();
+    let exif_data = exifreader.read_from_container(&mut bufreader).ok()?;
+
+    if let Some(field) = exif_data.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
+        match &field.value {
+            exif::Value::Short(v) => v.first().map(|&x| x as u32),
+            exif::Value::Byte(v) => v.first().map(|&x| x as u32),
+            exif::Value::Long(v) => v.first().map(|&x| x as u32),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}

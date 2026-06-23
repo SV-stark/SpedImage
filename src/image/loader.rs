@@ -22,18 +22,18 @@ impl ImageLoader {
 
         let format_type = ImageFormatType::from_extension(&ext);
 
-        if ext == "gif" {
-            Self::load_gif(path, max_w, max_h)
+        let (mut image_frames, format_type) = if ext == "gif" {
+            Self::load_gif(path, max_w, max_h)?
         } else if ext == "svg" {
-            Self::load_svg(path)
+            Self::load_svg(path)?
         } else if ext == "jxl" {
-            Self::load_jxl(path)
+            Self::load_jxl(path)?
         } else if ext == "heic" || ext == "heif" || ext == "avif" {
-            Self::load_heic(path, format_type)
+            Self::load_heic(path, format_type)?
         } else if ext == "tiff" || ext == "tif" {
-            Self::load_tiff(path)
+            Self::load_tiff(path)?
         } else if format_type == ImageFormatType::Raw {
-            Self::load_raw(path)
+            Self::load_raw(path)?
         } else {
             let mut img =
                 Image::open(path).map_err(|e| eyre!("Failed to open image {path:?}: {e:?}"))?;
@@ -54,7 +54,7 @@ impl ImageLoader {
 
             let exif_info = crate::image::metadata::extract_exif_lazy(path);
 
-            Ok((
+            (
                 vec![ImageData {
                     path: path.to_path_buf(),
                     rgba_data: Arc::new(rgba),
@@ -69,8 +69,28 @@ impl ImageLoader {
                     is_downsampled: false,
                 }],
                 format_type,
-            ))
+            )
+        };
+
+        // Post-process to auto-rotate based on EXIF orientation tag
+        if let Some(orientation) = crate::image::metadata::extract_orientation(path) {
+            let deg = match orientation {
+                3 => Some(180),
+                6 => Some(90),
+                8 => Some(270),
+                _ => None,
+            };
+            if let Some(d) = deg {
+                for frame in &mut image_frames {
+                    let (rotated_rgba, rotated_w, rotated_h) = rotate_rgba(&frame.rgba_data, frame.width, frame.height, d);
+                    frame.rgba_data = Arc::new(rotated_rgba);
+                    frame.width = rotated_w;
+                    frame.height = rotated_h;
+                }
+            }
         }
+
+        Ok((image_frames, format_type))
     }
 
     fn apply_color_profile(rgba: &mut [u8], icc_data: &[u8]) -> Result<()> {
@@ -478,5 +498,53 @@ impl ImageLoader {
             }],
             ImageFormatType::Raw,
         ))
+    }
+}
+
+fn rotate_rgba(rgba: &[u8], width: u32, height: u32, degrees: u32) -> (Vec<u8>, u32, u32) {
+    if degrees == 90 {
+        let mut out = vec![0u8; rgba.len()];
+        for y in 0..height {
+            for x in 0..width {
+                let src_idx = (y * width + x) as usize * 4;
+                let dst_x = height - 1 - y;
+                let dst_y = x;
+                let dst_idx = (dst_y * height + dst_x) as usize * 4;
+                if src_idx + 3 < rgba.len() && dst_idx + 3 < out.len() {
+                    out[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
+                }
+            }
+        }
+        (out, height, width)
+    } else if degrees == 180 {
+        let mut out = vec![0u8; rgba.len()];
+        for y in 0..height {
+            for x in 0..width {
+                let src_idx = (y * width + x) as usize * 4;
+                let dst_x = width - 1 - x;
+                let dst_y = height - 1 - y;
+                let dst_idx = (dst_y * width + dst_x) as usize * 4;
+                if src_idx + 3 < rgba.len() && dst_idx + 3 < out.len() {
+                    out[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
+                }
+            }
+        }
+        (out, width, height)
+    } else if degrees == 270 {
+        let mut out = vec![0u8; rgba.len()];
+        for y in 0..height {
+            for x in 0..width {
+                let src_idx = (y * width + x) as usize * 4;
+                let dst_x = y;
+                let dst_y = width - 1 - x;
+                let dst_idx = (dst_y * height + dst_x) as usize * 4;
+                if src_idx + 3 < rgba.len() && dst_idx + 3 < out.len() {
+                    out[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
+                }
+            }
+        }
+        (out, height, width)
+    } else {
+        (rgba.to_vec(), width, height)
     }
 }

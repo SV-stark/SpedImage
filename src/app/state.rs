@@ -133,6 +133,21 @@ impl SpedImageApp {
                 rayon::ThreadPoolBuilder::new()
                     .num_threads(1)
                     .thread_name(|i| format!("spedimage-prefetch-{}", i))
+                    .spawn_handler(|thread| {
+                        let mut b = std::thread::Builder::new();
+                        if let Some(name) = thread.name() {
+                            b = b.name(name.to_string());
+                        }
+                        b.spawn(move || {
+                            #[cfg(target_os = "windows")]
+                            unsafe {
+                                use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
+                                let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+                            }
+                            thread.run();
+                        })
+                        .map(|_| ())
+                    })
                     .build()
                     .expect("Failed to initialize Rayon thread pool (prefetch). This is fatal."),
             ),
@@ -140,6 +155,21 @@ impl SpedImageApp {
                 rayon::ThreadPoolBuilder::new()
                     .num_threads(4)
                     .thread_name(|i| format!("spedimage-thumbnail-{}", i))
+                    .spawn_handler(|thread| {
+                        let mut b = std::thread::Builder::new();
+                        if let Some(name) = thread.name() {
+                            b = b.name(name.to_string());
+                        }
+                        b.spawn(move || {
+                            #[cfg(target_os = "windows")]
+                            unsafe {
+                                use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
+                                let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+                            }
+                            thread.run();
+                        })
+                        .map(|_| ())
+                    })
                     .build()
                     .expect("Failed to initialize Rayon thread pool (thumbnail). This is fatal."),
             ),
