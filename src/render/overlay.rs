@@ -473,12 +473,19 @@ impl Renderer {
                     ui.add_space(5.0);
 
                     let query = params.search_query.to_lowercase();
-                    let filtered: Vec<(usize, &crate::ui::FileEntry)> = params.files.iter().enumerate()
+                    let filtered: Vec<(usize, &crate::ui::FileEntry)> = params
+                        .files
+                        .iter()
+                        .enumerate()
                         .filter(|(_, f)| f.name.to_lowercase().contains(&query))
                         .collect();
 
                     if filtered.is_empty() {
-                        ui.label(egui::RichText::new("No files found.").italics().color(egui::Color32::GRAY));
+                        ui.label(
+                            egui::RichText::new("No files found.")
+                                .italics()
+                                .color(egui::Color32::GRAY),
+                        );
                     } else {
                         egui::ScrollArea::vertical()
                             .max_height(250.0)
@@ -495,7 +502,9 @@ impl Renderer {
                                         crate::app::types::send_event(
                                             params.event_tx,
                                             params.event_proxy,
-                                            crate::app::types::AppEvent::OpenPath(file.path.clone()),
+                                            crate::app::types::AppEvent::OpenPath(
+                                                file.path.clone(),
+                                            ),
                                         );
                                         *params.show_search = false;
                                     }

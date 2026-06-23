@@ -141,8 +141,14 @@ impl SpedImageApp {
                         b.spawn(move || {
                             #[cfg(target_os = "windows")]
                             unsafe {
-                                use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
-                                let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+                                use windows::Win32::System::Threading::{
+                                    GetCurrentThread, SetThreadPriority,
+                                    THREAD_PRIORITY_BELOW_NORMAL,
+                                };
+                                let _ = SetThreadPriority(
+                                    GetCurrentThread(),
+                                    THREAD_PRIORITY_BELOW_NORMAL,
+                                );
                             }
                             thread.run();
                         })
@@ -163,8 +169,14 @@ impl SpedImageApp {
                         b.spawn(move || {
                             #[cfg(target_os = "windows")]
                             unsafe {
-                                use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
-                                let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+                                use windows::Win32::System::Threading::{
+                                    GetCurrentThread, SetThreadPriority,
+                                    THREAD_PRIORITY_BELOW_NORMAL,
+                                };
+                                let _ = SetThreadPriority(
+                                    GetCurrentThread(),
+                                    THREAD_PRIORITY_BELOW_NORMAL,
+                                );
                             }
                             thread.run();
                         })

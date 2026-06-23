@@ -82,7 +82,8 @@ impl ImageLoader {
             };
             if let Some(d) = deg {
                 for frame in &mut image_frames {
-                    let (rotated_rgba, rotated_w, rotated_h) = rotate_rgba(&frame.rgba_data, frame.width, frame.height, d);
+                    let (rotated_rgba, rotated_w, rotated_h) =
+                        rotate_rgba(&frame.rgba_data, frame.width, frame.height, d);
                     frame.rgba_data = Arc::new(rotated_rgba);
                     frame.width = rotated_w;
                     frame.height = rotated_h;

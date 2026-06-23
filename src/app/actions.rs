@@ -490,8 +490,9 @@ impl SpedImageApp {
                                 _ => None,
                             };
                             if let Some(op) = rotation_op {
-                                op.execute(&mut loaded_img)
-                                    .map_err(|e| color_eyre::eyre::eyre!("Failed to auto-orient image: {e:?}"))?;
+                                op.execute(&mut loaded_img).map_err(|e| {
+                                    color_eyre::eyre::eyre!("Failed to auto-orient image: {e:?}")
+                                })?;
                             }
                         }
                         loaded_img
