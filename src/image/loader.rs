@@ -447,37 +447,40 @@ impl ImageLoader {
         let white = image.whitelevels[0] as f32;
         let range = (white - black).max(1.0);
 
-        for y in 0..out_h {
-            for x in 0..out_w {
-                let r_idx = (y * 2) * width + (x * 2);
-                let g1_idx = (y * 2) * width + (x * 2 + 1);
-                let g2_idx = (y * 2 + 1) * width + (x * 2);
-                let b_idx = (y * 2 + 1) * width + (x * 2 + 1);
+        use rayon::prelude::*;
+        rgba.par_chunks_exact_mut(out_w * 4)
+            .enumerate()
+            .for_each(|(y, row)| {
+                for x in 0..out_w {
+                    let r_idx = (y * 2) * width + (x * 2);
+                    let g1_idx = (y * 2) * width + (x * 2 + 1);
+                    let g2_idx = (y * 2 + 1) * width + (x * 2);
+                    let b_idx = (y * 2 + 1) * width + (x * 2 + 1);
 
-                if r_idx < raw_data.len()
-                    && g1_idx < raw_data.len()
-                    && g2_idx < raw_data.len()
-                    && b_idx < raw_data.len()
-                {
-                    let r_raw = raw_data[r_idx];
-                    let g1_raw = raw_data[g1_idx];
-                    let g2_raw = raw_data[g2_idx];
-                    let b_raw = raw_data[b_idx];
+                    if r_idx < raw_data.len()
+                        && g1_idx < raw_data.len()
+                        && g2_idx < raw_data.len()
+                        && b_idx < raw_data.len()
+                    {
+                        let r_raw = raw_data[r_idx];
+                        let g1_raw = raw_data[g1_idx];
+                        let g2_raw = raw_data[g2_idx];
+                        let b_raw = raw_data[b_idx];
 
-                    let g_raw = ((g1_raw as u32 + g2_raw as u32) / 2) as u16;
+                        let g_raw = ((g1_raw as u32 + g2_raw as u32) / 2) as u16;
 
-                    let r = (((r_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
-                    let g = (((g_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
-                    let b = (((b_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
+                        let r = (((r_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
+                        let g = (((g_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
+                        let b = (((b_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
 
-                    let out_idx = (y * out_w + x) * 4;
-                    rgba[out_idx] = r;
-                    rgba[out_idx + 1] = g;
-                    rgba[out_idx + 2] = b;
-                    rgba[out_idx + 3] = 255;
+                        let out_idx = x * 4;
+                        row[out_idx] = r;
+                        row[out_idx + 1] = g;
+                        row[out_idx + 2] = b;
+                        row[out_idx + 3] = 255;
+                    }
                 }
-            }
-        }
+            });
 
         let file_size = std::fs::metadata(path)?.len();
         let exif_info = crate::image::metadata::extract_exif_lazy(path);
