@@ -56,7 +56,7 @@ impl Renderer {
             format,
             width: window.inner_size().width,
             height: window.inner_size().height,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: capabilities.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,

@@ -591,7 +591,6 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             if elapsed < duration {
                 self.animation.transition_factor = elapsed / duration;
                 needs_redraw = true;
-                update_wakeup(now + std::time::Duration::from_millis(8)); // ~120fps sync
             } else {
                 self.animation.transition_factor = 1.0;
                 self.animation.transition_start = None;
@@ -612,7 +611,6 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             };
             self.navigation.thumb_scroll = self.navigation.thumb_scroll.clamp(0.0, max_scroll);
             needs_redraw = true;
-            update_wakeup(now + std::time::Duration::from_millis(8));
         }
 
         if let Some(next) = self.animation.next_frame_time {
@@ -666,22 +664,18 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
         }
 
-        let mut is_lerping = false;
         for i in 0..4 {
             let target = self.ui_state.adjustments.crop_rect_target[i];
             let current = &mut self.ui_state.adjustments.crop_rect[i];
             if (*current - target).abs() > 0.001 {
                 *current = *current + (target - *current) * constants::LERP_FACTOR;
                 needs_redraw = true;
-                is_lerping = true;
             } else {
                 *current = target;
             }
         }
 
-        if is_lerping {
-            event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-        } else if let Some(wakeup) = next_wakeup {
+        if let Some(wakeup) = next_wakeup {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wakeup));
         } else {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);

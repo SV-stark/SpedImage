@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.1] - 2026-06-23
+
+### Added
+* **Smooth Viewport Zoom Lerping**: Implemented dynamically scaled scroll zooming that handles high-resolution trackpads (`PixelDelta`) and standard scroll wheels (`LineDelta`) proportionally, providing liquid-smooth zooming.
+
+### Fixed
+* **VSync Alignment**: Configured `wgpu::PresentMode::AutoVsync` to lock frame presentation to the display's refresh rate, eliminating screen tearing and micro-stuttering.
+* **CPU/GPU Efficiency**: Replaced `ControlFlow::Poll` with `ControlFlow::Wait` for animation redraws, resolving the 100% CPU/GPU core usage spikes during zooming, panning, or transition events.
+* **Pacing Clash**: Removed artificial 8ms wakeup timers, letting transition and scroll momentum animations run seamlessly at the monitor's native refresh rate.
+
 ## [0.6.0] - 2026-06-01
 
 ### Added

@@ -231,11 +231,18 @@ impl SpedImageApp {
         };
 
         if do_zoom {
-            if y > 0.0 {
-                self.zoom_in(Some(cursor_pos));
-            } else {
-                self.zoom_out(Some(cursor_pos));
-            }
+            let factor = match delta {
+                MouseScrollDelta::LineDelta(_, y_lines) => {
+                    // Standard scroll wheel: zoom in steps of ~12% per line tick
+                    1.0 - y_lines * 0.12
+                }
+                MouseScrollDelta::PixelDelta(pixel_pos) => {
+                    // High-resolution trackpad: zoom proportionally to scroll pixel distance
+                    1.0 - (pixel_pos.y as f32 * 0.002)
+                }
+            };
+            let factor = factor.clamp(0.5, 2.0);
+            self.zoom_by(factor, Some(cursor_pos));
         } else {
             if y > 0.0 {
                 self.prev_image();
