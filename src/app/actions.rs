@@ -263,6 +263,34 @@ impl SpedImageApp {
     }
 
     pub(crate) fn load_image(&mut self, path: &std::path::Path) {
+        // Evict far-away cache entries based on current navigation index
+        if self.ui_state.files.len() > 8 {
+            if let Some(current_idx) = self.ui_state.files.iter().position(|f| f.path == path) {
+                let cache = self.navigation.prefetch_cache.clone();
+                let files = self.ui_state.files.clone();
+                self.thread_pool.spawn(move || {
+                    let keep_range = 4; // Maintain a window of 4 images in each direction
+                    let mut to_remove = Vec::new();
+                    for entry in cache.iter() {
+                        let cached_path = entry.0;
+                        if let Some(idx) = files.iter().position(|f| f.path == **cached_path) {
+                            let dist = (idx as i32 - current_idx as i32).abs();
+                            // Handle wrap-around distance
+                            let wrapped_dist = dist.min((files.len() as i32 - dist).abs());
+                            if wrapped_dist > keep_range {
+                                to_remove.push(cached_path);
+                            }
+                        } else {
+                            to_remove.push(cached_path);
+                        }
+                    }
+                    for p in to_remove {
+                        cache.invalidate(p.as_ref());
+                    }
+                });
+            }
+        }
+
         let generation = self
             .navigation
             .load_generation
