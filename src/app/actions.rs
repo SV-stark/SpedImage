@@ -478,8 +478,23 @@ impl SpedImageApp {
                     use zune_imageprocs::rotate::Rotate;
 
                     let mut img = if is_downsampled {
-                        Image::open(&path_clone)
-                            .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?
+                        let mut loaded_img = Image::open(&path_clone)
+                            .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?;
+
+                        // Apply EXIF auto-orientation to the full-resolution image before editing/saving
+                        if let Some(orientation) = crate::image::extract_orientation(&path_clone) {
+                            let rotation_op = match orientation {
+                                3 => Some(Rotate::new(180.0)),
+                                6 => Some(Rotate::new(90.0)),
+                                8 => Some(Rotate::new(270.0)),
+                                _ => None,
+                            };
+                            if let Some(op) = rotation_op {
+                                op.execute(&mut loaded_img)
+                                    .map_err(|e| color_eyre::eyre::eyre!("Failed to auto-orient image: {e:?}"))?;
+                            }
+                        }
+                        loaded_img
                     } else {
                         Image::from_u8(
                             &rgba_data,
