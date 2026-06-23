@@ -111,4 +111,6 @@ pub struct RenderParams<'a> {
     pub slideshow_active: &'a mut bool,
     pub slideshow_interval_secs: &'a mut u64,
     pub slideshow_progress: Option<f32>,
+    pub show_search: &'a mut bool,
+    pub search_query: &'a mut String,
 }

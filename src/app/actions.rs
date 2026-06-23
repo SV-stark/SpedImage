@@ -14,7 +14,10 @@ impl SpedImageApp {
     pub(crate) fn handle_keyboard(&mut self, event: KeyEvent, event_loop: &ActiveEventLoop) {
         match &event.logical_key {
             Key::Named(NamedKey::Escape) => {
-                if self.ui_state.is_cropping {
+                if self.ui_state.show_search {
+                    self.ui_state.show_search = false;
+                    self.dirty = true;
+                } else if self.ui_state.is_cropping {
                     self.cancel_crop();
                 } else if self.ui_state.show_help {
                     self.ui_state.show_help = false;
@@ -120,6 +123,13 @@ impl SpedImageApp {
                 }
                 "c" | "C" if ctrl => self.copy_to_clipboard(),
                 "v" | "V" if ctrl => self.paste_from_clipboard(),
+                "p" | "P" if ctrl => {
+                    self.ui_state.show_search = !self.ui_state.show_search;
+                    if self.ui_state.show_search {
+                        self.ui_state.search_query.clear();
+                    }
+                    self.dirty = true;
+                }
                 "c" | "C" => self.toggle_crop(),
                 "h" | "H" => {
                     if self.modifiers.shift {

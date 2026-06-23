@@ -454,6 +454,71 @@ impl Renderer {
                     );
                 });
         }
+
+        if *params.show_search {
+            egui::Window::new("🔍 Find File")
+                .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 50.0))
+                .collapsible(false)
+                .resizable(true)
+                .default_width(450.0)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Search:");
+                        let text_edit = ui.text_edit_singleline(params.search_query);
+                        text_edit.request_focus();
+                    });
+
+                    ui.add_space(5.0);
+                    ui.separator();
+                    ui.add_space(5.0);
+
+                    let query = params.search_query.to_lowercase();
+                    let filtered: Vec<(usize, &crate::ui::FileEntry)> = params.files.iter().enumerate()
+                        .filter(|(_, f)| f.name.to_lowercase().contains(&query))
+                        .collect();
+
+                    if filtered.is_empty() {
+                        ui.label(egui::RichText::new("No files found.").italics().color(egui::Color32::GRAY));
+                    } else {
+                        egui::ScrollArea::vertical()
+                            .max_height(250.0)
+                            .show(ui, |ui| {
+                                for (idx, file) in &filtered {
+                                    let is_selected = Some(*idx) == params.active_thumb_idx;
+                                    let label_text = if is_selected {
+                                        format!("> {}", file.name)
+                                    } else {
+                                        format!("  {}", file.name)
+                                    };
+
+                                    if ui.selectable_label(is_selected, label_text).clicked() {
+                                        crate::app::types::send_event(
+                                            params.event_tx,
+                                            params.event_proxy,
+                                            crate::app::types::AppEvent::OpenPath(file.path.clone()),
+                                        );
+                                        *params.show_search = false;
+                                    }
+                                }
+                            });
+                    }
+
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        *params.show_search = false;
+                    }
+
+                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if let Some((_, first_file)) = filtered.first() {
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::OpenPath(first_file.path.clone()),
+                            );
+                            *params.show_search = false;
+                        }
+                    }
+                });
+        }
     }
 
     pub fn render_frame(&mut self, params: RenderParams) -> Result<()> {

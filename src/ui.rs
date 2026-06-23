@@ -38,6 +38,8 @@ pub struct UiState {
     pub selected_indices: std::collections::HashSet<usize>,
     pub status_message: Option<(String, std::time::Instant)>,
     pub sidebar_text: Option<String>,
+    pub show_search: bool,
+    pub search_query: String,
 }
 
 impl Default for UiState {
@@ -55,6 +57,8 @@ impl Default for UiState {
             selected_indices: std::collections::HashSet::new(),
             status_message: None,
             sidebar_text: None,
+            show_search: false,
+            search_query: String::new(),
         }
     }
 }

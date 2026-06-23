@@ -457,6 +457,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                             slideshow_active: &mut self.slideshow.active,
                             slideshow_interval_secs: &mut slideshow_interval_secs,
                             slideshow_progress,
+                            show_search: &mut self.ui_state.show_search,
+                            search_query: &mut self.ui_state.search_query,
                         })
                         .ok();
                     }
