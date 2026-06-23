@@ -62,7 +62,7 @@ pub fn extract_orientation(path: &std::path::Path) -> Option<u32> {
         match &field.value {
             exif::Value::Short(v) => v.first().map(|&x| x as u32),
             exif::Value::Byte(v) => v.first().map(|&x| x as u32),
-            exif::Value::Long(v) => v.first().map(|&x| x as u32),
+            exif::Value::Long(v) => v.first().copied(),
             _ => None,
         }
     } else {

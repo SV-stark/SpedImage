@@ -516,15 +516,14 @@ impl Renderer {
                         *params.show_search = false;
                     }
 
-                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        if let Some((_, first_file)) = filtered.first() {
-                            crate::app::types::send_event(
-                                params.event_tx,
-                                params.event_proxy,
-                                crate::app::types::AppEvent::OpenPath(first_file.path.clone()),
-                            );
-                            *params.show_search = false;
-                        }
+                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) && !filtered.is_empty() {
+                        let first_file = filtered[0].1;
+                        crate::app::types::send_event(
+                            params.event_tx,
+                            params.event_proxy,
+                            crate::app::types::AppEvent::OpenPath(first_file.path.clone()),
+                        );
+                        *params.show_search = false;
                     }
                 });
         }
