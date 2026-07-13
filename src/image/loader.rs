@@ -145,31 +145,35 @@ impl ImageLoader {
         let frame_buffer = render.image_all_channels();
         let fb = frame_buffer.buf();
         let mut rgba = vec![0u8; width as usize * height as usize * 4];
-
         let num_channels = frame_buffer.channels();
-        for (i, pixel) in fb.chunks_exact(num_channels).enumerate() {
-            let r = (pixel[0].clamp(0.0, 1.0) * 255.0) as u8;
-            let g = if num_channels > 1 {
-                (pixel[1].clamp(0.0, 1.0) * 255.0) as u8
-            } else {
-                r
-            };
-            let b = if num_channels > 2 {
-                (pixel[2].clamp(0.0, 1.0) * 255.0) as u8
-            } else {
-                r
-            };
-            let a = if num_channels > 3 {
-                (pixel[3].clamp(0.0, 1.0) * 255.0) as u8
-            } else {
-                255
-            };
 
-            rgba[i * 4] = r;
-            rgba[i * 4 + 1] = g;
-            rgba[i * 4 + 2] = b;
-            rgba[i * 4 + 3] = a;
-        }
+        use rayon::prelude::*;
+        rgba.par_chunks_exact_mut(4)
+            .enumerate()
+            .for_each(|(i, rgba_pixel)| {
+                let pixel = &fb[i * num_channels..(i + 1) * num_channels];
+                let r = (pixel[0].clamp(0.0, 1.0) * 255.0) as u8;
+                let g = if num_channels > 1 {
+                    (pixel[1].clamp(0.0, 1.0) * 255.0) as u8
+                } else {
+                    r
+                };
+                let b = if num_channels > 2 {
+                    (pixel[2].clamp(0.0, 1.0) * 255.0) as u8
+                } else {
+                    r
+                };
+                let a = if num_channels > 3 {
+                    (pixel[3].clamp(0.0, 1.0) * 255.0) as u8
+                } else {
+                    255
+                };
+
+                rgba_pixel[0] = r;
+                rgba_pixel[1] = g;
+                rgba_pixel[2] = b;
+                rgba_pixel[3] = a;
+            });
 
         let file_size = std::fs::metadata(path)?.len();
 
@@ -350,10 +354,13 @@ impl ImageLoader {
     ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use gif::DecodeOptions;
         let file = std::fs::File::open(path)?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        let cursor = std::io::Cursor::new(&mmap[..]);
+
         let mut options = DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
         let mut decoder = options
-            .read_info(file)
+            .read_info(cursor)
             .map_err(|e| eyre!("Failed to read GIF info: {e:?}"))?;
 
         let mut image_frames = Vec::new();
