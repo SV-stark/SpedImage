@@ -69,3 +69,77 @@ pub fn extract_orientation(path: &std::path::Path) -> Option<u32> {
         None
     }
 }
+
+pub fn extract_exif_and_orientation(path: &std::path::Path) -> (Option<String>, Option<u32>) {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return (None, None),
+    };
+    let mut bufreader = std::io::BufReader::new(&file);
+    let exifreader = exif::Reader::new();
+    let exif_data = match exifreader.read_from_container(&mut bufreader) {
+        Ok(data) => data,
+        Err(_) => return (None, None),
+    };
+
+    let mut out = String::new();
+
+    // Helper to append EXIF fields concisely
+    let mut add_field = |tag: exif::Tag, label: &str| {
+        if let Some(field) = exif_data.get_field(tag, exif::In::PRIMARY) {
+            out.push_str(label);
+            out.push_str(&field.display_value().with_unit(&exif_data).to_string());
+            out.push('\n');
+        }
+    };
+
+    add_field(exif::Tag::Make, "Make: ");
+    add_field(exif::Tag::Model, "Model: ");
+    add_field(exif::Tag::LensModel, "Lens: ");
+
+    let mut exposure_line = String::new();
+    if let Some(f) = exif_data.get_field(exif::Tag::FocalLength, exif::In::PRIMARY) {
+        exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
+        exposure_line.push_str("  ");
+    }
+    if let Some(f) = exif_data.get_field(exif::Tag::FNumber, exif::In::PRIMARY) {
+        exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
+        exposure_line.push_str("  ");
+    }
+    if let Some(f) = exif_data.get_field(exif::Tag::ExposureTime, exif::In::PRIMARY) {
+        exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
+        exposure_line.push_str("s  ");
+    }
+    if let Some(f) = exif_data.get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY) {
+        exposure_line.push_str("ISO ");
+        exposure_line.push_str(&f.display_value().with_unit(&exif_data).to_string());
+    }
+
+    add_field(exif::Tag::DateTimeOriginal, "Date: ");
+
+    if !exposure_line.is_empty() {
+        out.push_str("Exposure: ");
+        out.push_str(&exposure_line);
+        out.push('\n');
+    }
+
+    let exif_info = if out.is_empty() {
+        None
+    } else {
+        Some(out.trim_end().to_string())
+    };
+
+    let orientation =
+        if let Some(field) = exif_data.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
+            match &field.value {
+                exif::Value::Short(v) => v.first().map(|&x| x as u32),
+                exif::Value::Byte(v) => v.first().map(|&x| x as u32),
+                exif::Value::Long(v) => v.first().copied(),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+    (exif_info, orientation)
+}

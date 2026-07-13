@@ -113,7 +113,14 @@ impl SpedImageApp {
                 }
                 "r" | "R" => self.rotate_image(),
                 "o" | "O" => self.open_file_dialog(),
-                "f" | "F" => self.toggle_sidebar(),
+                "f" | "F" if !ctrl => self.toggle_sidebar(),
+                "f" | "F" if ctrl => {
+                    self.ui_state.show_search = !self.ui_state.show_search;
+                    if self.ui_state.show_search {
+                        self.ui_state.search_query.clear();
+                    }
+                    self.dirty = true;
+                }
                 "t" | "T" => self.toggle_thumbnail_strip(),
                 "1" => self.reset_adjustments(),
                 "z" | "Z" => {
@@ -123,13 +130,6 @@ impl SpedImageApp {
                 }
                 "c" | "C" if ctrl => self.copy_to_clipboard(),
                 "v" | "V" if ctrl => self.paste_from_clipboard(),
-                "p" | "P" if ctrl => {
-                    self.ui_state.show_search = !self.ui_state.show_search;
-                    if self.ui_state.show_search {
-                        self.ui_state.search_query.clear();
-                    }
-                    self.dirty = true;
-                }
                 "c" | "C" => self.toggle_crop(),
                 "h" | "H" => {
                     if self.modifiers.shift {

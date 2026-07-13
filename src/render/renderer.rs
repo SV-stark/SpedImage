@@ -593,12 +593,21 @@ impl Renderer {
             1.0
         };
 
+        let rot_deg = (adjustments.rotation.to_degrees() % 360.0).round().abs();
+        let is_sideways = (rot_deg - 90.0).abs() < 1.0 || (rot_deg - 270.0).abs() < 1.0;
+        let raw_aspect = self
+            .image_size
+            .map(|(w, h)| w as f32 / h as f32)
+            .unwrap_or(1.0);
+        let aspect_ratio = if is_sideways {
+            1.0 / raw_aspect
+        } else {
+            raw_aspect
+        };
+
         let uniforms = Uniforms {
             rotation: adjustments.rotation,
-            aspect_ratio: self
-                .image_size
-                .map(|(w, h)| w as f32 / h as f32)
-                .unwrap_or(1.0),
+            aspect_ratio,
             window_aspect_ratio,
             crop_x: adjustments.crop_rect[0],
             crop_y: adjustments.crop_rect[1],

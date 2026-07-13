@@ -4,7 +4,7 @@ mod processing;
 mod types;
 
 pub use loader::ImageLoader;
-pub use metadata::extract_orientation;
+pub use metadata::{extract_exif_and_orientation, extract_orientation};
 pub use processing::ImageProcessor;
 pub use types::{ImageData, ImageError, ImageFormatType};
 

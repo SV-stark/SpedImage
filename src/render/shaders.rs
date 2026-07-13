@@ -40,15 +40,7 @@ fn vertex_main(
     
     // Default image rendering if not overridden by UI
     if (uniforms.pos_scale.x == 1.0 && uniforms.pos_scale.y == 1.0 && uniforms.pos_offset.x == 0.0) {
-        // Adjust for aspect ratio fit
-        let ratio = uniforms.aspect_ratio / uniforms.window_aspect_ratio;
-        if (ratio > 1.0) {
-            pos.y /= ratio;
-        } else {
-            pos.x *= ratio;
-        }
-
-        // Apply rotation
+        // Apply rotation first
         let angle = uniforms.rotation;
         let c = cos(angle);
         let s = sin(angle);
@@ -57,6 +49,14 @@ fn vertex_main(
             pos.x * s + pos.y * c
         );
         pos = rotated_pos;
+
+        // Adjust for aspect ratio fit (using rotated aspect ratio)
+        let ratio = uniforms.aspect_ratio / uniforms.window_aspect_ratio;
+        if (ratio > 1.0) {
+            pos.y /= ratio;
+        } else {
+            pos.x *= ratio;
+        }
     }
 
     out.position = vec4<f32>(pos, 0.0, 1.0);

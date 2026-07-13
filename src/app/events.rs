@@ -132,6 +132,15 @@ impl SpedImageApp {
                 AppEvent::ThumbnailLoaded(path, rgba, w, h) => {
                     if let Some(ref mut renderer) = self.renderer {
                         renderer.upload_thumbnail(path, &rgba, w, h).ok();
+
+                        let paths = &self.thumbnails.paths;
+                        renderer.thumbnails.sort_by_key(|t| {
+                            paths
+                                .iter()
+                                .position(|p| p == &t.path)
+                                .unwrap_or(usize::MAX)
+                        });
+
                         thumbs_loaded = true;
                     }
                 }
@@ -251,12 +260,14 @@ impl SpedImageApp {
     }
 
     pub(crate) fn handle_left_click(&mut self, pos: winit::dpi::PhysicalPosition<f64>) {
-        if let Some(idx) = self
-            .renderer
-            .as_ref()
-            .and_then(|r| r.thumbnail_index_at(pos.x, pos.y, self.navigation.thumb_scroll))
+        if let Some(ref r) = self.renderer
+            && let Some(slot) = r.thumbnail_index_at(pos.x, pos.y, self.navigation.thumb_scroll)
+            && let Some(thumb) = r.thumbnails.get(slot)
         {
-            self.handle_thumbnail_click(idx);
+            let path = thumb.path.clone();
+            if let Some(idx) = self.ui_state.files.iter().position(|f| f.path == path) {
+                self.handle_thumbnail_click(idx);
+            }
             return;
         }
 

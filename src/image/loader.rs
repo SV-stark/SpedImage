@@ -22,6 +22,12 @@ impl ImageLoader {
 
         let format_type = ImageFormatType::from_extension(&ext);
 
+        let (exif_info, orientation) = if ext != "svg" && ext != "gif" {
+            crate::image::extract_exif_and_orientation(path)
+        } else {
+            (None, None)
+        };
+
         let (mut image_frames, format_type) = if ext == "gif" {
             Self::load_gif(path, max_w, max_h)?
         } else if ext == "svg" {
@@ -35,8 +41,16 @@ impl ImageLoader {
         } else if format_type == ImageFormatType::Raw {
             Self::load_raw(path)?
         } else {
-            let mut img =
-                Image::open(path).map_err(|e| eyre!("Failed to open image {path:?}: {e:?}"))?;
+            let file = std::fs::File::open(path)
+                .map_err(|e| eyre!("Failed to open image file {path:?}: {e:?}"))?;
+            let mmap = unsafe {
+                memmap2::Mmap::map(&file)
+                    .map_err(|e| eyre!("Failed to memory map image {path:?}: {e:?}"))?
+            };
+            let cursor = std::io::Cursor::new(&mmap[..]);
+
+            let mut img = Image::read(cursor, zune_core::options::DecoderOptions::default())
+                .map_err(|e| eyre!("Failed to decode image {path:?}: {e:?}"))?;
 
             // Ensure we are in RGBA8
             img.convert_color(zune_core::colorspace::ColorSpace::RGBA)?;
@@ -52,8 +66,6 @@ impl ImageLoader {
                 }
             }
 
-            let exif_info = crate::image::metadata::extract_exif_lazy(path);
-
             (
                 vec![ImageData {
                     path: path.to_path_buf(),
@@ -63,7 +75,7 @@ impl ImageLoader {
                     format: format_type,
                     file_size_bytes: std::fs::metadata(path)?.len(),
                     frame_delay_ms: 0,
-                    exif_info,
+                    exif_info: exif_info.clone(),
                     exif_loaded: true,
                     histogram: None,
                     is_downsampled: false,
@@ -72,8 +84,14 @@ impl ImageLoader {
             )
         };
 
+        if ext != "svg" && ext != "gif" {
+            for frame in &mut image_frames {
+                frame.exif_info = exif_info.clone();
+            }
+        }
+
         // Post-process to auto-rotate based on EXIF orientation tag
-        if let Some(orientation) = crate::image::metadata::extract_orientation(path) {
+        if let Some(orientation) = orientation {
             let deg = match orientation {
                 3 => Some(180),
                 6 => Some(90),
@@ -154,7 +172,6 @@ impl ImageLoader {
         }
 
         let file_size = std::fs::metadata(path)?.len();
-        let exif_info = crate::image::metadata::extract_exif_lazy(path);
 
         Ok((
             vec![ImageData {
@@ -165,7 +182,7 @@ impl ImageLoader {
                 format: ImageFormatType::Jxl,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
-                exif_info,
+                exif_info: None,
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
@@ -263,7 +280,6 @@ impl ImageLoader {
         };
 
         let file_size = std::fs::metadata(path)?.len();
-        let exif_info = crate::image::metadata::extract_exif_lazy(path);
 
         Ok((
             vec![ImageData {
@@ -274,7 +290,7 @@ impl ImageLoader {
                 format: ImageFormatType::Tiff,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
-                exif_info,
+                exif_info: None,
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
@@ -308,7 +324,6 @@ impl ImageLoader {
             .map_err(|e| eyre!("HEIC/AVIF decode failed: {:?}", e))?;
 
         let file_size = std::fs::metadata(path)?.len();
-        let exif_info = crate::image::metadata::extract_exif_lazy(path);
 
         Ok((
             vec![ImageData {
@@ -319,7 +334,7 @@ impl ImageLoader {
                 format: format_type,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
-                exif_info,
+                exif_info: None,
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
@@ -484,7 +499,6 @@ impl ImageLoader {
             });
 
         let file_size = std::fs::metadata(path)?.len();
-        let exif_info = crate::image::metadata::extract_exif_lazy(path);
 
         Ok((
             vec![ImageData {
@@ -495,7 +509,7 @@ impl ImageLoader {
                 format: ImageFormatType::Raw,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
-                exif_info,
+                exif_info: None,
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: true,
@@ -506,47 +520,57 @@ impl ImageLoader {
 }
 
 fn rotate_rgba(rgba: &[u8], width: u32, height: u32, degrees: u32) -> (Vec<u8>, u32, u32) {
+    use rayon::prelude::*;
+    let w = width as usize;
+    let h = height as usize;
+
     if degrees == 90 {
         let mut out = vec![0u8; rgba.len()];
-        for y in 0..height {
-            for x in 0..width {
-                let src_idx = (y * width + x) as usize * 4;
-                let dst_x = height - 1 - y;
-                let dst_y = x;
-                let dst_idx = (dst_y * height + dst_x) as usize * 4;
-                if src_idx + 3 < rgba.len() && dst_idx + 3 < out.len() {
-                    out[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
+        out.par_chunks_exact_mut(h * 4)
+            .enumerate()
+            .for_each(|(dst_y, row)| {
+                let x = dst_y;
+                for dst_x in 0..h {
+                    let y = h - 1 - dst_x;
+                    let src_idx = (y * w + x) * 4;
+                    let dst_idx = dst_x * 4;
+                    if src_idx + 3 < rgba.len() && dst_idx + 3 < row.len() {
+                        row[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
+                    }
                 }
-            }
-        }
+            });
         (out, height, width)
     } else if degrees == 180 {
         let mut out = vec![0u8; rgba.len()];
-        for y in 0..height {
-            for x in 0..width {
-                let src_idx = (y * width + x) as usize * 4;
-                let dst_x = width - 1 - x;
-                let dst_y = height - 1 - y;
-                let dst_idx = (dst_y * width + dst_x) as usize * 4;
-                if src_idx + 3 < rgba.len() && dst_idx + 3 < out.len() {
-                    out[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
+        out.par_chunks_exact_mut(w * 4)
+            .enumerate()
+            .for_each(|(dst_y, row)| {
+                let y = h - 1 - dst_y;
+                for dst_x in 0..w {
+                    let x = w - 1 - dst_x;
+                    let src_idx = (y * w + x) * 4;
+                    let dst_idx = dst_x * 4;
+                    if src_idx + 3 < rgba.len() && dst_idx + 3 < row.len() {
+                        row[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
+                    }
                 }
-            }
-        }
+            });
         (out, width, height)
     } else if degrees == 270 {
         let mut out = vec![0u8; rgba.len()];
-        for y in 0..height {
-            for x in 0..width {
-                let src_idx = (y * width + x) as usize * 4;
-                let dst_x = y;
-                let dst_y = width - 1 - x;
-                let dst_idx = (dst_y * height + dst_x) as usize * 4;
-                if src_idx + 3 < rgba.len() && dst_idx + 3 < out.len() {
-                    out[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
+        out.par_chunks_exact_mut(h * 4)
+            .enumerate()
+            .for_each(|(dst_y, row)| {
+                let x = w - 1 - dst_y;
+                for dst_x in 0..h {
+                    let y = dst_x;
+                    let src_idx = (y * w + x) * 4;
+                    let dst_idx = dst_x * 4;
+                    if src_idx + 3 < rgba.len() && dst_idx + 3 < row.len() {
+                        row[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
+                    }
                 }
-            }
-        }
+            });
         (out, height, width)
     } else {
         (rgba.to_vec(), width, height)
