@@ -435,7 +435,7 @@ impl Renderer {
                         for j in 0..255 {
                             painter.line_segment(
                                 [points[j], points[j + 1]],
-                                egui::Stroke::new(1.5, color),
+                                egui::Stroke::new(1.5_f32, color),
                             );
                         }
                     };
