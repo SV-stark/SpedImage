@@ -118,11 +118,50 @@ impl ImageData {
         g_hist: &mut [u32; 256],
         b_hist: &mut [u32; 256],
     ) {
-        for pixel in rgba.chunks_exact(4) {
-            r_hist[pixel[0] as usize] += 1;
-            g_hist[pixel[1] as usize] += 1;
-            b_hist[pixel[2] as usize] += 1;
+        use rayon::prelude::*;
+
+        // Process in parallel using chunk sizes of 4096 pixels (16KB)
+        let chunk_size = 4096 * 4;
+        let (r, g, b) = rgba
+            .par_chunks_exact(chunk_size)
+            .map(|chunk| {
+                let mut local_r = [0u32; 256];
+                let mut local_g = [0u32; 256];
+                let mut local_b = [0u32; 256];
+                for pixel in chunk.chunks_exact(4) {
+                    local_r[pixel[0] as usize] += 1;
+                    local_g[pixel[1] as usize] += 1;
+                    local_b[pixel[2] as usize] += 1;
+                }
+                (local_r, local_g, local_b)
+            })
+            .reduce(
+                || ([0u32; 256], [0u32; 256], [0u32; 256]),
+                |mut acc, local| {
+                    for i in 0..256 {
+                        acc.0[i] += local.0[i];
+                        acc.1[i] += local.1[i];
+                        acc.2[i] += local.2[i];
+                    }
+                    acc
+                },
+            );
+
+        let processed_len = (rgba.len() / chunk_size) * chunk_size;
+        let remainder = &rgba[processed_len..];
+
+        let mut final_r = r;
+        let mut final_g = g;
+        let mut final_b = b;
+        for pixel in remainder.chunks_exact(4) {
+            final_r[pixel[0] as usize] += 1;
+            final_g[pixel[1] as usize] += 1;
+            final_b[pixel[2] as usize] += 1;
         }
+
+        r_hist.copy_from_slice(&final_r);
+        g_hist.copy_from_slice(&final_g);
+        b_hist.copy_from_slice(&final_b);
     }
 
     /// Get aspect ratio
