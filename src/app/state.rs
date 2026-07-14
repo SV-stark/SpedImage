@@ -254,11 +254,57 @@ mod tests {
         assert_eq!(app.navigation.thumb_target_scroll, 0.0);
         assert!(app.navigation.last_advance_time.is_none());
         assert!(app.navigation.held_key.is_none());
+        assert!(app.navigation.last_left_click_time.is_none());
         assert_eq!(
             app.navigation
                 .load_generation
                 .load(std::sync::atomic::Ordering::SeqCst),
             0
+        );
+    }
+
+    #[test]
+    fn test_app_toggle_zoom_100() {
+        let proxy = get_test_proxy();
+        let mut app = SpedImageApp::new(proxy);
+
+        // Initially crop_rect_target is [0, 0, 1, 1] (fully zoomed out)
+        assert_eq!(
+            app.ui_state.adjustments.crop_rect_target,
+            [0.0, 0.0, 1.0, 1.0]
+        );
+
+        // Call toggle_zoom_100 (should zoom in, but since current_image is None, it won't crash and will do nothing)
+        app.toggle_zoom_100();
+        assert_eq!(
+            app.ui_state.adjustments.crop_rect_target,
+            [0.0, 0.0, 1.0, 1.0]
+        );
+
+        // Mock current_image
+        app.current_image = Some(ImageData {
+            path: std::path::PathBuf::from("test.jpg"),
+            width: 1000,
+            height: 1000,
+            rgba_data: Arc::new(vec![0; 4000]),
+            format: crate::image::ImageFormatType::Jpeg,
+            file_size_bytes: 4000,
+            frame_delay_ms: 0,
+            exif_info: None,
+            histogram: None,
+            exif_loaded: true,
+            is_downsampled: false,
+        });
+
+        // Toggle Zoom 100 with current image: new crop_w/crop_h will be win_w/img_w.
+        app.toggle_zoom_100();
+        assert_ne!(app.ui_state.adjustments.crop_rect_target[2], 1.0);
+
+        // Toggle zoom again: it should reset back to 1.0 (zoom fit)
+        app.toggle_zoom_100();
+        assert_eq!(
+            app.ui_state.adjustments.crop_rect_target,
+            [0.0, 0.0, 1.0, 1.0]
         );
     }
 
