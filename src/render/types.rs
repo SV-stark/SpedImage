@@ -26,6 +26,10 @@ pub struct Uniforms {
     pub transition_factor: f32, // 0.0 (old) -> 1.0 (new)
     pub pos_offset: [f32; 2],
     pub pos_scale: [f32; 2],
+    pub flip_horizontal: f32,
+    pub flip_vertical: f32,
+    pub _padding1: f32,
+    pub _padding2: f32,
 }
 
 impl Uniforms {
@@ -45,6 +49,10 @@ impl Uniforms {
             transition_factor: 1.0,
             pos_offset: [0.0, 0.0],
             pos_scale: [1.0, 1.0],
+            flip_horizontal: 0.0,
+            flip_vertical: 0.0,
+            _padding1: 0.0,
+            _padding2: 0.0,
         }
     }
 }
@@ -60,6 +68,8 @@ pub struct ImageAdjustments {
     pub crop_rect_actual: Option<[f32; 4]>,
     pub hdr_toning: bool,
     pub pixel_perfect: bool,
+    pub flip_horizontal: bool,
+    pub flip_vertical: bool,
 }
 
 impl Default for ImageAdjustments {
@@ -74,6 +84,8 @@ impl Default for ImageAdjustments {
             crop_rect_actual: None,
             hdr_toning: false,
             pixel_perfect: false,
+            flip_horizontal: false,
+            flip_vertical: false,
         }
     }
 }

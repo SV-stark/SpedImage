@@ -620,6 +620,14 @@ impl Renderer {
             transition_factor,
             pos_offset: [0.0, 0.0],
             pos_scale: [1.0, 1.0],
+            flip_horizontal: if adjustments.flip_horizontal {
+                1.0
+            } else {
+                0.0
+            },
+            flip_vertical: if adjustments.flip_vertical { 1.0 } else { 0.0 },
+            _padding1: 0.0,
+            _padding2: 0.0,
         };
 
         self.queue

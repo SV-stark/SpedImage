@@ -48,6 +48,10 @@ impl SpedImageApp {
                 self.toggle_fullscreen();
                 return;
             }
+            Key::Named(NamedKey::Enter) => {
+                self.toggle_zoom_100();
+                return;
+            }
             Key::Named(NamedKey::Delete) => {
                 if self.modifiers.shift && !self.ui_state.selected_indices.is_empty() {
                     self.batch_delete_selected();
@@ -121,6 +125,7 @@ impl SpedImageApp {
                         !self.ui_state.adjustments.pixel_perfect;
                     self.dirty = true;
                 }
+                "c" | "C" if ctrl && self.modifiers.shift => self.copy_path_to_clipboard(),
                 "c" | "C" if ctrl => self.copy_to_clipboard(),
                 "v" | "V" if ctrl => self.paste_from_clipboard(),
                 "c" | "C" => self.toggle_crop(),
@@ -1087,5 +1092,95 @@ impl SpedImageApp {
     pub(crate) fn active_thumb_index(&self) -> Option<usize> {
         let current = self.ui_state.current_file()?;
         self.thumbnails.paths.iter().position(|p| p == current)
+    }
+
+    pub(crate) fn copy_path_to_clipboard(&mut self) {
+        if let Some(ref img) = self.current_image {
+            let path_str = img.path.to_string_lossy().into_owned();
+            let tx = self.event_tx.clone();
+            let proxy = self.event_proxy.clone();
+
+            self.thread_pool.spawn(move || {
+                let mut clipboard = arboard::Clipboard::new().unwrap();
+                if clipboard.set_text(path_str).is_ok()
+                    && let Some(ref p) = proxy
+                {
+                    send_event(
+                        &tx,
+                        p,
+                        AppEvent::SetStatus("Copied file path to clipboard".to_string()),
+                    );
+                }
+            });
+        }
+    }
+
+    pub(crate) fn toggle_zoom_100(&mut self) {
+        if self.ui_state.adjustments.crop_rect_target[2] < 0.99 {
+            self.zoom_fit();
+        } else {
+            self.zoom_100(None);
+        }
+    }
+
+    pub(crate) fn zoom_100(&mut self, cursor: Option<winit::dpi::PhysicalPosition<f64>>) {
+        if let Some(ref img) = self.current_image {
+            let (win_w, win_h) = if let Some(ref w) = self.window {
+                let size = w.inner_size();
+                (size.width as f32, size.height as f32)
+            } else {
+                (1.0, 1.0)
+            };
+
+            let img_w = img.width as f32;
+            let img_h = img.height as f32;
+
+            if img_w > 0.0 && img_h > 0.0 {
+                let crop_w = win_w / img_w;
+                let crop_h = win_h / img_h;
+
+                let old_w = self.ui_state.adjustments.crop_rect_target[2];
+                let old_h = self.ui_state.adjustments.crop_rect_target[3];
+
+                let (nx, ny) = if let Some(pos) = cursor {
+                    let mut x_ratio = pos.x as f32 / win_w;
+                    let mut y_ratio = pos.y as f32 / win_h;
+
+                    let img_aspect = img_w / img_h;
+                    let win_aspect = if win_h > 0.0 { win_w / win_h } else { 1.0 };
+                    let ratio = img_aspect / win_aspect;
+
+                    if ratio > 1.0 {
+                        let img_h_in_win = 1.0 / ratio;
+                        let offset = (1.0 - img_h_in_win) / 2.0;
+                        y_ratio = ((y_ratio - offset) * ratio).clamp(0.0, 1.0);
+                    } else {
+                        let img_w_in_win = ratio;
+                        let offset = (1.0 - img_w_in_win) / 2.0;
+                        x_ratio = ((x_ratio - offset) / ratio).clamp(0.0, 1.0);
+                    }
+                    (x_ratio, y_ratio)
+                } else {
+                    (0.5, 0.5)
+                };
+
+                let cx = nx.mul_add(old_w, self.ui_state.adjustments.crop_rect_target[0]);
+                let cy = ny.mul_add(old_h, self.ui_state.adjustments.crop_rect_target[1]);
+
+                let target_x = cx - crop_w * nx;
+                let target_y = cy - crop_h * ny;
+
+                let min_x = 0.0f32.min(1.0 - crop_w);
+                let max_x = 0.0f32.max(1.0 - crop_w);
+                let min_y = 0.0f32.min(1.0 - crop_h);
+                let max_y = 0.0f32.max(1.0 - crop_h);
+
+                self.ui_state.adjustments.crop_rect_target[0] = target_x.clamp(min_x, max_x);
+                self.ui_state.adjustments.crop_rect_target[1] = target_y.clamp(min_y, max_y);
+                self.ui_state.adjustments.crop_rect_target[2] = crop_w;
+                self.ui_state.adjustments.crop_rect_target[3] = crop_h;
+                self.dirty = true;
+            }
+        }
     }
 }

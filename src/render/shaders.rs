@@ -19,6 +19,10 @@ struct Uniforms {
     transition_factor: f32,
     pos_offset: vec2<f32>,
     pos_scale: vec2<f32>,
+    flip_horizontal: f32,
+    flip_vertical: f32,
+    _padding1: f32,
+    _padding2: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -61,10 +65,18 @@ fn vertex_main(
 
     out.position = vec4<f32>(pos, 0.0, 1.0);
     
-    // Apply crop to texture coordinates
+    // Apply crop to texture coordinates (with horizontal and vertical flipping support)
+    var tc = tex_coords;
+    if (uniforms.flip_horizontal > 0.5) {
+        tc.x = 1.0 - tc.x;
+    }
+    if (uniforms.flip_vertical > 0.5) {
+        tc.y = 1.0 - tc.y;
+    }
+
     out.tex_coords = vec2<f32>(
-        uniforms.crop_x + tex_coords.x * uniforms.crop_w,
-        uniforms.crop_y + tex_coords.y * uniforms.crop_h
+        uniforms.crop_x + tc.x * uniforms.crop_w,
+        uniforms.crop_y + tc.y * uniforms.crop_h
     );
     
     return out;

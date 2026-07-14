@@ -302,6 +302,15 @@ impl Renderer {
                         changed = true;
                     }
 
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut params.adjustments.flip_horizontal, "Flip H").changed() {
+                            changed = true;
+                        }
+                        if ui.checkbox(&mut params.adjustments.flip_vertical, "Flip V").changed() {
+                            changed = true;
+                        }
+                    });
+
                     ui.separator();
                     if ui.button("✂ Crop to Zoomed Area").clicked() {
                         params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
@@ -331,6 +340,8 @@ impl Renderer {
                         params.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
                         params.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
                         params.adjustments.crop_rect_actual = None;
+                        params.adjustments.flip_horizontal = false;
+                        params.adjustments.flip_vertical = false;
                         changed = true;
                     }
 
@@ -731,6 +742,10 @@ impl Renderer {
                     transition_factor: 1.0,
                     pos_offset: [0.0, 0.0],
                     pos_scale: [1.0, 1.0],
+                    flip_horizontal: 0.0,
+                    flip_vertical: 0.0,
+                    _padding1: 0.0,
+                    _padding2: 0.0,
                 };
 
                 self.queue
