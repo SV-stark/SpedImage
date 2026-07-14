@@ -186,16 +186,38 @@ impl Renderer {
         }
 
         if params.show_help {
-            egui::Window::new("Shortcuts")
-                .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 40.0))
-                .title_bar(true)
+            egui::Window::new("Keyboard Shortcuts")
+                .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 330.0))
+                .title_bar(false)
+                .resizable(false)
+                .movable(false)
+                .frame(egui::Frame::window(ctx.global_style().as_ref())
+                    .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15)))
+                    .corner_radius(12.0)
+                    .inner_margin(egui::Margin::same(12))
+                )
                 .show(ctx, |ui| {
-                    ui.label("A/W: Prev Image");
-                    ui.label("D/S: Next Image");
-                    ui.label("R: Rotate");
+                    ui.label(egui::RichText::new("KEYBOARD SHORTCUTS")
+                        .size(11.0)
+                        .strong()
+                        .color(egui::Color32::from_rgb(0, 180, 216))); // cyan accent
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+
+                    ui.label("A / W / ◀: Prev Image");
+                    ui.label("D / S / ▶: Next Image");
+                    ui.label("R: Rotate 90°");
                     ui.label("C: Toggle Crop");
-                    ui.label("H: Toggle HDR");
-                    ui.label("Ctrl+S: Save");
+                    ui.label("H: Toggle HDR Toning");
+                    ui.label("Enter: Toggle Zoom 100%");
+                    ui.label("Double-Click: Fullscreen");
+                    ui.label("Ctrl+Shift+C: Copy Path");
+                    ui.label("Ctrl+C: Copy Image");
+                    ui.label("Ctrl+V: Paste Image");
+                    ui.label("F2: Rename File");
+                    ui.label("Delete: Recycle Bin");
                     ui.label("F: Toggle Sidebar");
                     ui.label("T: Toggle Thumbnails");
                     ui.label("Esc: Quit");
