@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Version-0.7.0-blue" alt="Version: 0.7.0"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-0.7.1-blue" alt="Version: 0.7.1"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-1.82+-orange" alt="Rust: 1.82+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
@@ -40,6 +40,7 @@
 ### 🎨 GPU-Accelerated Editing & Modern UI
 All adjustments are processed dynamically in WGSL fragment shaders.
 - **Instant Adjustments**: Brightness, Contrast, and Saturation applied directly in real-time.
+- **Image Flipping**: Horizontal and vertical flipping (mirroring) processed directly in the vertex shader.
 - **HDR Toning**: Real-time filmic **Reinhard tone-mapping** for extended-range lighting (`H`).
 - **Sleek Docked UI**: Borderless dashboard cards for Adjustments and File Browser styled with custom dark-slate gradients and cyan accents.
 - **Double-Click Fullscreen**: Double-click anywhere on the viewport to toggle Borderless Fullscreen.
@@ -170,10 +171,12 @@ spedimage /path/to/image.jpg
 | `F11` / `Double Click` | Toggle Fullscreen |
 | `Ctrl+W` | Set as Desktop Wallpaper |
 | `Ctrl+C` | Copy image to clipboard |
+| `Ctrl+Shift+C` | Copy image file path |
 | `Ctrl+V` | Paste image from clipboard |
 | `F2` | Rename current file |
 | `Delete` | Move current file to Recycle Bin / Trash |
 | `Shift+Delete`| Batch delete selected |
+| `Enter` | Toggle Zoom 100% (Actual pixels) / Zoom to fit |
 | `F` | Toggle sidebar |
 | `T` | Toggle thumbnail strip |
 | `1` | Reset adjustments |
