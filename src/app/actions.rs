@@ -45,14 +45,7 @@ impl SpedImageApp {
                 return;
             }
             Key::Named(NamedKey::F11) => {
-                if let Some(ref w) = self.window {
-                    let mode = if w.fullscreen().is_some() {
-                        None
-                    } else {
-                        Some(Fullscreen::Borderless(None))
-                    };
-                    w.set_fullscreen(mode);
-                }
+                self.toggle_fullscreen();
                 return;
             }
             Key::Named(NamedKey::Delete) => {
@@ -769,6 +762,18 @@ impl SpedImageApp {
             } else {
                 self.ui_state.set_status("Desktop wallpaper set!");
             }
+            self.dirty = true;
+        }
+    }
+
+    pub(crate) fn toggle_fullscreen(&mut self) {
+        if let Some(ref w) = self.window {
+            let mode = if w.fullscreen().is_some() {
+                None
+            } else {
+                Some(Fullscreen::Borderless(None))
+            };
+            w.set_fullscreen(mode);
             self.dirty = true;
         }
     }

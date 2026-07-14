@@ -537,7 +537,20 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             WindowEvent::MouseInput { state, button, .. } => {
                 if button == MouseButton::Left {
                     if state == ElementState::Pressed {
-                        self.handle_left_click(self.last_cursor_pos);
+                        let now = std::time::Instant::now();
+                        let is_double_click =
+                            if let Some(last) = self.navigation.last_left_click_time {
+                                now.duration_since(last).as_millis() < 300
+                            } else {
+                                false
+                            };
+                        self.navigation.last_left_click_time = Some(now);
+
+                        if is_double_click {
+                            self.toggle_fullscreen();
+                        } else {
+                            self.handle_left_click(self.last_cursor_pos);
+                        }
                     } else {
                         self.mouse_drag_start = None;
                     }
