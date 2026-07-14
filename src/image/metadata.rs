@@ -70,16 +70,54 @@ pub fn extract_orientation(path: &std::path::Path) -> Option<u32> {
     }
 }
 
-pub fn extract_exif_and_orientation(path: &std::path::Path) -> (Option<String>, Option<u32>) {
+fn parse_gps_rational(field: &exif::Field) -> Option<f64> {
+    if let exif::Value::Rational(ref values) = field.value
+        && values.len() >= 3
+    {
+        let d = values[0].to_f64();
+        let m = values[1].to_f64();
+        let s = values[2].to_f64();
+        return Some(d + m / 60.0 + s / 3600.0);
+    }
+    None
+}
+
+fn extract_gps(exif_data: &exif::Exif) -> Option<(f64, f64)> {
+    let lat_val = exif_data.get_field(exif::Tag::GPSLatitude, exif::In::PRIMARY)?;
+    let lon_val = exif_data.get_field(exif::Tag::GPSLongitude, exif::In::PRIMARY)?;
+
+    let mut lat = parse_gps_rational(lat_val)?;
+    let mut lon = parse_gps_rational(lon_val)?;
+
+    if let Some(ref_field) = exif_data.get_field(exif::Tag::GPSLatitudeRef, exif::In::PRIMARY) {
+        let ref_val = ref_field.display_value().to_string();
+        if ref_val.contains('S') || ref_val.contains('s') {
+            lat = -lat;
+        }
+    }
+    if let Some(ref_field) = exif_data.get_field(exif::Tag::GPSLongitudeRef, exif::In::PRIMARY) {
+        let ref_val = ref_field.display_value().to_string();
+        if ref_val.contains('W') || ref_val.contains('w') {
+            lon = -lon;
+        }
+    }
+
+    Some((lat, lon))
+}
+
+#[allow(clippy::type_complexity)]
+pub fn extract_exif_and_orientation(
+    path: &std::path::Path,
+) -> (Option<String>, Option<u32>, Option<(f64, f64)>, Option<u32>) {
     let file = match std::fs::File::open(path) {
         Ok(f) => f,
-        Err(_) => return (None, None),
+        Err(_) => return (None, None, None, None),
     };
     let mut bufreader = std::io::BufReader::new(&file);
     let exifreader = exif::Reader::new();
     let exif_data = match exifreader.read_from_container(&mut bufreader) {
         Ok(data) => data,
-        Err(_) => return (None, None),
+        Err(_) => return (None, None, None, None),
     };
 
     let mut out = String::new();
@@ -141,5 +179,19 @@ pub fn extract_exif_and_orientation(path: &std::path::Path) -> (Option<String>, 
             None
         };
 
-    (exif_info, orientation)
+    let gps_coords = extract_gps(&exif_data);
+
+    let color_space =
+        if let Some(field) = exif_data.get_field(exif::Tag::ColorSpace, exif::In::PRIMARY) {
+            match &field.value {
+                exif::Value::Short(v) => v.first().map(|&x| x as u32),
+                exif::Value::Byte(v) => v.first().map(|&x| x as u32),
+                exif::Value::Long(v) => v.first().copied(),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+    (exif_info, orientation, gps_coords, color_space)
 }

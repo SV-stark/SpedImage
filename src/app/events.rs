@@ -399,6 +399,12 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 self.process_events();
                 let active_thumb = self.active_thumb_index();
 
+                if let Some(ref img) = self.current_image {
+                    self.ui_state.adjustments.color_space = img.color_space;
+                } else {
+                    self.ui_state.adjustments.color_space = None;
+                }
+
                 if let Some(r) = &mut self.renderer {
                     let sidebar_text = if self.ui_state.show_sidebar {
                         self.ui_state.sidebar_text.as_deref()
@@ -421,6 +427,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let transition_factor = self.animation.transition_factor;
                     let has_image = self.current_image.is_some();
                     let is_loading = self.loading;
+                    let gps_coords = self.current_image.as_ref().and_then(|img| img.gps_coords);
 
                     let status_str = self.ui_state.get_status().to_string();
                     let is_cropping = self.ui_state.is_cropping;
@@ -472,6 +479,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                             slideshow_progress,
                             show_search: &mut self.ui_state.show_search,
                             search_query: &mut self.ui_state.search_query,
+                            gps_coords,
                         })
                         .ok();
                     }

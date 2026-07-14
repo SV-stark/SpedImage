@@ -978,6 +978,8 @@ impl SpedImageApp {
                         exif_loaded: true,
                         histogram: None,
                         is_downsampled: false,
+                        gps_coords: None,
+                        color_space: None,
                     };
 
                     if let Some(ref p) = proxy {

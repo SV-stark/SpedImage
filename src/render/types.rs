@@ -30,6 +30,13 @@ pub struct Uniforms {
     pub flip_vertical: f32,
     pub _padding1: f32,
     pub _padding2: f32,
+    pub color_matrix_col0: [f32; 4],
+    pub color_matrix_col1: [f32; 4],
+    pub color_matrix_col2: [f32; 4],
+    pub has_color_matrix: f32,
+    pub _padding_cm1: f32,
+    pub _padding_cm2: f32,
+    pub _padding_cm3: f32,
 }
 
 impl Uniforms {
@@ -53,6 +60,13 @@ impl Uniforms {
             flip_vertical: 0.0,
             _padding1: 0.0,
             _padding2: 0.0,
+            color_matrix_col0: [1.0, 0.0, 0.0, 0.0],
+            color_matrix_col1: [0.0, 1.0, 0.0, 0.0],
+            color_matrix_col2: [0.0, 0.0, 1.0, 0.0],
+            has_color_matrix: 0.0,
+            _padding_cm1: 0.0,
+            _padding_cm2: 0.0,
+            _padding_cm3: 0.0,
         }
     }
 }
@@ -70,6 +84,7 @@ pub struct ImageAdjustments {
     pub pixel_perfect: bool,
     pub flip_horizontal: bool,
     pub flip_vertical: bool,
+    pub color_space: Option<u32>,
 }
 
 impl Default for ImageAdjustments {
@@ -86,6 +101,7 @@ impl Default for ImageAdjustments {
             pixel_perfect: false,
             flip_horizontal: false,
             flip_vertical: false,
+            color_space: None,
         }
     }
 }
@@ -125,4 +141,5 @@ pub struct RenderParams<'a> {
     pub slideshow_progress: Option<f32>,
     pub show_search: &'a mut bool,
     pub search_query: &'a mut String,
+    pub gps_coords: Option<(f64, f64)>,
 }

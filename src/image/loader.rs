@@ -22,10 +22,10 @@ impl ImageLoader {
 
         let format_type = ImageFormatType::from_extension(&ext);
 
-        let (exif_info, orientation) = if ext != "svg" && ext != "gif" {
+        let (exif_info, orientation, gps_coords, color_space) = if ext != "svg" && ext != "gif" {
             crate::image::extract_exif_and_orientation(path)
         } else {
-            (None, None)
+            (None, None, None, None)
         };
 
         let (mut image_frames, format_type) = if ext == "gif" {
@@ -79,15 +79,17 @@ impl ImageLoader {
                     exif_loaded: true,
                     histogram: None,
                     is_downsampled: false,
+                    gps_coords,
+                    color_space,
                 }],
                 format_type,
             )
         };
 
-        if ext != "svg" && ext != "gif" {
-            for frame in &mut image_frames {
-                frame.exif_info = exif_info.clone();
-            }
+        for frame in &mut image_frames {
+            frame.exif_info = exif_info.clone();
+            frame.gps_coords = gps_coords;
+            frame.color_space = color_space;
         }
 
         // Post-process to auto-rotate based on EXIF orientation tag
@@ -190,6 +192,8 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                gps_coords: None,
+                color_space: None,
             }],
             ImageFormatType::Jxl,
         ))
@@ -239,6 +243,8 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                gps_coords: None,
+                color_space: None,
             }],
             ImageFormatType::Svg,
         ))
@@ -298,6 +304,8 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                gps_coords: None,
+                color_space: None,
             }],
             ImageFormatType::Tiff,
         ))
@@ -342,6 +350,8 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                gps_coords: None,
+                color_space: None,
             }],
             format_type,
         ))
@@ -438,6 +448,8 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled,
+                gps_coords: None,
+                color_space: None,
             });
         }
 
@@ -520,6 +532,8 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: true,
+                gps_coords: None,
+                color_space: None,
             }],
             ImageFormatType::Raw,
         ))

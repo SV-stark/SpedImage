@@ -605,6 +605,22 @@ impl Renderer {
             raw_aspect
         };
 
+        let (has_cm, col0, col1, col2) = if adjustments.color_space == Some(2) {
+            (
+                1.0f32,
+                [1.3983, -0.0051, 0.0655, 0.0],
+                [-0.3867, 1.0151, -0.1082, 0.0],
+                [-0.0116, -0.0100, 1.1518, 0.0],
+            )
+        } else {
+            (
+                0.0f32,
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            )
+        };
+
         let uniforms = Uniforms {
             rotation: adjustments.rotation,
             aspect_ratio,
@@ -628,6 +644,13 @@ impl Renderer {
             flip_vertical: if adjustments.flip_vertical { 1.0 } else { 0.0 },
             _padding1: 0.0,
             _padding2: 0.0,
+            color_matrix_col0: col0,
+            color_matrix_col1: col1,
+            color_matrix_col2: col2,
+            has_color_matrix: has_cm,
+            _padding_cm1: 0.0,
+            _padding_cm2: 0.0,
+            _padding_cm3: 0.0,
         };
 
         self.queue

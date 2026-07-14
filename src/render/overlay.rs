@@ -191,17 +191,23 @@ impl Renderer {
                 .title_bar(false)
                 .resizable(false)
                 .movable(false)
-                .frame(egui::Frame::window(ctx.global_style().as_ref())
-                    .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15)))
-                    .corner_radius(12.0)
-                    .inner_margin(egui::Margin::same(12))
+                .frame(
+                    egui::Frame::window(ctx.global_style().as_ref())
+                        .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15),
+                        ))
+                        .corner_radius(12.0)
+                        .inner_margin(egui::Margin::same(12)),
                 )
                 .show(ctx, |ui| {
-                    ui.label(egui::RichText::new("KEYBOARD SHORTCUTS")
-                        .size(11.0)
-                        .strong()
-                        .color(egui::Color32::from_rgb(0, 180, 216))); // cyan accent
+                    ui.label(
+                        egui::RichText::new("KEYBOARD SHORTCUTS")
+                            .size(11.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(0, 180, 216)),
+                    ); // cyan accent
                     ui.add_space(6.0);
                     ui.separator();
                     ui.add_space(6.0);
@@ -225,14 +231,69 @@ impl Renderer {
         }
 
         if let Some(exif) = params.exif_text {
-            egui::Area::new(egui::Id::new("exif"))
-                .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(10.0, -10.0))
+            egui::Window::new("Metadata Info")
+                .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(12.0, -12.0))
+                .title_bar(false)
+                .resizable(false)
+                .movable(false)
+                .frame(
+                    egui::Frame::window(ctx.global_style().as_ref())
+                        .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15),
+                        ))
+                        .corner_radius(12.0)
+                        .inner_margin(egui::Margin::same(12)),
+                )
                 .show(ctx, |ui| {
                     ui.label(
-                        egui::RichText::new(exif)
-                            .size(15.0)
-                            .color(egui::Color32::from_rgb(210, 240, 255)),
-                    );
+                        egui::RichText::new("IMAGE METADATA")
+                            .size(11.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(0, 180, 216)),
+                    ); // cyan accent
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+
+                    for line in exif.lines() {
+                        ui.label(
+                            egui::RichText::new(line).color(egui::Color32::from_rgb(220, 225, 235)),
+                        );
+                    }
+
+                    if let Some((lat, lon)) = params.gps_coords {
+                        ui.add_space(6.0);
+                        ui.separator();
+                        ui.add_space(6.0);
+
+                        if ui.button("📍 Open in Maps").clicked() {
+                            let url = format!(
+                                "https://www.google.com/maps/search/?api=1&query={},{}",
+                                lat, lon
+                            );
+
+                            #[cfg(target_os = "windows")]
+                            {
+                                std::process::Command::new("cmd")
+                                    .args(["/C", "start", &url])
+                                    .spawn()
+                                    .ok();
+                            }
+                            #[cfg(target_os = "macos")]
+                            {
+                                std::process::Command::new("open").arg(&url).spawn().ok();
+                            }
+                            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+                            {
+                                std::process::Command::new("xdg-open")
+                                    .arg(&url)
+                                    .spawn()
+                                    .ok();
+                            }
+                        }
+                    }
                 });
         }
 
@@ -768,6 +829,13 @@ impl Renderer {
                     flip_vertical: 0.0,
                     _padding1: 0.0,
                     _padding2: 0.0,
+                    color_matrix_col0: [1.0, 0.0, 0.0, 0.0],
+                    color_matrix_col1: [0.0, 1.0, 0.0, 0.0],
+                    color_matrix_col2: [0.0, 0.0, 1.0, 0.0],
+                    has_color_matrix: 0.0,
+                    _padding_cm1: 0.0,
+                    _padding_cm2: 0.0,
+                    _padding_cm3: 0.0,
                 };
 
                 self.queue

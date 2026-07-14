@@ -23,6 +23,13 @@ struct Uniforms {
     flip_vertical: f32,
     _padding1: f32,
     _padding2: f32,
+    color_matrix_col0: vec4<f32>,
+    color_matrix_col1: vec4<f32>,
+    color_matrix_col2: vec4<f32>,
+    has_color_matrix: f32,
+    _padding_cm1: f32,
+    _padding_cm2: f32,
+    _padding_cm3: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -91,6 +98,16 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let color_old = textureSample(t_prev, s, in.tex_coords);
     
     var color = mix(color_old, color_new, uniforms.transition_factor);
+    
+    // 0. Custom Color Space Correction (e.g. Adobe RGB to sRGB)
+    if (uniforms.has_color_matrix > 0.5) {
+        let m = mat3x3<f32>(
+            uniforms.color_matrix_col0.xyz,
+            uniforms.color_matrix_col1.xyz,
+            uniforms.color_matrix_col2.xyz
+        );
+        color = vec4<f32>(m * color.rgb, color.a);
+    }
     
     // 1. Adjust Brightness & Contrast
     color = vec4<f32>((color.rgb - 0.5) * uniforms.contrast + 0.5 + (uniforms.brightness - 1.0), color.a);

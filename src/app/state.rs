@@ -294,6 +294,8 @@ mod tests {
             histogram: None,
             exif_loaded: true,
             is_downsampled: false,
+            gps_coords: None,
+            color_space: None,
         });
 
         // Toggle Zoom 100 with current image: new crop_w/crop_h will be win_w/img_w.

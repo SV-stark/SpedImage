@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Version-0.7.1-blue" alt="Version: 0.7.1"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-0.7.2-blue" alt="Version: 0.7.2"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-1.82+-orange" alt="Rust: 1.82+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
@@ -41,6 +41,7 @@
 All adjustments are processed dynamically in WGSL fragment shaders.
 - **Instant Adjustments**: Brightness, Contrast, and Saturation applied directly in real-time.
 - **Image Flipping**: Horizontal and vertical flipping (mirroring) processed directly in the vertex shader.
+- **Gamut Correction**: Automatic detection of Adobe RGB color profile tags, executing high-quality color space conversion matrices directly on the GPU.
 - **HDR Toning**: Real-time filmic **Reinhard tone-mapping** for extended-range lighting (`H`).
 - **Sleek Docked UI**: Borderless dashboard cards for Adjustments and File Browser styled with custom dark-slate gradients and cyan accents.
 - **Double-Click Fullscreen**: Double-click anywhere on the viewport to toggle Borderless Fullscreen.
@@ -49,6 +50,7 @@ All adjustments are processed dynamically in WGSL fragment shaders.
 - **Recycle Bin Integration**: Delete files safely using the native OS Recycle Bin (`Delete` key) and instantly advance to the next image.
 - **Clipboard Operations**: Copy images to the clipboard (`Ctrl+C`) or paste directly from the clipboard (`Ctrl+V`).
 - **Wallpaper Control**: Set the currently viewed image as your desktop background (`Ctrl+W`).
+- **GPS Map Lookup**: Clickable `📍 Open in Maps` button in the metadata info card, launching coordinates directly in your default browser.
 - **F2 In-App Renaming**: Safely rename files in-app with automatic directory watching and sorting.
 
 ---

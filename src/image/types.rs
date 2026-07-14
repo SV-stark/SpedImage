@@ -81,6 +81,8 @@ pub struct ImageData {
     pub histogram: Option<([u32; 256], [u32; 256], [u32; 256])>,
     pub exif_loaded: bool,
     pub is_downsampled: bool,
+    pub gps_coords: Option<(f64, f64)>,
+    pub color_space: Option<u32>,
 }
 
 impl ImageData {
@@ -269,6 +271,8 @@ mod tests {
             exif_loaded: false,
             histogram: None,
             is_downsampled: false,
+            gps_coords: None,
+            color_space: None,
         };
         let ratio = img.aspect_ratio();
         assert!((ratio - 1920.0 / 1080.0).abs() < f32::EPSILON);
@@ -288,6 +292,8 @@ mod tests {
             exif_loaded: false,
             histogram: None,
             is_downsampled: false,
+            gps_coords: None,
+            color_space: None,
         };
         assert_eq!(img.pixel_count(), 20000);
     }
@@ -306,6 +312,8 @@ mod tests {
             exif_loaded: false,
             histogram: None,
             is_downsampled: false,
+            gps_coords: None,
+            color_space: None,
         };
         assert!((img.aspect_ratio() - 1.0).abs() < f32::EPSILON);
     }
@@ -326,6 +334,8 @@ mod tests {
             exif_loaded: false,
             histogram: None,
             is_downsampled: false,
+            gps_coords: None,
+            color_space: None,
         };
         assert!(img.histogram.is_none());
         img.compute_histogram();
