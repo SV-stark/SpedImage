@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Version-2.0.0-blue" alt="Version: 6.1.0"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-0.7.0-blue" alt="Version: 0.7.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-1.82+-orange" alt="Rust: 1.82+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
@@ -33,16 +33,22 @@
 <h2 align="center">🚀 Key Features</h2>
 
 ### ⚡ High-Performance Image Loading
-- **Memory Efficient**: Zero-copy GPU texture loading ensures minimal RAM usage.
-- **Fast Startup**: Native performance without heavy web or electron frameworks.
+- **Memory-Mapped Decoding**: Memory-mapped file I/O (`memmap2`) for JPEG, PNG, WebP, and GIF formats, eliminating heavy buffer allocation overhead.
+- **Rayon Parallelization**: Multi-threaded pixel auto-rotation, JXL float-to-u8 scaling, and fast RGB histogram calculations mapped-reduced across CPU cores.
+- **Fast Startup**: Native performance with immediate viewport rendering.
 
-### 🎨 GPU-Accelerated Editing
-All adjustments are applied in real-time using **WGPU Shaders**—no CPU processing required.
-- **Instant Adjustments**: Brightness, Contrast, and Saturation work instantly on 4K/8K images.
-- **HDR Toning**: Real-time **Filmic Reinhard** tone-mapping for cinematic contrast (`H`).
-- **Lossless Rotation**: Shader-based rotation (90° increments).
-- **Crop**: Crop regions using smooth zoom and pan.
-- **Save & Export**: Save your edits effortlessly (`Ctrl+S`).
+### 🎨 GPU-Accelerated Editing & Modern UI
+All adjustments are processed dynamically in WGSL fragment shaders.
+- **Instant Adjustments**: Brightness, Contrast, and Saturation applied directly in real-time.
+- **HDR Toning**: Real-time filmic **Reinhard tone-mapping** for extended-range lighting (`H`).
+- **Sleek Docked UI**: Borderless dashboard cards for Adjustments and File Browser styled with custom dark-slate gradients and cyan accents.
+- **Double-Click Fullscreen**: Double-click anywhere on the viewport to toggle Borderless Fullscreen.
+
+### 🔌 Native Desktop Integrations
+- **Recycle Bin Integration**: Delete files safely using the native OS Recycle Bin (`Delete` key) and instantly advance to the next image.
+- **Clipboard Operations**: Copy images to the clipboard (`Ctrl+C`) or paste directly from the clipboard (`Ctrl+V`).
+- **Wallpaper Control**: Set the currently viewed image as your desktop background (`Ctrl+W`).
+- **F2 In-App Renaming**: Safely rename files in-app with automatic directory watching and sorting.
 
 ---
 
@@ -66,7 +72,7 @@ All adjustments are applied in real-time using **WGPU Shaders**—no CPU process
 <h2 align="center">⚡ Performance Benchmarks</h2>
 
 <p align="center">
-  Based on a typical consumer system (e.g., Apple M1 or Intel i7 + mid-range GPU). Times and memory usage are approximate and depend heavily on image resolution.
+  Based on typical consumer systems (Apple M-series or Intel/AMD multicore CPU + mid-range GPU). Latencies and memory scales represent high-resolution (24MP+) photos.
 </p>
 
 <div align="center">
@@ -158,8 +164,16 @@ spedimage /path/to/image.jpg
 | `C` | Toggle crop mode |
 | `I` | Toggle image info (EXIF) |
 | `O` | Open file dialog |
-| `Ctrl+P` / `P`| Print image (Windows) |
+| `Ctrl+P` | Print image (Windows) |
 | `Ctrl+S` | Save image |
+| `Ctrl+F` | Open Search / Find |
+| `F11` / `Double Click` | Toggle Fullscreen |
+| `Ctrl+W` | Set as Desktop Wallpaper |
+| `Ctrl+C` | Copy image to clipboard |
+| `Ctrl+V` | Paste image from clipboard |
+| `F2` | Rename current file |
+| `Delete` | Move current file to Recycle Bin / Trash |
+| `Shift+Delete`| Batch delete selected |
 | `F` | Toggle sidebar |
 | `T` | Toggle thumbnail strip |
 | `1` | Reset adjustments |
@@ -170,8 +184,6 @@ spedimage /path/to/image.jpg
 | `?` | Toggle help overlay |
 
 </div>
-
----
 
 ---
 
