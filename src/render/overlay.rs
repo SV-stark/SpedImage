@@ -195,7 +195,7 @@ impl Renderer {
                     egui::Frame::window(ctx.global_style().as_ref())
                         .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
                         .stroke(egui::Stroke::new(
-                            1.0,
+                            1.0_f32,
                             egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15),
                         ))
                         .corner_radius(12.0)
@@ -240,7 +240,7 @@ impl Renderer {
                     egui::Frame::window(ctx.global_style().as_ref())
                         .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
                         .stroke(egui::Stroke::new(
-                            1.0,
+                            1.0_f32,
                             egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15),
                         ))
                         .corner_radius(12.0)
@@ -308,7 +308,7 @@ impl Renderer {
                     egui::Frame::window(ctx.global_style().as_ref())
                         .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
                         .stroke(egui::Stroke::new(
-                            1.0,
+                            1.0_f32,
                             egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15),
                         ))
                         .corner_radius(12.0)
@@ -355,7 +355,7 @@ impl Renderer {
                 .movable(false)
                 .frame(egui::Frame::window(ctx.global_style().as_ref())
                     .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15)))
+                    .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15)))
                     .corner_radius(12.0)
                     .inner_margin(egui::Margin::same(12))
                 )
