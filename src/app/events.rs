@@ -362,8 +362,10 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 let mut config = AppConfig::load();
                 if let Some(ref w) = self.window {
                     let size = w.inner_size();
-                    config.window_width = size.width;
-                    config.window_height = size.height;
+                    let scale_factor = w.scale_factor();
+                    let logical_size = size.to_logical::<f64>(scale_factor);
+                    config.window_width = logical_size.width.round() as u32;
+                    config.window_height = logical_size.height.round() as u32;
                 }
                 config.show_sidebar = self.ui_state.show_sidebar;
                 config.show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
