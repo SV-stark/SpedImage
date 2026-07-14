@@ -16,6 +16,21 @@ impl Renderer {
         win_w: u32,
         win_h: u32,
     ) {
+        // Apply custom visuals to match the website's elegant theme (slate background, cyan highlights)
+        let mut style: egui::Style = (*ctx.global_style()).clone();
+        style.visuals.window_corner_radius = 12.0.into();
+        style.visuals.window_fill = egui::Color32::from_rgb(18, 25, 41); // Slate panel #121929
+        style.visuals.panel_fill = egui::Color32::from_rgb(11, 15, 25); // Darker #0b0f19
+        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(11, 15, 25);
+        style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(25, 35, 58);
+        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0, 180, 216); // Cyan accent
+        style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(0, 150, 180);
+        style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(200, 210, 230);
+        style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(11, 15, 25); // dark text on hover
+        style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
+        style.visuals.selection.bg_fill = egui::Color32::from_rgba_unmultiplied(0, 180, 216, 120);
+        ctx.set_global_style(style);
+
         if !params.has_image {
             if params.is_loading {
                 egui::Area::new(egui::Id::new("loading_screen"))
@@ -201,35 +216,75 @@ impl Renderer {
 
         if params.config.show_sidebar {
             egui::Window::new("File Browser")
-                .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 10.0))
+                .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 12.0))
                 .default_width(220.0)
-                .default_height(300.0)
+                .title_bar(false)
+                .resizable(false)
+                .movable(false)
+                .frame(
+                    egui::Frame::window(ctx.global_style().as_ref())
+                        .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15),
+                        ))
+                        .corner_radius(12.0)
+                        .inner_margin(egui::Margin::same(12)),
+                )
                 .show(ctx, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        for (idx, file) in params.files.iter().enumerate() {
-                            let is_selected = Some(idx) == params.active_thumb_idx;
-                            let text = if is_selected {
-                                format!("> {}", file.name)
-                            } else {
-                                format!("  {}", file.name)
-                            };
-                            if ui.selectable_label(is_selected, text).clicked() {
-                                crate::app::types::send_event(
-                                    params.event_tx,
-                                    params.event_proxy,
-                                    crate::app::types::AppEvent::OpenPath(file.path.clone()),
-                                );
+                    ui.label(
+                        egui::RichText::new("FILE BROWSER")
+                            .size(11.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(0, 180, 216)),
+                    ); // cyan accent
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+
+                    egui::ScrollArea::vertical()
+                        .max_height(250.0)
+                        .show(ui, |ui| {
+                            for (idx, file) in params.files.iter().enumerate() {
+                                let is_selected = Some(idx) == params.active_thumb_idx;
+                                let text = if is_selected {
+                                    format!("> {}", file.name)
+                                } else {
+                                    format!("  {}", file.name)
+                                };
+                                if ui.selectable_label(is_selected, text).clicked() {
+                                    crate::app::types::send_event(
+                                        params.event_tx,
+                                        params.event_proxy,
+                                        crate::app::types::AppEvent::OpenPath(file.path.clone()),
+                                    );
+                                }
                             }
-                        }
-                    });
+                        });
                 });
 
             // Interactive Sliders for Adjustments
             egui::Window::new("Image Adjustments")
-                .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 250.0))
+                .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 12.0))
                 .default_width(220.0)
-                .title_bar(true)
+                .title_bar(false)
+                .resizable(false)
+                .movable(false)
+                .frame(egui::Frame::window(ctx.global_style().as_ref())
+                    .fill(egui::Color32::from_rgb(12, 14, 23)) // #0c0e17 dark slate
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 15)))
+                    .corner_radius(12.0)
+                    .inner_margin(egui::Margin::same(12))
+                )
                 .show(ctx, |ui| {
+                    ui.label(egui::RichText::new("ADJUSTMENTS")
+                        .size(11.0)
+                        .strong()
+                        .color(egui::Color32::from_rgb(0, 180, 216))); // cyan accent
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+
                     let mut changed = false;
                     if ui.add(egui::Slider::new(&mut params.adjustments.brightness, 0.1..=3.0).text("Brightness")).changed() {
                         changed = true;
