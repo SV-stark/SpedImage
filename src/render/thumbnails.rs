@@ -102,7 +102,7 @@ impl Renderer {
     pub(crate) fn encode_thumbnail_strip(
         &mut self,
         _active_idx: Option<usize>,
-        _selected_indices: &std::collections::HashSet<usize>,
+        _selected_indices: &rustc_hash::FxHashSet<usize>,
         thumb_scroll: f32,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,

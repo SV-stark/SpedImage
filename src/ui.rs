@@ -35,7 +35,7 @@ pub struct UiState {
     pub show_thumbnail_strip: bool,
     pub show_info: bool,
     pub show_histogram: bool,
-    pub selected_indices: std::collections::HashSet<usize>,
+    pub selected_indices: rustc_hash::FxHashSet<usize>,
     pub status_message: Option<(String, std::time::Instant)>,
     pub sidebar_text: Option<String>,
     pub show_search: bool,
@@ -54,7 +54,7 @@ impl Default for UiState {
             show_thumbnail_strip: true,
             show_info: false,
             show_histogram: false,
-            selected_indices: std::collections::HashSet::new(),
+            selected_indices: rustc_hash::FxHashSet::default(),
             status_message: None,
             sidebar_text: None,
             show_search: false,
@@ -117,6 +117,7 @@ impl UiState {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 

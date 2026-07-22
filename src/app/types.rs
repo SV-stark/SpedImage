@@ -52,6 +52,7 @@ pub fn send_event(tx: &Sender<AppEvent>, proxy: &EventLoopProxy<WakeUp>, event: 
 }
 
 #[cfg(test)]
+#[allow(clippy::assertions_on_constants, clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 

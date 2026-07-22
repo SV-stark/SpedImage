@@ -27,6 +27,8 @@ pub enum ImageFormatType {
     Jxl,
     Raw,
     Svg,
+    Qoi,
+    Exr,
     Unknown,
 }
 
@@ -43,6 +45,8 @@ impl ImageFormatType {
             "avif" => Self::Avif,
             "jxl" => Self::Jxl,
             "svg" => Self::Svg,
+            "qoi" => Self::Qoi,
+            "exr" => Self::Exr,
             "arw" | "cr2" | "nef" | "dng" | "orf" | "raf" | "srw" => Self::Raw,
             _ => Self::Unknown,
         }
@@ -62,7 +66,9 @@ impl ImageFormatType {
             | Self::Avif
             | Self::Heic
             | Self::Jxl
-            | Self::Svg => true,
+            | Self::Svg
+            | Self::Qoi
+            | Self::Exr => true,
         }
     }
 }
@@ -127,15 +133,17 @@ impl ImageData {
         let (r, g, b) = rgba
             .par_chunks_exact(chunk_size)
             .map(|chunk| {
-                let mut local_r = [0u32; 256];
-                let mut local_g = [0u32; 256];
-                let mut local_b = [0u32; 256];
+                let bump = bumpalo::Bump::new();
+                let local_r = bump.alloc([0u32; 256]);
+                let local_g = bump.alloc([0u32; 256]);
+                let local_b = bump.alloc([0u32; 256]);
+
                 for pixel in chunk.chunks_exact(4) {
                     local_r[pixel[0] as usize] += 1;
                     local_g[pixel[1] as usize] += 1;
                     local_b[pixel[2] as usize] += 1;
                 }
-                (local_r, local_g, local_b)
+                (*local_r, *local_g, *local_b)
             })
             .reduce(
                 || ([0u32; 256], [0u32; 256], [0u32; 256]),
@@ -166,6 +174,11 @@ impl ImageData {
         b_hist.copy_from_slice(&final_b);
     }
 
+    /// Get dimensions as a SIMD-accelerated glam::Vec2
+    pub fn dimensions_vec2(&self) -> glam::Vec2 {
+        glam::Vec2::new(self.width as f32, self.height as f32)
+    }
+
     /// Get aspect ratio
     pub fn aspect_ratio(&self) -> f32 {
         self.width as f32 / self.height as f32
@@ -174,6 +187,49 @@ impl ImageData {
     /// Get total pixel count
     pub fn pixel_count(&self) -> u32 {
         self.width * self.height
+    }
+
+    /// Calculate average dominant color in perceptual Oklab color space using palette and fast-srgb8
+    pub fn extract_dominant_color_oklab(&self) -> Option<(u8, u8, u8)> {
+        if self.rgba_data.is_empty() {
+            return None;
+        }
+
+        let mut sum_l = 0.0f32;
+        let mut sum_a = 0.0f32;
+        let mut sum_b = 0.0f32;
+        let mut count = 0usize;
+
+        // Sample every 16th pixel for high speed
+        for pixel in self.rgba_data.chunks_exact(4 * 16) {
+            let srgb = palette::Srgb::new(
+                fast_srgb8::srgb8_to_f32(pixel[0]),
+                fast_srgb8::srgb8_to_f32(pixel[1]),
+                fast_srgb8::srgb8_to_f32(pixel[2]),
+            );
+            let oklab: palette::Oklab = palette::FromColor::from_color(srgb);
+            sum_l += oklab.l;
+            sum_a += oklab.a;
+            sum_b += oklab.b;
+            count += 1;
+        }
+
+        if count == 0 {
+            return None;
+        }
+
+        let avg_oklab = palette::Oklab::new(
+            sum_l / count as f32,
+            sum_a / count as f32,
+            sum_b / count as f32,
+        );
+        let avg_srgb: palette::Srgb = palette::FromColor::from_color(avg_oklab);
+
+        Some((
+            fast_srgb8::f32_to_srgb8(avg_srgb.red.clamp(0.0, 1.0)),
+            fast_srgb8::f32_to_srgb8(avg_srgb.green.clamp(0.0, 1.0)),
+            fast_srgb8::f32_to_srgb8(avg_srgb.blue.clamp(0.0, 1.0)),
+        ))
     }
 }
 
@@ -225,6 +281,7 @@ mod tests {
         assert_eq!(ImageFormatType::from_extension("cr2"), ImageFormatType::Raw);
         assert_eq!(ImageFormatType::from_extension("nef"), ImageFormatType::Raw);
         assert_eq!(ImageFormatType::from_extension("dng"), ImageFormatType::Raw);
+        assert_eq!(ImageFormatType::from_extension("qoi"), ImageFormatType::Qoi);
         assert_eq!(
             ImageFormatType::from_extension("txt"),
             ImageFormatType::Unknown
@@ -239,6 +296,7 @@ mod tests {
         );
         assert_eq!(ImageFormatType::from_extension("PNG"), ImageFormatType::Png);
         assert_eq!(ImageFormatType::from_extension("GIF"), ImageFormatType::Gif);
+        assert_eq!(ImageFormatType::from_extension("QOI"), ImageFormatType::Qoi);
     }
 
     #[test]
@@ -254,6 +312,7 @@ mod tests {
         assert!(ImageFormatType::Jxl.is_supported());
         assert!(ImageFormatType::Svg.is_supported());
         assert!(ImageFormatType::Raw.is_supported());
+        assert!(ImageFormatType::Qoi.is_supported());
         assert!(!ImageFormatType::Unknown.is_supported());
     }
 

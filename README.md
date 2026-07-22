@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Version-0.7.2-blue" alt="Version: 0.7.2"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-0.8.0-blue" alt="Version: 0.8.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-1.82+-orange" alt="Rust: 1.82+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
@@ -33,13 +33,16 @@
 <h2 align="center">🚀 Key Features</h2>
 
 ### ⚡ High-Performance Image Loading
-- **Memory-Mapped Decoding**: Memory-mapped file I/O (`memmap2`) for JPEG, PNG, WebP, and GIF formats, eliminating heavy buffer allocation overhead.
+- **Memory-Mapped & SIMD Vectorized**: Memory-mapped file I/O (`memmap2`) and target CPU SIMD vectorization (`AVX2`/`AVX-512`/`FMA`) for high-throughput image processing.
+- **Pure Rust Decoders**: Native support for JPEG, PNG, WebP, GIF, QOI (`qoi`), OpenEXR (`exr`), JXL, HEIC/AVIF, and Camera RAW formats.
 - **Rayon Parallelization**: Multi-threaded pixel auto-rotation, JXL float-to-u8 scaling, and fast RGB histogram calculations mapped-reduced across CPU cores.
-- **Fast Startup**: Native performance with immediate viewport rendering.
+- **Bump Allocation Arena**: Microsecond scratch buffer allocations via `bumpalo` for histogram calculations and zero-lock `rustc-hash` index hashing.
+- **OS Single Instance Locking**: Robust single instance named OS mutex (`single-instance`) passing image paths seamlessly to the active window.
 
 ### 🎨 GPU-Accelerated Editing & Modern UI
 All adjustments are processed dynamically in WGSL fragment shaders.
 - **Instant Adjustments**: Brightness, Contrast, and Saturation applied directly in real-time.
+- **Perceptual Oklab Color Science**: Integrated `palette` and `fast-srgb8` for sub-nanosecond gamma transformations and perceptual Oklab color calculations.
 - **Image Flipping**: Horizontal and vertical flipping (mirroring) processed directly in the vertex shader.
 - **Gamut Correction**: Automatic detection of Adobe RGB color profile tags, executing high-quality color space conversion matrices directly on the GPU.
 - **HDR Toning**: Real-time filmic **Reinhard tone-mapping** for extended-range lighting (`H`).
@@ -62,6 +65,8 @@ All adjustments are processed dynamically in WGSL fragment shaders.
 | Format | Decoding Engine | OS Support |
 |--------|-----------------|------------|
 | JPEG, PNG, GIF, BMP, TIFF, WebP, JXL | Pure Rust (`zune-image` / `jxl-oxide`) | All Platforms |
+| QOI (Quite OK Image) | Pure Rust (`qoi` crate) | All Platforms |
+| OpenEXR (32-bit HDR `.exr`) | Pure Rust (`exr` crate) | All Platforms |
 | RAW (CR2, NEF, ARW, DNG, etc.)* | Pure Rust (`rawloader` crate) | All Platforms |
 | SVG | `resvg` crate | All Platforms |
 | HEIC / AVIF | Pure Rust (`heic` crate with `av1` feature) | All Platforms |

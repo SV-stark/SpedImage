@@ -532,11 +532,13 @@ impl Renderer {
             let mut prev_height = height;
             let mut prev_rgba = image_data.as_rgba().to_vec();
 
+            use fast_image_resize as fr;
+            let mut resizer = fr::Resizer::new();
+
             for mip in 1..mip_level_count {
                 let mip_w = (prev_width / 2).max(1);
                 let mip_h = (prev_height / 2).max(1);
 
-                use fast_image_resize as fr;
                 let src_image = fr::images::ImageRef::new(
                     prev_width,
                     prev_height,
@@ -547,8 +549,8 @@ impl Renderer {
                 let mut dst_image = fr::images::Image::new(mip_w, mip_h, fr::PixelType::U8x4);
 
                 if let Some(src) = src_image {
-                    let mut resizer = fr::Resizer::new();
-                    if resizer.resize(&src, &mut dst_image, None).is_ok() {
+                    let resized = resizer.resize(&src, &mut dst_image, None);
+                    if resized.is_ok() {
                         let dst_rgba = dst_image.into_vec();
                         self.queue.write_texture(
                             wgpu::TexelCopyTextureInfo {

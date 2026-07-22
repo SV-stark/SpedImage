@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
----
+## [0.8.0] - 2026-07-22
+
+### Added
+* **Pure Rust QOI Decoder Integration**: Native `.qoi` image file format support via the lightweight `qoi` crate.
+* **OpenEXR (`.exr`) 32-bit HDR Decoding**: Added support for 32-bit High Dynamic Range `.exr` images via the pure-Rust `exr` crate.
+* **Perceptual Oklab Color Science**: Integrated `palette` and `fast-srgb8` for sub-nanosecond gamma transformations and perceptual Oklab color calculations.
+* **OS Single Instance Locking**: Robust single instance named OS mutex (`single-instance`) passing image paths seamlessly to the active window.
+* **Fast Hash Indexing**: Integrated `rustc-hash` (`FxHashSet`) for instant integer set operations across UI selection states.
+* **Bump Arena Allocations**: Integrated `bumpalo` arena allocations for thread-local histogram computations.
+
+### Performance
+* **Target CPU SIMD Vectorization**: Enabled `-C target-cpu=native` in `.cargo/config.toml` unlocking AVX2, AVX-512, FMA, and SSE4.2 vectorization across `fast_image_resize`, `bytemuck`, and histogram inner loops.
+* **Resizer Buffer Reuse**: Refactored `fast_image_resize` resizer instances across mipmaps and multi-frame operations to eliminate redundant heap allocations.
+* **Release Tracing Optimization**: Configured `release_max_level_info` on `tracing` to eliminate debug log checking in hot rendering loops during release builds.
 
 ## [0.6.1] - 2026-06-23
 

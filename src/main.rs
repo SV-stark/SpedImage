@@ -23,7 +23,7 @@ fn main() -> Result<()> {
         // .with(tracing_tracy::TracyLayer::new())
         .init();
 
-    tracing::info!("Starting SpedImage v2.0.0");
+    tracing::info!("Starting SpedImage v{}", env!("CARGO_PKG_VERSION"));
 
     // Parse command line arguments for initial image path
     let args: Vec<String> = std::env::args().collect();
@@ -34,22 +34,30 @@ fn main() -> Result<()> {
         None
     };
 
-    // Try to bind local TCP port for single-instance check
+    // OS-level single instance check via named mutex/socket
+    let instance_lock = single_instance::SingleInstance::new("spedimage_app_instance_lock")
+        .map_err(|e| color_eyre::eyre::eyre!("Single instance check error: {e:?}"))?;
+
+    if !instance_lock.is_single() {
+        // Secondary instance: send image path to running primary instance
+        if let Some(p) = initial_path.as_ref() {
+            let stream_res = TcpStream::connect("127.0.0.1:49512");
+            if let Ok(mut stream) = stream_res {
+                let absolute_path = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+                let path_str = absolute_path.to_string_lossy().into_owned();
+                let _ = stream.write_all(path_str.as_bytes());
+            }
+        }
+        tracing::info!("Another instance is already running. Sent path and exiting.");
+        return Ok(());
+    }
+
+    // Bind local TCP listener for primary instance to receive paths from secondary instances
     let listener = match TcpListener::bind("127.0.0.1:49512") {
         Ok(l) => l,
         Err(_) => {
-            // Secondary instance: send image path to running primary instance
-            if let Some(p) = initial_path.as_ref() {
-                let stream_res = TcpStream::connect("127.0.0.1:49512");
-                if let Ok(mut stream) = stream_res {
-                    let absolute_path =
-                        std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-                    let path_str = absolute_path.to_string_lossy().into_owned();
-                    let _ = stream.write_all(path_str.as_bytes());
-                }
-            }
-            tracing::info!("Another instance is already running. Sent path and exiting.");
-            return Ok(());
+            tracing::info!("Failed to bind single instance port; continuing as primary.");
+            TcpListener::bind("127.0.0.1:0")?
         }
     };
 

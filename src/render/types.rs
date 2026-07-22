@@ -125,7 +125,7 @@ pub struct RenderParams<'a> {
     pub show_thumbnail_strip: bool,
     pub thumb_scroll: f32,
     pub active_thumb_idx: Option<usize>,
-    pub selected_indices: &'a std::collections::HashSet<usize>,
+    pub selected_indices: &'a rustc_hash::FxHashSet<usize>,
     pub exif_text: Option<&'a str>,
     pub show_histogram: bool,
     pub histogram_data: Option<&'a ([u32; 256], [u32; 256], [u32; 256])>,

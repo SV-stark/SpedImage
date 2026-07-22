@@ -14,6 +14,9 @@ impl ImageProcessor {
         let (frames, _format) = ImageLoader::load(path, Some(max_w), Some(max_h))?;
         let mut processed = Vec::with_capacity(frames.len());
 
+        use fast_image_resize as fr;
+        let mut resizer = fr::Resizer::new();
+
         for frame in frames {
             let mut img = frame;
             let (w, h) = (img.width, img.height);
@@ -27,9 +30,6 @@ impl ImageProcessor {
                 let dst_w = dst_w.max(1);
                 let dst_h = dst_h.max(1);
 
-                // Use fast_image_resize for high-performance SIMD resizing
-                use fast_image_resize as fr;
-
                 let src_image = fr::images::ImageRef::new(
                     img.width,
                     img.height,
@@ -39,7 +39,6 @@ impl ImageProcessor {
                 .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
 
                 let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
-                let mut resizer = fr::Resizer::new();
 
                 resizer
                     .resize(&src_image, &mut dst_image, None)
@@ -72,7 +71,7 @@ impl ImageProcessor {
     pub fn supported_extensions() -> Vec<&'static str> {
         vec![
             "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico", "avif", "jxl", "svg",
-            "arw", "cr2", "nef", "dng", "orf", "raf", "srw",
+            "qoi", "exr", "arw", "cr2", "nef", "dng", "orf", "raf", "srw",
         ]
     }
 

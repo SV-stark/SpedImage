@@ -34,6 +34,10 @@ impl ImageLoader {
             Self::load_svg(path)?
         } else if ext == "jxl" {
             Self::load_jxl(path)?
+        } else if ext == "qoi" {
+            Self::load_qoi(path)?
+        } else if ext == "exr" {
+            Self::load_exr(path)?
         } else if ext == "heic" || ext == "heif" || ext == "avif" {
             Self::load_heic(path, format_type)?
         } else if ext == "tiff" || ext == "tif" {
@@ -536,6 +540,88 @@ impl ImageLoader {
                 color_space: None,
             }],
             ImageFormatType::Raw,
+        ))
+    }
+
+    fn load_qoi(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        let data =
+            std::fs::read(path).map_err(|e| eyre!("Failed to read QOI file {path:?}: {e:?}"))?;
+        let (header, decoded) =
+            qoi::decode_to_vec(&data).map_err(|e| eyre!("QOI decode error: {e:?}"))?;
+        let file_size = data.len() as u64;
+
+        let rgba_data = match header.channels {
+            qoi::Channels::Rgb => {
+                let mut rgba =
+                    Vec::with_capacity(header.width as usize * header.height as usize * 4);
+                for rgb in decoded.chunks_exact(3) {
+                    rgba.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+                }
+                rgba
+            }
+            qoi::Channels::Rgba => decoded,
+        };
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: Arc::new(rgba_data),
+                width: header.width,
+                height: header.height,
+                format: ImageFormatType::Qoi,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: true,
+                histogram: None,
+                is_downsampled: false,
+                gps_coords: None,
+                color_space: None,
+            }],
+            ImageFormatType::Qoi,
+        ))
+    }
+
+    fn load_exr(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        use exr::prelude::*;
+        let image = read_first_rgba_layer_from_file(
+            path,
+            |resolution, _| {
+                let pixel_count = resolution.width() * resolution.height();
+                Vec::with_capacity(pixel_count * 4)
+            },
+            |vec, _position, (r, g, b, a): (f32, f32, f32, f32)| {
+                let u8_r = fast_srgb8::f32_to_srgb8(r.clamp(0.0, 1.0));
+                let u8_g = fast_srgb8::f32_to_srgb8(g.clamp(0.0, 1.0));
+                let u8_b = fast_srgb8::f32_to_srgb8(b.clamp(0.0, 1.0));
+                let u8_a = (a.clamp(0.0, 1.0) * 255.0) as u8;
+                vec.extend_from_slice(&[u8_r, u8_g, u8_b, u8_a]);
+            },
+        )
+        .map_err(|e| eyre!("Failed to decode EXR file: {e:?}"))?;
+
+        let width = image.layer_data.size.width() as u32;
+        let height = image.layer_data.size.height() as u32;
+        let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let rgba = image.layer_data.channel_data.pixels;
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: Arc::new(rgba),
+                width,
+                height,
+                format: ImageFormatType::Exr,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: true,
+                histogram: None,
+                is_downsampled: false,
+                gps_coords: None,
+                color_space: None,
+            }],
+            ImageFormatType::Exr,
         ))
     }
 }

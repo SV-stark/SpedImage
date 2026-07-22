@@ -1,6 +1,6 @@
 [package]
 name = "spedimage"
-version = "0.7.2"
+version = "0.8.0"
 edition = "2024"
 description = "Ultra-Lightweight GPU-Accelerated Image Viewer"
 authors = ["SpedImage Team"]
@@ -29,7 +29,7 @@ resvg = "0.47"
 pollster = "0.3"
 color-eyre = "0.6"
 thiserror = "2.0"
-tracing = "0.1"
+tracing = { version = "0.1", features = ["release_max_level_info"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rayon = "1.10"
 dirs = "5.0"
@@ -52,6 +52,21 @@ moka = { version = "0.12", features = ["sync"] }
 heic = { git = "https://github.com/imazen/heic", features = ["backend-rust", "backend-mediafoundation", "av1"] }
 rawloader = "0.37.1"
 trash = "5.2"
+
+# Lightweight Utilities & Performance Extensions
+qoi = "0.4"
+glam = "0.29"
+rustc-hash = "2.1"
+single-instance = "0.3"
+bumpalo = "3.16"
+
+# Pure Rust Image Formats & Color Science
+exr = "1.7"
+palette = "0.7"
+fast-srgb8 = "1.0"
+img-parts = "0.3"
+
+
 
 
 [target.'cfg(windows)'.dependencies]
@@ -88,7 +103,7 @@ targets = ["x86_64-pc-windows-msvc"]
 
 [profile.release]
 opt-level = 3
-lto = true
+lto = "fat"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"

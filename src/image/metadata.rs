@@ -1,3 +1,26 @@
+/// Read raw EXIF metadata bytes directly from image container chunks (JPEG / PNG / WebP) without decoding pixel data
+#[allow(dead_code)]
+pub fn extract_exif_bytes_lossless(path: &std::path::Path) -> Option<Vec<u8>> {
+    use img_parts::ImageEXIF;
+    let data = std::fs::read(path).ok()?;
+    let ext = path.extension()?.to_str()?.to_lowercase();
+    match ext.as_str() {
+        "jpg" | "jpeg" => {
+            let jpeg = img_parts::jpeg::Jpeg::from_bytes(data.into()).ok()?;
+            jpeg.exif().map(|b| b.to_vec())
+        }
+        "png" => {
+            let png = img_parts::png::Png::from_bytes(data.into()).ok()?;
+            png.exif().map(|b| b.to_vec())
+        }
+        "webp" => {
+            let webp = img_parts::webp::WebP::from_bytes(data.into()).ok()?;
+            webp.exif().map(|b| b.to_vec())
+        }
+        _ => None,
+    }
+}
+
 pub fn extract_exif_lazy(path: &std::path::Path) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let mut bufreader = std::io::BufReader::new(&file);

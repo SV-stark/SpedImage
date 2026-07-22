@@ -33,6 +33,7 @@ pub const DEFAULT_MAX_HEIGHT: u32 = 2160;
 pub const MAX_EVENTS_PER_FRAME: usize = 100;
 
 #[cfg(test)]
+#[allow(clippy::assertions_on_constants)]
 mod tests {
     use super::*;
 
