@@ -80,6 +80,8 @@ Section "Install"
     !insertmacro RegisterExtension "svg"
     !insertmacro RegisterExtension "heic"
     !insertmacro RegisterExtension "heif"
+    !insertmacro RegisterExtension "qoi"
+    !insertmacro RegisterExtension "exr"
     
     ; 4. Register the application in the global RegisteredApplications list
     WriteRegStr HKLM "Software\RegisteredApplications" "${APP_NAME}" "Software\${APP_NAME}\Capabilities"
@@ -115,6 +117,8 @@ Section "Uninstall"
     !insertmacro UnregisterExtension "svg"
     !insertmacro UnregisterExtension "heic"
     !insertmacro UnregisterExtension "heif"
+    !insertmacro UnregisterExtension "qoi"
+    !insertmacro UnregisterExtension "exr"
     
     DeleteRegKey HKLM "Software\${APP_NAME}"
     DeleteRegValue HKLM "Software\RegisteredApplications" "${APP_NAME}"
