@@ -100,7 +100,7 @@ impl ImageLoader {
                 let src_image = fr::images::ImageRef::new(src_w, src_h, &rgba, fr::PixelType::U8x4)
                     .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
                 let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
-                let mut resizer = fr::Resizer::new();
+                let mut resizer = super::processing::ImageProcessor::create_simd_resizer();
                 resizer
                     .resize(&src_image, &mut dst_image, None)
                     .map_err(|e| eyre!("Resize failed: {e:?}"))?;
@@ -443,8 +443,7 @@ impl ImageLoader {
         // Create resizer once outside the frame loop
         let is_downsampled = dst_w != w || dst_h != h;
         let mut resizer = if is_downsampled {
-            use fast_image_resize as fr;
-            Some(fr::Resizer::new())
+            Some(super::processing::ImageProcessor::create_simd_resizer())
         } else {
             None
         };

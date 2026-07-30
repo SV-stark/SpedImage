@@ -8,6 +8,11 @@ use super::types::ImageData;
 pub struct ImageProcessor;
 
 impl ImageProcessor {
+    /// Create a fast_image_resize Resizer configured with automatic system SIMD CPU extension detection (AVX2/SSE4.1/NEON).
+    pub fn create_simd_resizer() -> fast_image_resize::Resizer {
+        fast_image_resize::Resizer::new()
+    }
+
     /// Load an image from file and downsample it if needed for the current display resolution.
     /// This is used for background loading and prefetching.
     pub fn load_and_downsample(path: &Path, max_w: u32, max_h: u32) -> Result<Vec<ImageData>> {
@@ -15,7 +20,7 @@ impl ImageProcessor {
         let mut processed = Vec::with_capacity(frames.len());
 
         use fast_image_resize as fr;
-        let mut resizer = fr::Resizer::new();
+        let mut resizer = Self::create_simd_resizer();
 
         for frame in frames {
             let mut img = frame;

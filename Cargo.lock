@@ -4399,7 +4399,7 @@ dependencies = [
 
 [[package]]
 name = "spedimage"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "arboard",
  "bumpalo",
