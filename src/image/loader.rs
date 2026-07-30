@@ -112,10 +112,10 @@ impl ImageLoader {
             }
 
             // Apply color profile to downsampled buffer in parallel
-            if let Some(ref icc_bytes) = icc {
-                if let Err(e) = Self::apply_color_profile(&mut rgba, icc_bytes) {
-                    tracing::warn!("Failed to apply color profile: {:?}", e);
-                }
+            if let Some(ref icc_bytes) = icc
+                && let Err(e) = Self::apply_color_profile(&mut rgba, icc_bytes)
+            {
+                tracing::warn!("Failed to apply color profile: {:?}", e);
             }
 
             // Apply EXIF rotation to downsampled buffer
