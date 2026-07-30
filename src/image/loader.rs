@@ -22,13 +22,13 @@ impl ImageLoader {
 
         let format_type = ImageFormatType::from_extension(&ext);
 
-        let (exif_info, orientation, gps_coords, color_space) = if ext != "svg" && ext != "gif" {
-            crate::image::extract_exif_and_orientation(path)
+        let orientation = if ext != "svg" && ext != "gif" {
+            crate::image::extract_orientation(path)
         } else {
-            (None, None, None, None)
+            None
         };
 
-        let (mut image_frames, format_type) = if ext == "gif" {
+        let (image_frames, format_type) = if ext == "gif" {
             Self::load_gif(path, max_w, max_h)?
         } else if ext == "svg" {
             Self::load_svg(path)?
@@ -53,20 +53,85 @@ impl ImageLoader {
             };
             let cursor = std::io::Cursor::new(&mmap[..]);
 
-            let mut img = Image::read(cursor, zune_core::options::DecoderOptions::default())
+            let (target_mw, target_mh) = match (max_w, max_h) {
+                (Some(mw), Some(mh)) => {
+                    let deg = orientation.and_then(|o| match o {
+                        3 => Some(180),
+                        6 => Some(90),
+                        8 => Some(270),
+                        _ => None,
+                    });
+                    if matches!(deg, Some(90) | Some(270)) {
+                        (mh, mw)
+                    } else {
+                        (mw, mh)
+                    }
+                }
+                _ => (0, 0),
+            };
+
+            let mut options = zune_core::options::DecoderOptions::default();
+            if target_mw > 0 && target_mh > 0 {
+                options = options
+                    .set_max_width(target_mw as usize)
+                    .set_max_height(target_mh as usize);
+            }
+
+            let mut img = Image::read(cursor, options)
                 .map_err(|e| eyre!("Failed to decode image {path:?}: {e:?}"))?;
 
             // Ensure we are in RGBA8
             img.convert_color(zune_core::colorspace::ColorSpace::RGBA)?;
 
-            let (w, h) = img.dimensions();
+            let (src_w, src_h) = (img.dimensions().0 as u32, img.dimensions().1 as u32);
+            let icc = img.metadata().icc_chunk().map(|s| s.to_vec());
             let mut rgba = img.flatten_to_u8()[0].clone();
 
-            // Apply color management if ICC profile exists
-            if let Some(icc) = img.metadata().icc_chunk() {
-                let res = Self::apply_color_profile(&mut rgba, icc);
-                if let Err(e) = res {
+            let mut final_w = src_w;
+            let mut final_h = src_h;
+            let mut is_downsampled = false;
+
+            if (max_w.is_some() || max_h.is_some()) && (src_w > target_mw || src_h > target_mh) {
+                let ratio = (src_w as f32 / target_mw as f32).max(src_h as f32 / target_mh as f32);
+                let dst_w = ((src_w as f32 / ratio).round() as u32).max(1);
+                let dst_h = ((src_h as f32 / ratio).round() as u32).max(1);
+
+                use fast_image_resize as fr;
+                let src_image = fr::images::ImageRef::new(src_w, src_h, &rgba, fr::PixelType::U8x4)
+                    .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
+                let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
+                let mut resizer = fr::Resizer::new();
+                resizer
+                    .resize(&src_image, &mut dst_image, None)
+                    .map_err(|e| eyre!("Resize failed: {e:?}"))?;
+
+                rgba = dst_image.into_vec();
+                final_w = dst_w;
+                final_h = dst_h;
+                is_downsampled = true;
+            }
+
+            // Apply color profile to downsampled buffer in parallel
+            if let Some(ref icc_bytes) = icc {
+                if let Err(e) = Self::apply_color_profile(&mut rgba, icc_bytes) {
                     tracing::warn!("Failed to apply color profile: {:?}", e);
+                }
+            }
+
+            // Apply EXIF rotation to downsampled buffer
+            if let Some(o) = orientation {
+                let deg = match o {
+                    3 => Some(180),
+                    6 => Some(90),
+                    8 => Some(270),
+                    _ => None,
+                };
+                if let Some(d) = deg {
+                    let (rotated_rgba, rotated_w, rotated_h) =
+                        rotate_rgba(&rgba, final_w, final_h, d);
+                    rgba = rotated_rgba;
+                    final_w = rotated_w;
+                    final_h = rotated_h;
                 }
             }
 
@@ -74,46 +139,21 @@ impl ImageLoader {
                 vec![ImageData {
                     path: path.to_path_buf(),
                     rgba_data: Arc::new(rgba),
-                    width: w as u32,
-                    height: h as u32,
+                    width: final_w,
+                    height: final_h,
                     format: format_type,
                     file_size_bytes: std::fs::metadata(path)?.len(),
                     frame_delay_ms: 0,
-                    exif_info: exif_info.clone(),
-                    exif_loaded: true,
+                    exif_info: None,
+                    exif_loaded: false,
                     histogram: None,
-                    is_downsampled: false,
-                    gps_coords,
-                    color_space,
+                    is_downsampled,
+                    gps_coords: None,
+                    color_space: None,
                 }],
                 format_type,
             )
         };
-
-        for frame in &mut image_frames {
-            frame.exif_info = exif_info.clone();
-            frame.gps_coords = gps_coords;
-            frame.color_space = color_space;
-        }
-
-        // Post-process to auto-rotate based on EXIF orientation tag
-        if let Some(orientation) = orientation {
-            let deg = match orientation {
-                3 => Some(180),
-                6 => Some(90),
-                8 => Some(270),
-                _ => None,
-            };
-            if let Some(d) = deg {
-                for frame in &mut image_frames {
-                    let (rotated_rgba, rotated_w, rotated_h) =
-                        rotate_rgba(&frame.rgba_data, frame.width, frame.height, d);
-                    frame.rgba_data = Arc::new(rotated_rgba);
-                    frame.width = rotated_w;
-                    frame.height = rotated_h;
-                }
-            }
-        }
 
         Ok((image_frames, format_type))
     }
@@ -132,7 +172,12 @@ impl ImageLoader {
         )
         .ok_or_else(|| eyre!("Failed to create color transform"))?;
 
-        transform.apply(rgba);
+        use rayon::prelude::*;
+        let chunk_size = 16384 * 4;
+        rgba.par_chunks_mut(chunk_size).for_each(|chunk| {
+            transform.apply(chunk);
+        });
+
         Ok(())
     }
 

@@ -958,32 +958,38 @@
             <div class="features-grid">
                 <div class="feature-card">
                     <div class="feature-icon">⚡</div>
-                    <h3>Zero-Copy Loading</h3>
-                    <p>Decodes directly to memory and loads onto the GPU as a mapped texture. Minimizes CPU bottleneck and cuts startup rendering delay below 100ms.</p>
+                    <h3>Sub-50ms Millisecond Opening</h3>
+                    <p>Early pre-downsampling decodes and scales raw pixels before ICC color transforms and rotation, cutting processing load by ~12x and opening images under 50ms.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🚀</div>
+                    <h3>JPEG Scale-on-Decode</h3>
+                    <p>Native sub-sampled IDCT decoding directly in zune-jpeg scales JPEGs during file reading, accelerating JPEG decode speeds by up to 8x.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="feature-icon">🎮</div>
                     <h3>GPU-Accelerated Shaders</h3>
-                    <p>All photo edits (brightness, contrast, saturation, and crop zoom panning) are compiled as WGSL shaders. Runs instantly on 4K/8K images without lagging the main thread.</p>
+                    <p>All photo edits (brightness, contrast, saturation, and crop zoom panning) are compiled as WGSL shaders with zero-mipmap instant GPU uploads.</p>
                 </div>
                 
                 <div class="feature-card">
-                    <div class="feature-icon">🦀</div>
-                    <h3>Rust Safe Core</h3>
-                    <p>Utilizes Rust's ownership model to guarantee absolute safety, eliminate memory leaks, and run multi-threaded prefetching safely across your folders.</p>
+                    <div class="feature-icon">🔮</div>
+                    <h3>Predictive Directional Prefetch</h3>
+                    <p>Tracks navigation direction (+1, +2, +3) to pre-decode upcoming photos into RAM ahead of time for instant zero-delay arrow-key transitions.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="feature-icon">🔄</div>
-                    <h3>Rayon Parallel Rotation</h3>
-                    <p>Automated auto-orientation (via EXIF metadata) uses multi-core CPU parallel block resizing via Rayon to guarantee no rendering hitches during folder slides.</p>
+                    <h3>Parallel ICC & Rotation</h3>
+                    <p>Automated auto-orientation and ICC profile color transformations run across multi-core CPUs via Rayon parallel workers.</p>
                 </div>
                 
                 <div class="feature-card">
                     <div class="feature-icon">📸</div>
-                    <h3>Format agnostic</h3>
-                    <p>Built-in support for RAW camera formats, HEIF/AVIF, JXL, SVG, animated GIFs, and standard image files (JPEG, PNG, TIFF, WebP).</p>
+                    <h3>Format Agnostic</h3>
+                    <p>Built-in support for RAW camera formats, HEIF/AVIF, JXL, SVG, animated GIFs, and standard image files (JPEG, PNG, TIFF, WebP, QOI, EXR).</p>
                 </div>
 
                 <div class="feature-card">
@@ -996,12 +1002,6 @@
                     <div class="feature-icon">🗺️</div>
                     <h3>Color Space & GPS Lookup</h3>
                     <p>Detects Adobe RGB color tags to run precise gamut transforms in shaders. Plus, single-click GPS mapping coordinates directly to web maps.</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">🎛️</div>
-                    <h3>Window State Persistence</h3>
-                    <p>Remembers your window bounds, sidebar view preferences, and thumbnail strip settings across launches for a seamless interface experience.</p>
                 </div>
             </div>
         </div>

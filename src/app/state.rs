@@ -25,6 +25,7 @@ pub struct NavigationState {
     #[allow(dead_code)]
     pub(crate) thumb_target_scroll: f32,
     pub(crate) last_left_click_time: Option<std::time::Instant>,
+    pub(crate) last_direction: i8,
 }
 
 pub struct AnimationState {
@@ -101,6 +102,7 @@ impl SpedImageApp {
                 thumb_velocity: 0.0,
                 thumb_target_scroll: 0.0,
                 last_left_click_time: None,
+                last_direction: 1,
             },
             animation: AnimationState {
                 frame_idx: 0,

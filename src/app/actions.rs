@@ -301,19 +301,24 @@ impl SpedImageApp {
             .cancelled_generation
             .store(generation, Ordering::SeqCst);
 
-        // Compute prefetch targets
+        // Compute prefetch targets based on navigation direction (+1, +2, +3 or -1, -2, -3)
         let mut prefetch_targets = Vec::new();
         if self.ui_state.files.len() >= 2
             && let Some(idx) = self.ui_state.files.iter().position(|f| f.path == path)
         {
-            let next_idx = (idx + 1) % self.ui_state.files.len();
-            let prev_idx = if idx == 0 {
-                self.ui_state.files.len() - 1
+            let len = self.ui_state.files.len();
+            let offsets = if self.navigation.last_direction >= 0 {
+                [1isize, 2, 3, -1]
             } else {
-                idx - 1
+                [-1isize, -2, -3, 1]
             };
-            prefetch_targets.push(self.ui_state.files[next_idx].path.clone());
-            prefetch_targets.push(self.ui_state.files[prev_idx].path.clone());
+            for offset in offsets {
+                let target_idx = (idx as isize + offset).rem_euclid(len as isize) as usize;
+                let target_path = self.ui_state.files[target_idx].path.clone();
+                if !prefetch_targets.contains(&target_path) && target_path != path {
+                    prefetch_targets.push(target_path);
+                }
+            }
         }
 
         let (max_w, max_h) = match &self.window {
@@ -667,6 +672,7 @@ impl SpedImageApp {
     }
 
     pub(crate) fn next_image(&mut self) {
+        self.navigation.last_direction = 1;
         self.ui_state.next_file();
         let path = self.ui_state.current_file().cloned();
         if let Some(p) = path {
@@ -675,6 +681,7 @@ impl SpedImageApp {
     }
 
     pub(crate) fn prev_image(&mut self) {
+        self.navigation.last_direction = -1;
         self.ui_state.prev_file();
         let path = self.ui_state.current_file().cloned();
         if let Some(p) = path {
