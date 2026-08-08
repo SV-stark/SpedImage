@@ -346,6 +346,9 @@ impl SpedImageApp {
             }
 
             for target_path in prefetch_targets {
+                if self.navigation.prefetch_cache.get(&target_path).is_some() {
+                    continue;
+                }
                 let tx_p = tx.clone();
                 let proxy_p = proxy.clone();
                 let gen_p = current_gen.clone();
@@ -382,6 +385,7 @@ impl SpedImageApp {
 
         let path_owned = path.to_path_buf();
         let prefetch_pool_inner = prefetch_pool.clone();
+        let cache_inner = self.navigation.prefetch_cache.clone();
 
         pool.spawn(move || {
             // Early exit check
@@ -402,6 +406,9 @@ impl SpedImageApp {
 
                 // prefetch adjacent images
                 for target_path in prefetch_targets {
+                    if cache_inner.get(&target_path).is_some() {
+                        continue;
+                    }
                     let tx_p = tx.clone();
                     let proxy_p = proxy.clone();
                     let gen_p = current_gen.clone();
