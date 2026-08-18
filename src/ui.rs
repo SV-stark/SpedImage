@@ -256,17 +256,36 @@ mod tests {
         let mut ui = UiState::default();
         ui.adjustments.brightness = 1.5;
         ui.adjustments.contrast = 1.3;
+        ui.adjustments.saturation = 1.8;
         ui.adjustments.rotation = std::f32::consts::FRAC_PI_2;
         ui.adjustments.crop_rect_actual = Some([0.1, 0.1, 0.8, 0.8]);
         ui.adjustments.flip_horizontal = true;
         ui.adjustments.flip_vertical = true;
+        ui.adjustments.sharpen = 1.2;
+        ui.adjustments.clarity = 0.5;
+        ui.adjustments.temperature = 0.4;
+        ui.adjustments.tint = -0.3;
+        ui.adjustments.highlights = -0.5;
+        ui.adjustments.shadows = 0.6;
+        ui.adjustments.split_compare = true;
+        ui.adjustments.split_position = 0.7;
+
         ui.reset_adjustments();
         assert_eq!(ui.adjustments.brightness, 1.0);
         assert_eq!(ui.adjustments.contrast, 1.0);
+        assert_eq!(ui.adjustments.saturation, 1.0);
         assert_eq!(ui.adjustments.rotation, 0.0);
         assert_eq!(ui.adjustments.crop_rect_actual, None);
         assert!(!ui.adjustments.flip_horizontal);
         assert!(!ui.adjustments.flip_vertical);
+        assert_eq!(ui.adjustments.sharpen, 0.0);
+        assert_eq!(ui.adjustments.clarity, 0.0);
+        assert_eq!(ui.adjustments.temperature, 0.0);
+        assert_eq!(ui.adjustments.tint, 0.0);
+        assert_eq!(ui.adjustments.highlights, 0.0);
+        assert_eq!(ui.adjustments.shadows, 0.0);
+        assert!(!ui.adjustments.split_compare);
+        assert_eq!(ui.adjustments.split_position, 0.5);
     }
 
     #[test]

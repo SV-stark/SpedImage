@@ -2,6 +2,7 @@ pub const SHADER: &str = r#"
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
+    @location(1) uv: vec2<f32>,
 };
 
 struct Uniforms {
@@ -21,15 +22,19 @@ struct Uniforms {
     pos_scale: vec2<f32>,
     flip_horizontal: f32,
     flip_vertical: f32,
-    _padding1: f32,
-    _padding2: f32,
+    sharpen: f32,
+    clarity: f32,
+    temperature: f32,
+    tint: f32,
+    highlights: f32,
+    shadows: f32,
+    split_compare: f32,
+    split_position: f32,
+    has_color_matrix: f32,
+    _pad: f32,
     color_matrix_col0: vec4<f32>,
     color_matrix_col1: vec4<f32>,
     color_matrix_col2: vec4<f32>,
-    has_color_matrix: f32,
-    _padding_cm1: f32,
-    _padding_cm2: f32,
-    _padding_cm3: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -71,6 +76,7 @@ fn vertex_main(
     }
 
     out.position = vec4<f32>(pos, 0.0, 1.0);
+    out.uv = tex_coords;
     
     // Apply crop to texture coordinates (with horizontal and vertical flipping support)
     var tc = tex_coords;
@@ -97,7 +103,20 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let color_new = textureSample(t, s, in.tex_coords);
     let color_old = textureSample(t_prev, s, in.tex_coords);
     
-    var color = mix(color_old, color_new, uniforms.transition_factor);
+    let base_color = mix(color_old, color_new, uniforms.transition_factor);
+    
+    // Split screen A/B comparison divider & left side (original)
+    if (uniforms.split_compare > 0.5) {
+        let diff = in.uv.x - uniforms.split_position;
+        if (abs(diff) < 0.0025) {
+            return vec4<f32>(0.0, 0.706, 0.847, 1.0); // Cyan divider line
+        }
+        if (diff < 0.0) {
+            return base_color; // Left side: original untouched image
+        }
+    }
+    
+    var color = base_color;
     
     // 0. Custom Color Space Correction (e.g. Adobe RGB to sRGB)
     if (uniforms.has_color_matrix > 0.5) {
@@ -109,14 +128,63 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
         color = vec4<f32>(m * color.rgb, color.a);
     }
     
-    // 1. Adjust Brightness & Contrast
+    // 1. Sharpening (Laplacian High-Pass)
+    if (uniforms.sharpen > 0.001) {
+        let dims = vec2<f32>(textureDimensions(t));
+        if (dims.x > 0.0 && dims.y > 0.0) {
+            let texel = vec2<f32>(1.0 / dims.x, 1.0 / dims.y);
+            let c_up    = textureSample(t, s, in.tex_coords + vec2<f32>(0.0, -texel.y));
+            let c_down  = textureSample(t, s, in.tex_coords + vec2<f32>(0.0,  texel.y));
+            let c_left  = textureSample(t, s, in.tex_coords + vec2<f32>(-texel.x, 0.0));
+            let c_right = textureSample(t, s, in.tex_coords + vec2<f32>( texel.x, 0.0));
+            let laplacian = (c_up.rgb + c_down.rgb + c_left.rgb + c_right.rgb) * 0.25;
+            let high_pass = color.rgb - laplacian;
+            color = vec4<f32>(clamp(color.rgb + high_pass * (uniforms.sharpen * 1.5), vec3<f32>(0.0), vec3<f32>(1.0)), color.a);
+        }
+    }
+    
+    // 2. White Balance (Temperature & Tint)
+    if (abs(uniforms.temperature) > 0.001 || abs(uniforms.tint) > 0.001) {
+        var rgb = color.rgb;
+        rgb.r += uniforms.temperature * 0.22;
+        rgb.g += uniforms.temperature * 0.06;
+        rgb.b -= uniforms.temperature * 0.22;
+
+        rgb.r += uniforms.tint * 0.12;
+        rgb.g -= uniforms.tint * 0.22;
+        rgb.b += uniforms.tint * 0.12;
+
+        color = vec4<f32>(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)), color.a);
+    }
+    
+    // 3. Tone Recovery (Shadows & Highlights)
+    if (abs(uniforms.shadows) > 0.001 || abs(uniforms.highlights) > 0.001) {
+        let lum = dot(color.rgb, vec3<f32>(0.299, 0.587, 0.114));
+        let shadow_mask = clamp(1.0 - lum / 0.55, 0.0, 1.0);
+        let highlight_mask = clamp((lum - 0.45) / 0.55, 0.0, 1.0);
+
+        let shadow_adj = color.rgb * (uniforms.shadows * shadow_mask * 0.5);
+        let highlight_adj = (vec3<f32>(1.0) - color.rgb) * (uniforms.highlights * highlight_mask * 0.5);
+
+        color = vec4<f32>(clamp(color.rgb + shadow_adj + highlight_adj, vec3<f32>(0.0), vec3<f32>(1.0)), color.a);
+    }
+    
+    // 4. Clarity (Midtone Contrast)
+    if (abs(uniforms.clarity) > 0.001) {
+        let lum = dot(color.rgb, vec3<f32>(0.299, 0.587, 0.114));
+        let midtone_mask = 1.0 - abs(lum - 0.5) * 2.0;
+        let clarity_adj = (color.rgb - vec3<f32>(0.5)) * (uniforms.clarity * 0.4 * max(midtone_mask, 0.0));
+        color = vec4<f32>(clamp(color.rgb + clarity_adj, vec3<f32>(0.0), vec3<f32>(1.0)), color.a);
+    }
+    
+    // 5. Adjust Brightness & Contrast
     color = vec4<f32>((color.rgb - 0.5) * uniforms.contrast + 0.5 + (uniforms.brightness - 1.0), color.a);
     
-    // 2. Adjust Saturation
+    // 6. Adjust Saturation
     let gray = dot(color.rgb, vec3<f32>(0.299, 0.587, 0.114));
     color = vec4<f32>(mix(vec3<f32>(gray), color.rgb, uniforms.saturation), color.a);
     
-    // 3. HDR Toning (Filmic/Reinhard)
+    // 7. HDR Toning (Filmic/Reinhard)
     if (uniforms.hdr_toning > 0.5) {
         var x = color.rgb * 1.6;
         x = x / (1.0 + x);

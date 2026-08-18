@@ -63,4 +63,3 @@ fn bench_simd_resize_1080p_to_thumb(bencher: divan::Bencher) {
         resizer.resize(&src_image, &mut dst_image, None).unwrap();
     });
 }
-

@@ -6,7 +6,7 @@ use wgpu::{
 };
 
 use super::renderer::Renderer;
-use super::types::{RenderParams, STRIP_HEIGHT_PX, Uniforms};
+use super::types::{ImageAdjustments, RenderParams, STRIP_HEIGHT_PX, Uniforms};
 
 impl Renderer {
     pub(crate) fn render_ui_static(
@@ -369,16 +369,60 @@ impl Renderer {
                     ui.add_space(6.0);
 
                     let mut changed = false;
+
+                    // Group: Exposure & Toning
+                    ui.label(egui::RichText::new("Tone & Exposure").size(10.0).strong().color(egui::Color32::from_rgb(180, 200, 220)));
                     if ui.add(egui::Slider::new(&mut params.adjustments.brightness, 0.1..=3.0).text("Brightness")).changed() {
                         changed = true;
                     }
                     if ui.add(egui::Slider::new(&mut params.adjustments.contrast, 0.1..=3.0).text("Contrast")).changed() {
                         changed = true;
                     }
-                    if ui.add(egui::Slider::new(&mut params.adjustments.saturation, 0.0..=3.0).text("Saturation")).changed() {
+                    if ui.add(egui::Slider::new(&mut params.adjustments.highlights, -1.0..=1.0).text("Highlights")).changed() {
+                        changed = true;
+                    }
+                    if ui.add(egui::Slider::new(&mut params.adjustments.shadows, -1.0..=1.0).text("Shadows")).changed() {
                         changed = true;
                     }
 
+                    ui.add_space(4.0);
+                    // Group: Color & White Balance
+                    ui.label(egui::RichText::new("Color & White Balance").size(10.0).strong().color(egui::Color32::from_rgb(180, 200, 220)));
+                    if ui.add(egui::Slider::new(&mut params.adjustments.saturation, 0.0..=3.0).text("Saturation")).changed() {
+                        changed = true;
+                    }
+                    if ui.add(egui::Slider::new(&mut params.adjustments.temperature, -1.0..=1.0).text("Temperature")).changed() {
+                        changed = true;
+                    }
+                    if ui.add(egui::Slider::new(&mut params.adjustments.tint, -1.0..=1.0).text("Tint")).changed() {
+                        changed = true;
+                    }
+
+                    ui.add_space(4.0);
+                    // Group: Detail & Clarity
+                    ui.label(egui::RichText::new("Detail & Clarity").size(10.0).strong().color(egui::Color32::from_rgb(180, 200, 220)));
+                    if ui.add(egui::Slider::new(&mut params.adjustments.sharpen, 0.0..=2.0).text("Sharpen")).changed() {
+                        changed = true;
+                    }
+                    if ui.add(egui::Slider::new(&mut params.adjustments.clarity, -1.0..=1.0).text("Clarity")).changed() {
+                        changed = true;
+                    }
+
+                    ui.add_space(4.0);
+                    // Group: Comparison
+                    ui.label(egui::RichText::new("A/B Comparison").size(10.0).strong().color(egui::Color32::from_rgb(180, 200, 220)));
+                    if ui.checkbox(&mut params.adjustments.split_compare, "Split View (Before/After)").changed() {
+                        changed = true;
+                    }
+                    if params.adjustments.split_compare
+                        && ui.add(egui::Slider::new(&mut params.adjustments.split_position, 0.0..=1.0).text("Split Line")).changed()
+                    {
+                        changed = true;
+                    }
+
+                    ui.add_space(4.0);
+                    // Group: Transform
+                    ui.label(egui::RichText::new("Transform").size(10.0).strong().color(egui::Color32::from_rgb(180, 200, 220)));
                     let mut rot_deg = params.adjustments.rotation.to_degrees().round();
                     if ui.add(egui::Slider::new(&mut rot_deg, 0.0..=360.0).text("Rotation (°)")).changed() {
                         params.adjustments.rotation = rot_deg.to_radians();
@@ -394,37 +438,73 @@ impl Renderer {
                         }
                     });
 
+                    ui.add_space(4.0);
                     ui.separator();
-                    if ui.button("✂ Crop to Zoomed Area").clicked() {
-                        params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
-                        crate::app::types::send_event(
-                            params.event_tx,
-                            params.event_proxy,
-                            crate::app::types::AppEvent::SetStatus("Crop applied! Save (Ctrl+S) to commit crop.".to_string()),
-                        );
-                    }
-                    if params.adjustments.crop_rect_actual.is_some()
-                        && ui.button("↩ Reset Crop").clicked()
-                    {
-                        params.adjustments.crop_rect_actual = None;
-                        crate::app::types::send_event(
-                            params.event_tx,
-                            params.event_proxy,
-                            crate::app::types::AppEvent::SetStatus("Crop reset".to_string()),
-                        );
-                    }
-                    ui.separator();
+                    ui.label(egui::RichText::new("Aspect Ratio Presets").size(10.0).strong().color(egui::Color32::from_rgb(180, 200, 220)));
+                    ui.horizontal(|ui| {
+                        if ui.button("1:1").clicked() {
+                            let (w, h) = (0.8f32, 0.8f32);
+                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
+                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
+                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
+                            changed = true;
+                        }
+                        if ui.button("16:9").clicked() {
+                            let (w, h) = (1.0f32, 9.0 / 16.0);
+                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
+                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
+                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
+                            changed = true;
+                        }
+                        if ui.button("4:3").clicked() {
+                            let (w, h) = (1.0f32, 3.0 / 4.0);
+                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
+                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
+                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
+                            changed = true;
+                        }
+                        if ui.button("3:2").clicked() {
+                            let (w, h) = (1.0f32, 2.0 / 3.0);
+                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
+                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
+                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
+                            changed = true;
+                        }
+                        if ui.button("9:16").clicked() {
+                            let (w, h) = (9.0 / 16.0, 1.0f32);
+                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
+                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
+                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
+                            changed = true;
+                        }
+                    });
 
-                    if ui.button("Reset All").clicked() {
-                        params.adjustments.brightness = 1.0;
-                        params.adjustments.contrast = 1.0;
-                        params.adjustments.saturation = 1.0;
-                        params.adjustments.rotation = 0.0;
-                        params.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
-                        params.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
-                        params.adjustments.crop_rect_actual = None;
-                        params.adjustments.flip_horizontal = false;
-                        params.adjustments.flip_vertical = false;
+                    ui.horizontal(|ui| {
+                        if ui.button("✂ Crop to View").clicked() {
+                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::SetStatus("Crop applied! Save (Ctrl+S) to commit crop.".to_string()),
+                            );
+                        }
+                        if params.adjustments.crop_rect_actual.is_some()
+                            && ui.button("↩ Reset Crop").clicked()
+                        {
+                            params.adjustments.crop_rect_actual = None;
+                            params.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
+                            params.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::SetStatus("Crop reset".to_string()),
+                            );
+                        }
+                    });
+
+                    ui.separator();
+                    if ui.button("↺ Reset All Adjustments").clicked() {
+                        *params.adjustments = ImageAdjustments::default();
                         changed = true;
                     }
 
@@ -810,33 +890,11 @@ impl Renderer {
                     1.0
                 };
 
-                let uniforms = Uniforms {
-                    rotation: 0.0,
-                    aspect_ratio: thumb.width as f32 / thumb.height as f32,
-                    window_aspect_ratio,
-                    crop_x: 0.0,
-                    crop_y: 0.0,
-                    crop_w: 1.0,
-                    crop_h: 1.0,
-                    brightness: 0.8, // Dim it slightly
-                    contrast: 1.0,
-                    saturation: 0.5, // Desaturate to look like "loading"
-                    hdr_toning: 0.0,
-                    transition_factor: 1.0,
-                    pos_offset: [0.0, 0.0],
-                    pos_scale: [1.0, 1.0],
-                    flip_horizontal: 0.0,
-                    flip_vertical: 0.0,
-                    _padding1: 0.0,
-                    _padding2: 0.0,
-                    color_matrix_col0: [1.0, 0.0, 0.0, 0.0],
-                    color_matrix_col1: [0.0, 1.0, 0.0, 0.0],
-                    color_matrix_col2: [0.0, 0.0, 1.0, 0.0],
-                    has_color_matrix: 0.0,
-                    _padding_cm1: 0.0,
-                    _padding_cm2: 0.0,
-                    _padding_cm3: 0.0,
-                };
+                let mut uniforms = Uniforms::identity();
+                uniforms.aspect_ratio = thumb.width as f32 / thumb.height as f32;
+                uniforms.window_aspect_ratio = window_aspect_ratio;
+                uniforms.brightness = 0.8;
+                uniforms.saturation = 0.5;
 
                 self.queue
                     .write_buffer(&thumb.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

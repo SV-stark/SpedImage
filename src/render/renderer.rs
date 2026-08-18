@@ -592,15 +592,19 @@ impl Renderer {
                 0.0
             },
             flip_vertical: if adjustments.flip_vertical { 1.0 } else { 0.0 },
-            _padding1: 0.0,
-            _padding2: 0.0,
+            sharpen: adjustments.sharpen,
+            clarity: adjustments.clarity,
+            temperature: adjustments.temperature,
+            tint: adjustments.tint,
+            highlights: adjustments.highlights,
+            shadows: adjustments.shadows,
+            split_compare: if adjustments.split_compare { 1.0 } else { 0.0 },
+            split_position: adjustments.split_position,
+            has_color_matrix: has_cm,
+            _pad: 0.0,
             color_matrix_col0: col0,
             color_matrix_col1: col1,
             color_matrix_col2: col2,
-            has_color_matrix: has_cm,
-            _padding_cm1: 0.0,
-            _padding_cm2: 0.0,
-            _padding_cm3: 0.0,
         };
 
         self.queue

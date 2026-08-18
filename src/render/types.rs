@@ -28,15 +28,19 @@ pub struct Uniforms {
     pub pos_scale: [f32; 2],
     pub flip_horizontal: f32,
     pub flip_vertical: f32,
-    pub _padding1: f32,
-    pub _padding2: f32,
+    pub sharpen: f32,
+    pub clarity: f32,
+    pub temperature: f32,
+    pub tint: f32,
+    pub highlights: f32,
+    pub shadows: f32,
+    pub split_compare: f32,
+    pub split_position: f32,
+    pub has_color_matrix: f32,
+    pub _pad: f32,
     pub color_matrix_col0: [f32; 4],
     pub color_matrix_col1: [f32; 4],
     pub color_matrix_col2: [f32; 4],
-    pub has_color_matrix: f32,
-    pub _padding_cm1: f32,
-    pub _padding_cm2: f32,
-    pub _padding_cm3: f32,
 }
 
 impl Uniforms {
@@ -58,15 +62,19 @@ impl Uniforms {
             pos_scale: [1.0, 1.0],
             flip_horizontal: 0.0,
             flip_vertical: 0.0,
-            _padding1: 0.0,
-            _padding2: 0.0,
+            sharpen: 0.0,
+            clarity: 0.0,
+            temperature: 0.0,
+            tint: 0.0,
+            highlights: 0.0,
+            shadows: 0.0,
+            split_compare: 0.0,
+            split_position: 0.5,
+            has_color_matrix: 0.0,
+            _pad: 0.0,
             color_matrix_col0: [1.0, 0.0, 0.0, 0.0],
             color_matrix_col1: [0.0, 1.0, 0.0, 0.0],
             color_matrix_col2: [0.0, 0.0, 1.0, 0.0],
-            has_color_matrix: 0.0,
-            _padding_cm1: 0.0,
-            _padding_cm2: 0.0,
-            _padding_cm3: 0.0,
         }
     }
 }
@@ -85,6 +93,14 @@ pub struct ImageAdjustments {
     pub flip_horizontal: bool,
     pub flip_vertical: bool,
     pub color_space: Option<u32>,
+    pub sharpen: f32,
+    pub clarity: f32,
+    pub temperature: f32,
+    pub tint: f32,
+    pub highlights: f32,
+    pub shadows: f32,
+    pub split_compare: bool,
+    pub split_position: f32,
 }
 
 impl Default for ImageAdjustments {
@@ -102,6 +118,14 @@ impl Default for ImageAdjustments {
             flip_horizontal: false,
             flip_vertical: false,
             color_space: None,
+            sharpen: 0.0,
+            clarity: 0.0,
+            temperature: 0.0,
+            tint: 0.0,
+            highlights: 0.0,
+            shadows: 0.0,
+            split_compare: false,
+            split_position: 0.5,
         }
     }
 }

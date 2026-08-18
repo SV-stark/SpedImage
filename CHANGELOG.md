@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-08-18
+
+### Added
+* **GPU High-Pass Sharpening & Clarity**: Real-time Laplacian high-pass sharpening and adaptive midtone clarity in WGSL fragment shader.
+* **White Balance & Color Grading**: Interactive Color Temperature (Cool/Warm) and Tint (Green/Magenta) adjustment controls.
+* **Dynamic Tone Recovery**: Real-time Highlights recovery/suppression and Shadows lift/crush controls.
+* **A/B Split-Screen Comparison**: Live side-by-side comparison mode with interactive split slider and visual divider.
+* **Aspect Ratio Crop Presets**: Quick framing presets (`1:1`, `16:9`, `4:3`, `3:2`, `9:16`) with centered auto-framing.
+
 ## [0.8.1] - 2026-07-30
 
 ### Added
