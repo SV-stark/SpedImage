@@ -16,21 +16,7 @@ impl Renderer {
         win_w: u32,
         win_h: u32,
     ) {
-        // Apply custom visuals to match the website's elegant theme (slate background, cyan highlights)
-        let mut style: egui::Style = (*ctx.global_style()).clone();
-        style.visuals.window_corner_radius = 12.0.into();
-        style.visuals.window_fill = egui::Color32::from_rgb(18, 25, 41); // Slate panel #121929
-        style.visuals.panel_fill = egui::Color32::from_rgb(11, 15, 25); // Darker #0b0f19
-        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(11, 15, 25);
-        style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(25, 35, 58);
-        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0, 180, 216); // Cyan accent
-        style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(0, 150, 180);
-        style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(200, 210, 230);
-        style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(11, 15, 25); // dark text on hover
-        style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
-        style.visuals.selection.bg_fill = egui::Color32::from_rgba_unmultiplied(0, 180, 216, 120);
-        ctx.set_global_style(style);
-
+        // Overlay UI rendering
         if !params.has_image {
             if params.is_loading {
                 egui::Area::new(egui::Id::new("loading_screen"))
@@ -273,25 +259,7 @@ impl Renderer {
                                 "https://www.google.com/maps/search/?api=1&query={},{}",
                                 lat, lon
                             );
-
-                            #[cfg(target_os = "windows")]
-                            {
-                                std::process::Command::new("cmd")
-                                    .args(["/C", "start", &url])
-                                    .spawn()
-                                    .ok();
-                            }
-                            #[cfg(target_os = "macos")]
-                            {
-                                std::process::Command::new("open").arg(&url).spawn().ok();
-                            }
-                            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-                            {
-                                std::process::Command::new("xdg-open")
-                                    .arg(&url)
-                                    .spawn()
-                                    .ok();
-                            }
+                            let _ = webbrowser::open(&url);
                         }
                     }
                 });
@@ -509,11 +477,7 @@ impl Renderer {
                     }
 
                     if changed {
-                        crate::app::types::send_event(
-                            params.event_tx,
-                            params.event_proxy,
-                            crate::app::types::AppEvent::SetStatus(params.status_text.unwrap_or("").to_string()),
-                        );
+                        let _ = params.event_proxy.send_event(crate::app::types::WakeUp);
                     }
 
                     // Collapsible Slideshow Controls (Suggestion 7)

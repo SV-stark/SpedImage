@@ -43,10 +43,14 @@ impl SpedImageApp {
         let proxy = self.event_proxy.clone();
         let pool = self.thumbnail_pool.clone();
 
-        // Current generation for cancellation
+        // Current generation for thumbnail batch cancellation
         use std::sync::atomic::Ordering;
-        let generation = self.navigation.load_generation.load(Ordering::SeqCst);
-        let current_gen = self.navigation.load_generation.clone();
+        let generation = self
+            .navigation
+            .thumb_generation
+            .fetch_add(1, Ordering::SeqCst)
+            + 1;
+        let current_gen = self.navigation.thumb_generation.clone();
 
         // Create a work queue
         let (tx_work, rx_work) = crossbeam_channel::unbounded();

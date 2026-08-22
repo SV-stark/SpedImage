@@ -38,6 +38,16 @@ impl ImageBackend {
         ImageProcessor::supported_extensions()
     }
 
+    /// Apply adjustments on CPU
+    pub fn apply_adjustments_cpu(
+        rgba_data: &[u8],
+        w: u32,
+        h: u32,
+        adjustments: &crate::render::ImageAdjustments,
+    ) -> (Vec<u8>, u32, u32) {
+        ImageProcessor::apply_adjustments_cpu(rgba_data, w, h, adjustments)
+    }
+
     /// Save an image to disk
     pub fn save(path: &std::path::Path, rgba_data: &[u8], w: u32, h: u32) -> Result<()> {
         ImageProcessor::save(path, rgba_data, w, h)

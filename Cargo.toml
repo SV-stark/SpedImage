@@ -20,9 +20,9 @@ winit = { version = "0.30", features = ["rwh_06"] }
 egui = "0.34"
 egui-winit = { version = "0.34", features = ["links"] }
 egui-wgpu = "0.34"
-zune-image = { version = "0.5", features = ["threads"] }
-zune-core = "0.5"
-zune-imageprocs = "0.5"
+zune-image = "=0.5.0"
+zune-core = "=0.5.1"
+zune-imageprocs = "=0.5.1"
 tiff = "0.9"
 gif = "0.13"
 resvg = "0.47"
@@ -49,9 +49,10 @@ crossbeam-channel = "0.5"
 parking_lot = "0.12"
 wallpaper = "3.2"
 moka = { version = "0.12", features = ["sync"] }
-heic = { git = "https://github.com/imazen/heic", features = ["backend-rust", "backend-mediafoundation", "av1"] }
+heic = { git = "https://github.com/imazen/heic", rev = "4cd3e5917b1932e3b252d92f3b0c5459ecd22601", features = ["backend-rust", "backend-mediafoundation", "av1"] }
 rawloader = "0.37.1"
 trash = "5.2"
+webbrowser = "1.2"
 
 # Lightweight Utilities & Performance Extensions
 qoi = "0.4"

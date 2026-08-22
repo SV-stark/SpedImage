@@ -23,3 +23,9 @@ Thumbs.db
 assets/libheif/
 *.tmp
 nul
+*.log
+log.txt
+help.txt
+error.log
+project_context.md
+.gemtest

@@ -97,7 +97,15 @@ impl SpedImageApp {
                     }
                     self.dirty = true;
                 }
+
                 AppEvent::DirectoryLoaded(_dir, files) => {
+                    let paths_changed = self.thumbnails.paths.len() != files.len()
+                        || self
+                            .thumbnails
+                            .paths
+                            .iter()
+                            .zip(files.iter())
+                            .any(|(a, b)| a != &b.path);
                     self.ui_state.files = files;
                     if let Some(ref img) = self.current_image {
                         if let Some(idx) =
@@ -109,7 +117,9 @@ impl SpedImageApp {
                         self.ui_state.current_file_index = Some(0);
                     }
                     file_list_or_selection_changed = true;
-                    self.load_thumbnails_for_dir();
+                    if paths_changed {
+                        self.load_thumbnails_for_dir();
+                    }
                     self.dirty = true;
                 }
                 AppEvent::DirectoryError(err) => {
@@ -178,37 +188,64 @@ impl SpedImageApp {
                     self.dirty = true;
                 }
                 AppEvent::ConfirmDelete(path) => {
-                    if let Err(e) = trash::delete(&path) {
-                        self.ui_state.set_status(format!("Delete failed: {}", e));
-                    } else {
-                        self.current_image = None;
-                        let dir = path.parent().unwrap_or(&path).to_path_buf();
-                        self.load_directory_async(dir);
-                        self.next_image();
-                    }
+                    let tx = self.event_tx.clone();
+                    let proxy = self.event_proxy.clone();
+                    self.thread_pool.spawn(move || {
+                        if let Err(e) = trash::delete(&path) {
+                            if let Some(ref p) = proxy {
+                                crate::app::types::send_event(
+                                    &tx,
+                                    p,
+                                    AppEvent::SetStatus(format!("Delete failed: {e}")),
+                                );
+                            }
+                        } else if let Some(ref p) = proxy {
+                            if let Some(dir) = path.parent() {
+                                crate::app::types::send_event(
+                                    &tx,
+                                    p,
+                                    AppEvent::DirectoryChanged(dir.to_path_buf()),
+                                );
+                            }
+                        }
+                    });
+                    self.current_image = None;
+                    self.next_image();
                     self.dirty = true;
                 }
                 AppEvent::ConfirmBatchDelete(selected) => {
-                    let mut failed = Vec::new();
-                    for path in &selected {
-                        if let Err(e) = trash::delete(path) {
-                            failed.push(format!("{}: {}", path.display(), e));
+                    let tx = self.event_tx.clone();
+                    let proxy = self.event_proxy.clone();
+                    self.thread_pool.spawn(move || {
+                        let mut failed = Vec::new();
+                        for path in &selected {
+                            if let Err(e) = trash::delete(path) {
+                                failed.push(format!("{}: {}", path.display(), e));
+                            }
                         }
-                    }
-                    if !failed.is_empty() {
-                        self.ui_state
-                            .set_status(format!("Failed to delete some: {}", failed.join(", ")));
-                    }
+                        if let Some(ref p) = proxy {
+                            if !failed.is_empty() {
+                                crate::app::types::send_event(
+                                    &tx,
+                                    p,
+                                    AppEvent::SetStatus(format!(
+                                        "Failed to delete some: {}",
+                                        failed.join(", ")
+                                    )),
+                                );
+                            }
+                            if let Some(first) = selected.first()
+                                && let Some(parent) = first.parent()
+                            {
+                                crate::app::types::send_event(
+                                    &tx,
+                                    p,
+                                    AppEvent::DirectoryChanged(parent.to_path_buf()),
+                                );
+                            }
+                        }
+                    });
                     self.ui_state.selected_indices.clear();
-                    if let Some(current) = self.ui_state.current_file()
-                        && let Some(parent) = current.parent()
-                    {
-                        self.load_directory_async(parent.to_path_buf());
-                    } else if let Some(first) = selected.first()
-                        && let Some(parent) = first.parent()
-                    {
-                        self.load_directory_async(parent.to_path_buf());
-                    }
                     self.dirty = true;
                 }
                 AppEvent::HistogramComputed(path, histogram) => {
@@ -332,8 +369,15 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         self.ui_state.show_info = config.show_info;
         self.ui_state.show_histogram = config.show_histogram;
 
-        let renderer = pollster::block_on(Renderer::new(window.clone())).unwrap();
-        self.renderer = Some(renderer);
+        match pollster::block_on(Renderer::new(window.clone())) {
+            Ok(renderer) => {
+                self.renderer = Some(renderer);
+            }
+            Err(e) => {
+                tracing::error!("Failed to initialize GPU Renderer: {e}");
+                self.ui_state.set_status(format!("GPU Init Error: {e}"));
+            }
+        }
 
         if let Some(path) = self.initial_path.take() {
             self.load_image(&path);
@@ -391,11 +435,6 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 self.load_image(&path);
             }
             WindowEvent::RedrawRequested => {
-                self.ui_state.show_sidebar = self.config.show_sidebar;
-                self.ui_state.show_thumbnail_strip = self.config.show_thumbnail_strip;
-                self.ui_state.show_info = self.config.show_info;
-                self.ui_state.show_histogram = self.config.show_histogram;
-
                 self.process_events();
                 let active_thumb = self.active_thumb_index();
 
@@ -453,7 +492,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     };
 
                     if let Some(ref proxy) = self.event_proxy {
-                        r.render_frame(RenderParams {
+                        if let Err(e) = r.render_frame(RenderParams {
                             adjustments: &mut self.ui_state.adjustments,
                             is_cropping,
                             crop_rect,
@@ -480,8 +519,12 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                             show_search: &mut self.ui_state.show_search,
                             search_query: &mut self.ui_state.search_query,
                             gps_coords,
-                        })
-                        .ok();
+                        }) {
+                            tracing::warn!("render frame error: {e}");
+                            if let Some(ref win) = self.window {
+                                r.resize(win.inner_size());
+                            }
+                        }
                     }
 
                     if self.slideshow.active != old_slideshow_active {

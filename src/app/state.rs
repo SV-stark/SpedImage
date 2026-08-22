@@ -19,11 +19,9 @@ pub struct NavigationState {
     pub(crate) last_advance_time: Option<std::time::Instant>,
     pub(crate) prefetch_cache: Arc<Cache<PathBuf, Arc<Vec<ImageData>>>>,
     pub(crate) load_generation: Arc<AtomicU64>,
-    pub(crate) cancelled_generation: Arc<AtomicU64>,
+    pub(crate) thumb_generation: Arc<AtomicU64>,
     pub(crate) thumb_scroll: f32,
     pub(crate) thumb_velocity: f32,
-    #[allow(dead_code)]
-    pub(crate) thumb_target_scroll: f32,
     pub(crate) last_left_click_time: Option<std::time::Instant>,
     pub(crate) last_direction: i8,
 }
@@ -88,19 +86,18 @@ impl SpedImageApp {
                     Cache::builder()
                         .max_capacity(constants::PREFETCH_CACHE_BYTES)
                         .weigher(|_k, v: &Arc<Vec<ImageData>>| {
-                            let mut size = 0;
+                            let mut size: u64 = 0;
                             for frame in v.iter() {
-                                size += frame.rgba_data.len() as u32;
+                                size = size.saturating_add(frame.rgba_data.len() as u64);
                             }
-                            size
+                            size.min(u32::MAX as u64) as u32
                         })
                         .build(),
                 ),
                 load_generation: Arc::new(AtomicU64::new(0)),
-                cancelled_generation: Arc::new(AtomicU64::new(0)),
+                thumb_generation: Arc::new(AtomicU64::new(0)),
                 thumb_scroll: 0.0,
                 thumb_velocity: 0.0,
-                thumb_target_scroll: 0.0,
                 last_left_click_time: None,
                 last_direction: 1,
             },
@@ -253,7 +250,12 @@ mod tests {
 
         assert_eq!(app.navigation.thumb_scroll, 0.0);
         assert_eq!(app.navigation.thumb_velocity, 0.0);
-        assert_eq!(app.navigation.thumb_target_scroll, 0.0);
+        assert_eq!(
+            app.navigation
+                .thumb_generation
+                .load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
         assert!(app.navigation.last_advance_time.is_none());
         assert!(app.navigation.held_key.is_none());
         assert!(app.navigation.last_left_click_time.is_none());

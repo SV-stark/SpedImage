@@ -440,6 +440,10 @@ impl ImageLoader {
 
         // A GIF frame might not cover the full canvas, so we need a canvas to compose them.
         let mut canvas = vec![0u8; (w * h * 4) as usize];
+        let mut prev_canvas = canvas.clone();
+        let mut prev_disposal = gif::DisposalMethod::Keep;
+        let mut prev_frame_rect = (0usize, 0usize, 0usize, 0usize);
+
         // Create resizer once outside the frame loop
         let is_downsampled = dst_w != w || dst_h != h;
         let mut resizer = if is_downsampled {
@@ -448,22 +452,63 @@ impl ImageLoader {
             None
         };
 
-        while let Ok(Some(frame)) = decoder.read_next_frame() {
-            let delay_ms = frame.delay as u32 * 10;
+        const MAX_GIF_FRAMES: usize = 500;
 
-            // For simplicity, we just update the canvas with the new frame data.
-            // Note: Proper GIF disposal methods are complex, this is a basic implementation.
-            let line_len = frame.width as usize * 4;
+        while let Ok(Some(frame)) = decoder.read_next_frame() {
+            if image_frames.len() >= MAX_GIF_FRAMES {
+                break;
+            }
+
+            // Apply disposal method from the PREVIOUS frame before rendering the current frame
+            match prev_disposal {
+                gif::DisposalMethod::Background => {
+                    let (fl, ft, fw, fh) = prev_frame_rect;
+                    for row in 0..fh {
+                        let y = ft + row;
+                        if y < h as usize {
+                            let start = (y * w as usize + fl) * 4;
+                            let end = start + fw * 4;
+                            if end <= canvas.len() {
+                                canvas[start..end].fill(0);
+                            }
+                        }
+                    }
+                }
+                gif::DisposalMethod::Previous => {
+                    canvas.copy_from_slice(&prev_canvas);
+                }
+                _ => {}
+            }
+
+            if frame.dispose == gif::DisposalMethod::Previous {
+                prev_canvas.copy_from_slice(&canvas);
+            }
+
+            let delay_ms = (frame.delay as u32 * 10).max(10);
+            let fl = frame.left as usize;
+            let ft = frame.top as usize;
+            let fw = frame.width as usize;
+            let fh = frame.height as usize;
+
+            let line_len = fw * 4;
             for (i, line) in frame.buffer.chunks_exact(line_len).enumerate() {
-                let y = frame.top as usize + i;
+                let y = ft + i;
                 if y < h as usize {
-                    let canvas_start = (y * w as usize + frame.left as usize) * 4;
-                    let canvas_end = canvas_start + line_len;
-                    if canvas_end <= canvas.len() {
-                        canvas[canvas_start..canvas_end].copy_from_slice(line);
+                    let canvas_start = (y * w as usize + fl) * 4;
+                    for (p, pixel) in line.chunks_exact(4).enumerate() {
+                        let dst_idx = canvas_start + p * 4;
+                        if dst_idx + 4 <= canvas.len() {
+                            let alpha = pixel[3];
+                            if alpha > 0 {
+                                canvas[dst_idx..dst_idx + 4].copy_from_slice(pixel);
+                            }
+                        }
                     }
                 }
             }
+
+            prev_disposal = frame.dispose;
+            prev_frame_rect = (fl, ft, fw, fh);
 
             let is_downsampled = dst_w != w || dst_h != h;
             let final_rgba = if is_downsampled {
@@ -516,7 +561,7 @@ impl ImageLoader {
             _ => return Err(eyre!("Unsupported non-integer RAW image data")),
         };
 
-        // Do a fast half-size downsampled demosaicing (RGGB binned pixels)
+        // Do a fast half-size downsampled demosaicing with proper CFA mapping
         let out_w = width / 2;
         let out_h = height / 2;
 
@@ -530,31 +575,60 @@ impl ImageLoader {
         let white = image.whitelevels[0] as f32;
         let range = (white - black).max(1.0);
 
+        // Extract camera white balance coefficients (fallback to 1.0)
+        let wb_r = if image.wb_coeffs[0] > 0.01 {
+            image.wb_coeffs[0]
+        } else {
+            1.0
+        };
+        let wb_g = if image.wb_coeffs[1] > 0.01 {
+            image.wb_coeffs[1]
+        } else {
+            1.0
+        };
+        let wb_b = if image.wb_coeffs[2] > 0.01 {
+            image.wb_coeffs[2]
+        } else {
+            1.0
+        };
+        let r_gain = (wb_r / wb_g).clamp(0.5, 4.0);
+        let b_gain = (wb_b / wb_g).clamp(0.5, 4.0);
+
+        let cfa_name = image.cfa.name.to_ascii_uppercase();
+
         use rayon::prelude::*;
         rgba.par_chunks_exact_mut(out_w * 4)
             .enumerate()
             .for_each(|(y, row)| {
                 for x in 0..out_w {
-                    let r_idx = (y * 2) * width + (x * 2);
-                    let g1_idx = (y * 2) * width + (x * 2 + 1);
-                    let g2_idx = (y * 2 + 1) * width + (x * 2);
-                    let b_idx = (y * 2 + 1) * width + (x * 2 + 1);
+                    let p00_idx = (y * 2) * width + (x * 2);
+                    let p01_idx = (y * 2) * width + (x * 2 + 1);
+                    let p10_idx = (y * 2 + 1) * width + (x * 2);
+                    let p11_idx = (y * 2 + 1) * width + (x * 2 + 1);
 
-                    if r_idx < raw_data.len()
-                        && g1_idx < raw_data.len()
-                        && g2_idx < raw_data.len()
-                        && b_idx < raw_data.len()
-                    {
-                        let r_raw = raw_data[r_idx];
-                        let g1_raw = raw_data[g1_idx];
-                        let g2_raw = raw_data[g2_idx];
-                        let b_raw = raw_data[b_idx];
+                    if p11_idx < raw_data.len() {
+                        let p00 = raw_data[p00_idx] as f32;
+                        let p01 = raw_data[p01_idx] as f32;
+                        let p10 = raw_data[p10_idx] as f32;
+                        let p11 = raw_data[p11_idx] as f32;
 
-                        let g_raw = ((g1_raw as u32 + g2_raw as u32) / 2) as u16;
+                        // Map CFA pattern to R, G, B channels
+                        let (r_raw, g_raw, b_raw) = match cfa_name.as_str() {
+                            "BGGR" => (p11, (p01 + p10) * 0.5, p00),
+                            "GRBG" => (p01, (p00 + p11) * 0.5, p10),
+                            "GBRG" => (p10, (p00 + p11) * 0.5, p01),
+                            _ => (p00, (p01 + p10) * 0.5, p11), // Default RGGB
+                        };
 
-                        let r = (((r_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
-                        let g = (((g_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
-                        let b = (((b_raw as f32 - black) / range).clamp(0.0, 1.0) * 255.0) as u8;
+                        // Normalize with black/white levels and apply white balance
+                        let r_norm = (((r_raw - black) / range).max(0.0) * r_gain).clamp(0.0, 1.0);
+                        let g_norm = ((g_raw - black) / range).clamp(0.0, 1.0);
+                        let b_norm = (((b_raw - black) / range).max(0.0) * b_gain).clamp(0.0, 1.0);
+
+                        // Apply standard sRGB gamma (pow 1/2.2) so linear RAW is properly exposed
+                        let r = (r_norm.powf(1.0 / 2.2) * 255.0).round() as u8;
+                        let g = (g_norm.powf(1.0 / 2.2) * 255.0).round() as u8;
+                        let b = (b_norm.powf(1.0 / 2.2) * 255.0).round() as u8;
 
                         let out_idx = x * 4;
                         row[out_idx] = r;

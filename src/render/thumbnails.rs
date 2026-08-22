@@ -179,14 +179,18 @@ impl Renderer {
                 break;
             }
 
+            let scissor_x = x.max(0.0) as u32;
+            let scissor_y = win_h.saturating_sub(strip_h);
+            let raw_w = (THUMB_SLOT_W as f32 - (if x < 0.0 { -x } else { 0.0 }))
+                .min(win_w as f32 - x.max(0.0));
+            if raw_w <= 0.0 || scissor_x >= win_w || scissor_y >= win_h {
+                continue;
+            }
+            let scissor_w = (raw_w as u32).min(win_w.saturating_sub(scissor_x)).max(1);
+            let scissor_h = strip_h.min(win_h.saturating_sub(scissor_y)).max(1);
+
             pass.set_bind_group(0, Some(thumb.bind_group.as_ref()), &[]);
-            pass.set_scissor_rect(
-                x.max(0.0) as u32,
-                win_h - strip_h,
-                (THUMB_SLOT_W as f32 - (if x < 0.0 { -x } else { 0.0 }))
-                    .min(win_w as f32 - x.max(0.0)) as u32,
-                strip_h,
-            );
+            pass.set_scissor_rect(scissor_x, scissor_y, scissor_w, scissor_h);
             pass.draw(0..6, 0..1);
         }
     }

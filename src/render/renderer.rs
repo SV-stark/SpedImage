@@ -86,8 +86,23 @@ impl Renderer {
             ..Default::default()
         });
 
+        let egui_ctx = egui::Context::default();
+        let mut style: egui::Style = (*egui_ctx.global_style()).clone();
+        style.visuals.window_corner_radius = 12.0.into();
+        style.visuals.window_fill = egui::Color32::from_rgb(18, 25, 41); // Slate panel #121929
+        style.visuals.panel_fill = egui::Color32::from_rgb(11, 15, 25); // Darker #0b0f19
+        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(11, 15, 25);
+        style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(25, 35, 58);
+        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0, 180, 216); // Cyan accent
+        style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(0, 150, 180);
+        style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(200, 210, 230);
+        style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(11, 15, 25);
+        style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
+        style.visuals.selection.bg_fill = egui::Color32::from_rgba_unmultiplied(0, 180, 216, 120);
+        egui_ctx.set_global_style(style);
+
         let egui_state = egui_winit::State::new(
-            egui::Context::default(),
+            egui_ctx,
             egui::viewport::ViewportId::ROOT,
             &window,
             Some(window.scale_factor() as f32),

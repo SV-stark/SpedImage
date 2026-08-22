@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="#"><img src="https://img.shields.io/badge/Version-0.9.0-blue" alt="Version: 0.9.0"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Rust-1.82+-orange" alt="Rust: 1.82+"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Rust-1.94+-orange" alt="Rust: 1.94+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
@@ -94,10 +94,10 @@ All adjustments are processed dynamically in WGSL fragment shaders.
 | **Cold Start to Render** | < 50ms | Spike on load | Base app size (~10MB) |
 | **Decoding (e.g., 24MP JPEG)** | < 30ms (Scale-on-decode) | Multi-core spike | Dependent on display res |
 | **GPU Upload (Zero-Copy)** | < 1ms | Near Zero | Video RAM mapped directly |
-| **Directional Prefetch Navigation** | 0ms (Cached) | Low background thread | Controlled RAM cache |
-| **HDR Toning (Filmic)** | 0.0ms (0 CPU) | Zero | None |
+| **Directional Prefetch Navigation** | < 1ms (Cached) | Low background thread | Controlled RAM cache |
+| **HDR Toning (Filmic)** | < 0.1ms (GPU Shader) | GPU-Bound | None |
 | **Smooth Crop/Zoom Animation** | 60 FPS | Nominal (< 2%) | None |
-| **Brightness/Contrast Adjust** | 0.0ms (0 CPU) | Zero | None |
+| **Brightness/Contrast Adjust** | < 0.1ms (GPU Shader) | GPU-Bound | None |
 
 </div>
 
@@ -122,7 +122,7 @@ spedimage /path/to/image.jpg
 ## ⚙️ Building from Source
 
 **Prerequisites:**
-- **Rust** (1.82+)
+- **Rust** (1.94+)
 - **Cargo** (comes with Rust)
 
 ### 🪟 Windows / 🐧 Linux / 🍎 macOS
@@ -155,10 +155,10 @@ spedimage /path/to/image.jpg
 
 | Component | Technology | Description |
 |-----------|------------|-------------|
-| **Language** | Rust 2021 | Eliminates buffer overflows and data races. |
+| **Language** | Rust 2024 | Eliminates buffer overflows and data races. |
 | **Windowing** | winit | Cross-platform, reliable event loop. |
 | **GPU Rendering** | WGPU | Safe access to Vulkan/Metal/DX12/OpenGL. |
-| **Image Decoding**| `image` / OS codecs | Hybrid approach for maximum format compatibility. |
+| **Image Decoding**| `zune-image` / `jxl-oxide` / `rawloader` / `heic` / `resvg` | High-performance pure Rust & hardware-accelerated decoders. |
 | **Shaders** | WGSL | Highly optimized GPU processing blocks. |
 
 </div>

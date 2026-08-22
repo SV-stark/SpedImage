@@ -34,7 +34,12 @@ impl AppConfig {
             if let Some(parent) = path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
-            let _ = std::fs::write(path, serde_json::to_string_pretty(self).unwrap());
+            let tmp_path = path.with_extension("tmp");
+            if let Ok(json) = serde_json::to_string_pretty(self) {
+                if std::fs::write(&tmp_path, json).is_ok() {
+                    let _ = std::fs::rename(&tmp_path, &path);
+                }
+            }
         }
     }
 }

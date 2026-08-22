@@ -132,16 +132,17 @@ impl SpedImageApp {
                 "h" | "H" => {
                     if self.modifiers.shift {
                         self.ui_state.show_histogram = !self.ui_state.show_histogram;
+                        self.config.show_histogram = self.ui_state.show_histogram;
+                        self.config.save();
                         if self.ui_state.show_histogram
-                            && let Some(ref mut img) = self.current_image
+                            && let Some(ref img) = self.current_image
                             && img.histogram.is_none()
                         {
-                            let tx = self.event_tx.clone();
-                            let proxy = self.event_proxy.clone();
                             let path = img.path.clone();
                             let rgba = img.rgba_data.clone();
+                            let tx = self.event_tx.clone();
+                            let proxy = self.event_proxy.clone();
                             self.thread_pool.spawn(move || {
-                                // Reuse ImageData::compute_histogram logic via a closure
                                 let mut r_hist = [0u32; 256];
                                 let mut g_hist = [0u32; 256];
                                 let mut b_hist = [0u32; 256];
@@ -170,6 +171,8 @@ impl SpedImageApp {
                 }
                 "i" | "I" => {
                     self.ui_state.toggle_info();
+                    self.config.show_info = self.ui_state.show_info;
+                    self.config.save();
                     if self.ui_state.show_info
                         && let Some(ref mut img) = self.current_image
                     {
@@ -297,9 +300,6 @@ impl SpedImageApp {
             .load_generation
             .fetch_add(1, Ordering::SeqCst)
             + 1;
-        self.navigation
-            .cancelled_generation
-            .store(generation, Ordering::SeqCst);
 
         // Compute prefetch targets based on navigation direction (+1, +2, +3 or -1, -2, -3)
         let mut prefetch_targets = Vec::new();
@@ -467,7 +467,6 @@ impl SpedImageApp {
                 let stem_lossy = stem.to_string_lossy();
                 save_path.set_file_name(format!("{stem_lossy}_edited.{ext}"));
             }
-
             self.ui_state.set_status("Saving...");
             self.dirty = true;
 
@@ -483,81 +482,30 @@ impl SpedImageApp {
 
             self.thread_pool.spawn(move || {
                 let result = (|| -> color_eyre::eyre::Result<()> {
-                    use zune_image::image::Image;
-                    use zune_image::traits::OperationsTrait;
-                    use zune_imageprocs::brighten::Brighten;
-                    use zune_imageprocs::contrast::Contrast;
-                    use zune_imageprocs::crop::Crop;
-                    use zune_imageprocs::rotate::Rotate;
-
-                    let mut img = if is_downsampled {
-                        let mut loaded_img = Image::open(&path_clone)
-                            .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?;
-
-                        // Apply EXIF auto-orientation to the full-resolution image before editing/saving
-                        if let Some(orientation) = crate::image::extract_orientation(&path_clone) {
-                            let rotation_op = match orientation {
-                                3 => Some(Rotate::new(180.0)),
-                                6 => Some(Rotate::new(90.0)),
-                                8 => Some(Rotate::new(270.0)),
-                                _ => None,
-                            };
-                            if let Some(op) = rotation_op {
-                                op.execute(&mut loaded_img).map_err(|e| {
-                                    color_eyre::eyre::eyre!("Failed to auto-orient image: {e:?}")
-                                })?;
-                            }
-                        }
-                        loaded_img
+                    let (raw_rgba, orig_w, orig_h) = if is_downsampled {
+                        let (frames, _) = crate::image::ImageLoader::load(&path_clone, None, None)
+                            .map_err(|e| {
+                                color_eyre::eyre::eyre!(
+                                    "Failed to open full-resolution image: {e:?}"
+                                )
+                            })?;
+                        let first = frames
+                            .into_iter()
+                            .next()
+                            .ok_or_else(|| color_eyre::eyre::eyre!("No image frames loaded"))?;
+                        (first.rgba_data.to_vec(), first.width, first.height)
                     } else {
-                        Image::from_u8(
-                            &rgba_data,
-                            width as usize,
-                            height as usize,
-                            zune_core::colorspace::ColorSpace::RGBA,
-                        )
+                        (rgba_data.to_vec(), width, height)
                     };
 
-                    // Initial crop and rotate
-                    if let Some(crop_rect) = adjustments.crop_rect_actual {
-                        let (w, h) = img.dimensions();
-                        let crop_x = (crop_rect[0] * w as f32) as usize;
-                        let crop_y = (crop_rect[1] * h as f32) as usize;
-                        let crop_w = (crop_rect[2] * w as f32) as usize;
-                        let crop_h = (crop_rect[3] * h as f32) as usize;
+                    let (final_rgba, final_w, final_h) = ImageBackend::apply_adjustments_cpu(
+                        &raw_rgba,
+                        orig_w,
+                        orig_h,
+                        &adjustments,
+                    );
 
-                        Crop::new(crop_w, crop_h, crop_x, crop_y)
-                            .execute(&mut img)
-                            .map_err(|e| color_eyre::eyre::eyre!("Crop failed: {e:?}"))?;
-                    }
-
-                    let rot_deg = (adjustments.rotation.to_degrees() % 360.0).round();
-                    if rot_deg.abs() > 0.1 {
-                        Rotate::new(rot_deg)
-                            .execute(&mut img)
-                            .map_err(|e| color_eyre::eyre::eyre!("Rotate failed: {e:?}"))?;
-                    }
-
-                    // Use zune-imageprocs for color/exposure adjustments
-                    if (adjustments.brightness - 1.0).abs() > 0.01 {
-                        Brighten::new(adjustments.brightness)
-                            .execute(&mut img)
-                            .map_err(|e| color_eyre::eyre::eyre!("Brighten failed: {e:?}"))?;
-                    }
-                    if (adjustments.contrast - 1.0).abs() > 0.01 {
-                        Contrast::new(adjustments.contrast)
-                            .execute(&mut img)
-                            .map_err(|e| color_eyre::eyre::eyre!("Contrast failed: {e:?}"))?;
-                    }
-
-                    let (final_w, final_h) = img.dimensions();
-                    let final_rgba = img.flatten_to_u8()[0].clone();
-                    ImageBackend::save(
-                        &save_path_clone,
-                        &final_rgba,
-                        final_w as u32,
-                        final_h as u32,
-                    )?;
+                    ImageBackend::save(&save_path_clone, &final_rgba, final_w, final_h)?;
                     Ok(())
                 })();
 
@@ -584,7 +532,7 @@ impl SpedImageApp {
             return;
         }
 
-        let _adjustments = self.ui_state.adjustments;
+        let adjustments = self.ui_state.adjustments;
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
 
@@ -597,9 +545,12 @@ impl SpedImageApp {
             let mut failed_paths = Vec::new();
             for path in &selected {
                 match (|| -> color_eyre::eyre::Result<()> {
-                    use zune_image::image::Image;
-                    let img = Image::open(path)
+                    let (frames, _) = crate::image::ImageLoader::load(path, None, None)
                         .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?;
+                    let first = frames
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| color_eyre::eyre::eyre!("No image frames loaded"))?;
 
                     if let Some(stem) = path.file_stem() {
                         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
@@ -610,9 +561,14 @@ impl SpedImageApp {
                             ext
                         ));
 
-                        let (w, h) = img.dimensions();
-                        let rgba = img.flatten_to_u8()[0].clone();
-                        ImageBackend::save(&save_path, &rgba, w as u32, h as u32)?;
+                        let (final_rgba, final_w, final_h) = ImageBackend::apply_adjustments_cpu(
+                            &first.rgba_data,
+                            first.width,
+                            first.height,
+                            &adjustments,
+                        );
+
+                        ImageBackend::save(&save_path, &final_rgba, final_w, final_h)?;
                         saved_count += 1;
                     }
                     Ok(())
@@ -729,11 +685,15 @@ impl SpedImageApp {
 
     pub(crate) fn toggle_sidebar(&mut self) {
         self.ui_state.show_sidebar = !self.ui_state.show_sidebar;
+        self.config.show_sidebar = self.ui_state.show_sidebar;
+        self.config.save();
         self.dirty = true;
     }
 
     pub(crate) fn toggle_thumbnail_strip(&mut self) {
         self.ui_state.show_thumbnail_strip = !self.ui_state.show_thumbnail_strip;
+        self.config.show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
+        self.config.save();
         self.dirty = true;
     }
 
@@ -1040,12 +1000,12 @@ impl SpedImageApp {
         self.zoom_by(1.25, cursor);
     }
 
-    pub(crate) fn zoom_by(&mut self, factor: f32, cursor: Option<PhysicalPosition<f64>>) {
-        let old_w = self.ui_state.adjustments.crop_rect_target[2];
-        let old_h = self.ui_state.adjustments.crop_rect_target[3];
-        let new_w = (old_w * factor).clamp(0.01, 5.0);
-        let new_h = (old_h * factor).clamp(0.01, 5.0);
-
+    pub(crate) fn set_crop_target(
+        &mut self,
+        new_w: f32,
+        new_h: f32,
+        cursor: Option<PhysicalPosition<f64>>,
+    ) {
         let (win_w, win_h) = if let Some(ref w) = self.window {
             let size = w.inner_size();
             (size.width as f32, size.height as f32)
@@ -1061,26 +1021,26 @@ impl SpedImageApp {
         let win_aspect = if win_h > 0.0 { win_w / win_h } else { 1.0 };
         let ratio = img_aspect / win_aspect;
 
-        // Calculate the "normalized" mouse position relative to the actual image area
         let (nx, ny) = if let Some(pos) = cursor {
             let mut x_ratio = pos.x as f32 / win_w;
             let mut y_ratio = pos.y as f32 / win_h;
 
             if ratio > 1.0 {
-                // Width-limited (black bars on top/bottom)
                 let img_h_in_win = 1.0 / ratio;
                 let offset = (1.0 - img_h_in_win) / 2.0;
                 y_ratio = ((y_ratio - offset) * ratio).clamp(0.0, 1.0);
             } else {
-                // Height-limited (black bars on sides)
                 let img_w_in_win = ratio;
                 let offset = (1.0 - img_w_in_win) / 2.0;
                 x_ratio = ((x_ratio - offset) / ratio).clamp(0.0, 1.0);
             }
             (x_ratio, y_ratio)
         } else {
-            (0.5, 0.5) // Zoom towards center if no cursor
+            (0.5, 0.5)
         };
+
+        let old_w = self.ui_state.adjustments.crop_rect_target[2];
+        let old_h = self.ui_state.adjustments.crop_rect_target[3];
 
         let cx = nx.mul_add(old_w, self.ui_state.adjustments.crop_rect_target[0]);
         let cy = ny.mul_add(old_h, self.ui_state.adjustments.crop_rect_target[1]);
@@ -1098,6 +1058,14 @@ impl SpedImageApp {
         self.ui_state.adjustments.crop_rect_target[2] = new_w;
         self.ui_state.adjustments.crop_rect_target[3] = new_h;
         self.dirty = true;
+    }
+
+    pub(crate) fn zoom_by(&mut self, factor: f32, cursor: Option<PhysicalPosition<f64>>) {
+        let old_w = self.ui_state.adjustments.crop_rect_target[2];
+        let old_h = self.ui_state.adjustments.crop_rect_target[3];
+        let new_w = (old_w * factor).clamp(0.01, 5.0);
+        let new_h = (old_h * factor).clamp(0.01, 5.0);
+        self.set_crop_target(new_w, new_h, cursor);
     }
 
     pub(crate) fn zoom_fit(&mut self) {
@@ -1154,48 +1122,7 @@ impl SpedImageApp {
             if img_w > 0.0 && img_h > 0.0 {
                 let crop_w = win_w / img_w;
                 let crop_h = win_h / img_h;
-
-                let old_w = self.ui_state.adjustments.crop_rect_target[2];
-                let old_h = self.ui_state.adjustments.crop_rect_target[3];
-
-                let (nx, ny) = if let Some(pos) = cursor {
-                    let mut x_ratio = pos.x as f32 / win_w;
-                    let mut y_ratio = pos.y as f32 / win_h;
-
-                    let img_aspect = img_w / img_h;
-                    let win_aspect = if win_h > 0.0 { win_w / win_h } else { 1.0 };
-                    let ratio = img_aspect / win_aspect;
-
-                    if ratio > 1.0 {
-                        let img_h_in_win = 1.0 / ratio;
-                        let offset = (1.0 - img_h_in_win) / 2.0;
-                        y_ratio = ((y_ratio - offset) * ratio).clamp(0.0, 1.0);
-                    } else {
-                        let img_w_in_win = ratio;
-                        let offset = (1.0 - img_w_in_win) / 2.0;
-                        x_ratio = ((x_ratio - offset) / ratio).clamp(0.0, 1.0);
-                    }
-                    (x_ratio, y_ratio)
-                } else {
-                    (0.5, 0.5)
-                };
-
-                let cx = nx.mul_add(old_w, self.ui_state.adjustments.crop_rect_target[0]);
-                let cy = ny.mul_add(old_h, self.ui_state.adjustments.crop_rect_target[1]);
-
-                let target_x = cx - crop_w * nx;
-                let target_y = cy - crop_h * ny;
-
-                let min_x = 0.0f32.min(1.0 - crop_w);
-                let max_x = 0.0f32.max(1.0 - crop_w);
-                let min_y = 0.0f32.min(1.0 - crop_h);
-                let max_y = 0.0f32.max(1.0 - crop_h);
-
-                self.ui_state.adjustments.crop_rect_target[0] = target_x.clamp(min_x, max_x);
-                self.ui_state.adjustments.crop_rect_target[1] = target_y.clamp(min_y, max_y);
-                self.ui_state.adjustments.crop_rect_target[2] = crop_w;
-                self.ui_state.adjustments.crop_rect_target[3] = crop_h;
-                self.dirty = true;
+                self.set_crop_target(crop_w, crop_h, cursor);
             }
         }
     }
