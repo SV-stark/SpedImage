@@ -3,6 +3,7 @@ use crate::app::state::SpedImageApp;
 use crate::app::types::{AppEvent, send_event};
 use crate::image::ImageBackend;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use winit::dpi::PhysicalPosition;
 use winit::event::{KeyEvent, MouseScrollDelta};
@@ -142,7 +143,8 @@ impl SpedImageApp {
                             let rgba = img.rgba_data.clone();
                             let tx = self.event_tx.clone();
                             let proxy = self.event_proxy.clone();
-                            self.thread_pool.spawn(move || {
+                            // Off the critical path: use the low-priority pool.
+                            self.thumbnail_pool().spawn(move || {
                                 let mut r_hist = [0u32; 256];
                                 let mut g_hist = [0u32; 256];
                                 let mut b_hist = [0u32; 256];
@@ -271,9 +273,9 @@ impl SpedImageApp {
             None
         };
         if let Some(current_idx) = current_idx {
-            let cache = self.navigation.prefetch_cache.clone();
+            let cache = self.prefetch_cache();
             let files = self.ui_state.files.clone();
-            self.thread_pool.spawn(move || {
+            self.thread_pool().spawn(move || {
                 let keep_range = 4; // Maintain a window of 4 images in each direction
                 let mut to_remove = Vec::new();
                 for entry in cache.iter() {
@@ -329,14 +331,13 @@ impl SpedImageApp {
             None => (constants::DEFAULT_MAX_WIDTH, constants::DEFAULT_MAX_HEIGHT),
         };
 
-        let pool = self.thread_pool.clone();
-        let prefetch_pool = self.prefetch_pool.clone();
+        let pool = self.thread_pool().clone();
+        let prefetch_pool = self.prefetch_pool().clone();
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         let current_gen = self.navigation.load_generation.clone();
-        let path_buf = path.to_path_buf();
-
-        if let Some(cached_frames) = self.navigation.prefetch_cache.get(&path_buf) {
+        let cache = self.prefetch_cache();
+        if let Some(cached_frames) = cache.get(path) {
             if let Some(ref proxy) = self.event_proxy {
                 send_event(
                     &self.event_tx,
@@ -346,7 +347,7 @@ impl SpedImageApp {
             }
 
             for target_path in prefetch_targets {
-                if self.navigation.prefetch_cache.get(&target_path).is_some() {
+                if cache.get(&target_path).is_some() {
                     continue;
                 }
                 let tx_p = tx.clone();
@@ -358,9 +359,15 @@ impl SpedImageApp {
                         return;
                     }
 
-                    if let Ok(frames) =
-                        ImageBackend::load_and_downsample(&target_path, max_w, max_h)
-                        && gen_p.load(Ordering::Relaxed) == generation
+                    if let Ok(frames) = ImageBackend::load_and_downsample_with(
+                        &target_path,
+                        max_w,
+                        max_h,
+                        crate::image::LoadOptions {
+                            frames: crate::image::FrameLimit::First,
+                            bake_orientation: false,
+                        },
+                    ) && gen_p.load(Ordering::Relaxed) == generation
                         && let Some(ref p) = proxy_p
                     {
                         send_event(&tx_p, p, AppEvent::Prefetched(target_path, frames));
@@ -385,7 +392,7 @@ impl SpedImageApp {
 
         let path_owned = path.to_path_buf();
         let prefetch_pool_inner = prefetch_pool.clone();
-        let cache_inner = self.navigation.prefetch_cache.clone();
+        let cache_inner = self.prefetch_cache();
 
         pool.spawn(move || {
             // Early exit check
@@ -393,7 +400,15 @@ impl SpedImageApp {
                 return;
             }
 
-            let result = ImageBackend::load_and_downsample(&path_owned, max_w, max_h);
+            let result = ImageBackend::load_and_downsample_with(
+                &path_owned,
+                max_w,
+                max_h,
+                crate::image::LoadOptions {
+                    frames: crate::image::FrameLimit::First,
+                    bake_orientation: false,
+                },
+            );
 
             if current_gen.load(Ordering::Relaxed) == generation {
                 let event = match result {
@@ -418,9 +433,15 @@ impl SpedImageApp {
                             return;
                         }
 
-                        if let Ok(frames) =
-                            ImageBackend::load_and_downsample(&target_path, max_w, max_h)
-                            && gen_p.load(Ordering::Relaxed) == generation
+                        if let Ok(frames) = ImageBackend::load_and_downsample_with(
+                            &target_path,
+                            max_w,
+                            max_h,
+                            crate::image::LoadOptions {
+                                frames: crate::image::FrameLimit::First,
+                                bake_orientation: false,
+                            },
+                        ) && gen_p.load(Ordering::Relaxed) == generation
                             && let Some(ref p) = proxy_p
                         {
                             send_event(&tx_p, p, AppEvent::Prefetched(target_path, frames));
@@ -437,7 +458,7 @@ impl SpedImageApp {
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
 
-            self.thread_pool.spawn(move || {
+            self.thread_pool().spawn(move || {
                 let dialog = rfd::AsyncMessageDialog::new()
                     .set_title("Delete Image")
                     .set_description(format!(
@@ -480,30 +501,37 @@ impl SpedImageApp {
             let (width, height) = (image_data.width, image_data.height);
             let is_downsampled = image_data.is_downsampled;
 
-            self.thread_pool.spawn(move || {
+            self.thread_pool().spawn(move || {
                 let result = (|| -> color_eyre::eyre::Result<()> {
-                    let (raw_rgba, orig_w, orig_h) = if is_downsampled {
+                    // Only re-decode when the displayed buffer was downsampled;
+                    // otherwise borrow the existing buffer without copying it.
+                    let full_res = if is_downsampled {
                         let (frames, _) = crate::image::ImageLoader::load(&path_clone, None, None)
                             .map_err(|e| {
                                 color_eyre::eyre::eyre!(
                                     "Failed to open full-resolution image: {e:?}"
                                 )
                             })?;
-                        let first = frames
-                            .into_iter()
-                            .next()
-                            .ok_or_else(|| color_eyre::eyre::eyre!("No image frames loaded"))?;
-                        (first.rgba_data.to_vec(), first.width, first.height)
+                        Some(
+                            frames
+                                .into_iter()
+                                .next()
+                                .ok_or_else(|| color_eyre::eyre::eyre!("No image frames loaded"))?,
+                        )
                     } else {
-                        (rgba_data.to_vec(), width, height)
+                        None
+                    };
+                    let source: Arc<Vec<u8>> = match &full_res {
+                        Some(f) => Arc::clone(&f.rgba_data),
+                        None => Arc::clone(&rgba_data),
+                    };
+                    let (orig_w, orig_h) = match &full_res {
+                        Some(f) => (f.width, f.height),
+                        None => (width, height),
                     };
 
-                    let (final_rgba, final_w, final_h) = ImageBackend::apply_adjustments_cpu(
-                        &raw_rgba,
-                        orig_w,
-                        orig_h,
-                        &adjustments,
-                    );
+                    let (final_rgba, final_w, final_h) =
+                        ImageBackend::apply_adjustments_cpu(&source, orig_w, orig_h, &adjustments);
 
                     ImageBackend::save(&save_path_clone, &final_rgba, final_w, final_h)?;
                     Ok(())
@@ -540,7 +568,7 @@ impl SpedImageApp {
             .set_status(format!("Batch saving {} images...", selected.len()));
         self.dirty = true;
 
-        self.thread_pool.spawn(move || {
+        self.thread_pool().spawn(move || {
             let mut saved_count = 0;
             let mut failed_paths = Vec::new();
             for path in &selected {
@@ -618,7 +646,7 @@ impl SpedImageApp {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
 
-        self.thread_pool.spawn(move || {
+        self.thread_pool().spawn(move || {
             let dialog = rfd::AsyncMessageDialog::new()
                 .set_title("Delete Images")
                 .set_description(format!("Delete {} selected images?", selected.len()))
@@ -658,10 +686,37 @@ impl SpedImageApp {
     }
 
     pub(crate) fn toggle_crop(&mut self) {
+        if !self.ui_state.is_cropping {
+            // Crop coordinates are texture-space: bake EXIF rotation first so
+            // the on-screen rect maps 1:1 onto stored pixels.
+            self.ensure_baked_current();
+        }
         self.ui_state.is_cropping = !self.ui_state.is_cropping;
         if !self.ui_state.is_cropping {
             self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
             self.ui_state.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
+        }
+        self.dirty = true;
+    }
+
+    /// Bake deferred EXIF orientation into the current image buffer (rare path:
+    /// crop mode / clipboard export). Display-only rotation stays free.
+    pub(crate) fn ensure_baked_current(&mut self) {
+        let Some(ref mut img) = self.current_image else {
+            return;
+        };
+        if img.orientation_deg == 0 {
+            return;
+        }
+        let deg = img.orientation_deg as i32;
+        let (data, w, h) =
+            crate::image::ImageProcessor::rotate_rgba(&img.rgba_data, img.width, img.height, deg);
+        img.rgba_data = Arc::new(data);
+        img.width = w;
+        img.height = h;
+        img.orientation_deg = 0;
+        if let Some(ref mut r) = self.renderer {
+            r.load_image(img).ok();
         }
         self.dirty = true;
     }
@@ -708,7 +763,7 @@ impl SpedImageApp {
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
 
-            self.thread_pool.spawn(move || {
+            self.thread_pool().spawn(move || {
                 if let Some(new_path) = rfd::FileDialog::new()
                     .set_title("Rename File")
                     .set_file_name(&filename)
@@ -888,13 +943,14 @@ impl SpedImageApp {
     }
 
     pub(crate) fn copy_to_clipboard(&mut self) {
+        self.ensure_baked_current();
         if let Some(img) = &self.current_image {
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
             let rgba = img.rgba_data.clone();
             let (w, h) = (img.width, img.height);
 
-            self.thread_pool.spawn(move || {
+            self.thread_pool().spawn(move || {
                 let mut clipboard = arboard::Clipboard::new().unwrap();
                 let image_data = arboard::ImageData {
                     width: w as usize,
@@ -918,7 +974,7 @@ impl SpedImageApp {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
 
-        self.thread_pool.spawn(move || {
+        self.thread_pool().spawn(move || {
             let mut clipboard = match arboard::Clipboard::new() {
                 Ok(c) => c,
                 Err(e) => {
@@ -952,6 +1008,7 @@ impl SpedImageApp {
                         exif_loaded: true,
                         histogram: None,
                         is_downsampled: false,
+                        orientation_deg: 0,
                         gps_coords: None,
                         color_space: None,
                     };
@@ -981,7 +1038,7 @@ impl SpedImageApp {
     pub(crate) fn open_file_dialog(&mut self) {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
-        self.thread_pool.spawn(move || {
+        self.thread_pool().spawn(move || {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("Images", &ImageBackend::supported_extensions())
                 .pick_file()
@@ -1057,6 +1114,8 @@ impl SpedImageApp {
         self.ui_state.adjustments.crop_rect_target[1] = target_y.clamp(min_y, max_y);
         self.ui_state.adjustments.crop_rect_target[2] = new_w;
         self.ui_state.adjustments.crop_rect_target[3] = new_h;
+        // Arm the progressive high-res refinement timer.
+        self.zoom_settle_at = Some(std::time::Instant::now());
         self.dirty = true;
     }
 
@@ -1084,7 +1143,7 @@ impl SpedImageApp {
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
 
-            self.thread_pool.spawn(move || {
+            self.thread_pool().spawn(move || {
                 let mut clipboard = arboard::Clipboard::new().unwrap();
                 if clipboard.set_text(path_str).is_ok()
                     && let Some(ref p) = proxy
@@ -1097,6 +1156,84 @@ impl SpedImageApp {
                 }
             });
         }
+    }
+
+    /// (Re)start the background GIF streamer for `path`, decoding from frame 1.
+    pub(crate) fn start_gif_stream(&mut self, path: PathBuf) {
+        // Dropping the old receiver disconnects any previous streamer.
+        self.gif_rx = None;
+        self.animation.pending.clear();
+
+        let generation = self.navigation.load_generation.load(Ordering::SeqCst);
+        let gen_flag = self.navigation.load_generation.clone();
+        let (max_w, max_h) = match &self.window {
+            Some(w) => {
+                let size = w.inner_size();
+                (size.width, size.height)
+            }
+            None => (constants::DEFAULT_MAX_WIDTH, constants::DEFAULT_MAX_HEIGHT),
+        };
+
+        let (tx, rx) = crossbeam_channel::bounded(constants::GIF_LOOKAHEAD);
+        self.gif_rx = Some(rx);
+
+        self.prefetch_pool().spawn(move || {
+            crate::image::stream_gif(path, 1, max_w, max_h, generation, gen_flag, tx);
+        });
+    }
+
+    /// Fire a full-resolution re-decode once the user settles into a zoom that
+    /// magnifies beyond the preview texture's native resolution.
+    pub(crate) fn maybe_request_highres(&mut self) {
+        if !self.config.refinement_enabled() || self.highres_in_flight {
+            return;
+        }
+        let Some(ref img) = self.current_image else {
+            return;
+        };
+        if !img.is_downsampled {
+            return;
+        }
+        // Animated formats stream their own frames; vectors re-render by scale.
+        if matches!(
+            img.format,
+            crate::image::ImageFormatType::Gif | crate::image::ImageFormatType::Svg
+        ) {
+            return;
+        }
+        let Some(ref win) = self.window else {
+            return;
+        };
+        let win_w = win.inner_size().width as f32;
+        if win_w <= 0.0 {
+            return;
+        }
+        let shown_frac = self.ui_state.adjustments.crop_rect_target[2];
+        let screen_px_per_tex_px = shown_frac * win_w / img.width as f32;
+        if screen_px_per_tex_px < constants::HIGHRES_TRIGGER_SCALE {
+            return;
+        }
+
+        let path = img.path.clone();
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+        self.highres_in_flight = true;
+
+        self.prefetch_pool().spawn(move || {
+            let result = (|| -> color_eyre::eyre::Result<crate::image::ImageData> {
+                let (frames, _) = crate::image::ImageLoader::load(&path, None, None)?;
+                frames
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| color_eyre::eyre::eyre!("No image frames loaded"))
+            })();
+            if let Ok(frame) = result
+                && (frame.rgba_data.len() as u64) <= constants::HIGHRES_MAX_BYTES
+                && let Some(ref p) = proxy
+            {
+                send_event(&tx, p, AppEvent::HighResReady(path, Box::new(frame)));
+            }
+        });
     }
 
     pub(crate) fn toggle_zoom_100(&mut self) {
@@ -1116,8 +1253,13 @@ impl SpedImageApp {
                 (1.0, 1.0)
             };
 
-            let img_w = img.width as f32;
-            let img_h = img.height as f32;
+            // Sideways EXIF orientation swaps the displayed dimensions.
+            let swapped = matches!(img.orientation_deg, 90 | 270);
+            let (img_w, img_h) = if swapped {
+                (img.height as f32, img.width as f32)
+            } else {
+                (img.width as f32, img.height as f32)
+            };
 
             if img_w > 0.0 && img_h > 0.0 {
                 let crop_w = win_w / img_w;

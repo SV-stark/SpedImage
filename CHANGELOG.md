@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-08-27
+
+### Performance & Startup Optimization
+* **Pure-Rust SIMD JPEG Decoding**: Integrated `libjpeg-turbo-rs` with AVX2/SSE2 SIMD acceleration, reducing 4K JPEG decode latency from ~568ms to ~146ms with zero C/NASM dependencies.
+* **Instant Window Presentation**: Window title is set to the image file name immediately upon window creation on the fast-path for sub-400ms end-to-end responsiveness and instant shell/taskbar discovery.
+* **Asynchronous Parallel GPU Initialization**: Decoupled `wgpu` Renderer setup and surface configuration into background threads, running concurrently with initial image decoding.
+* **Deferred Icon Decoding**: Moved application icon decompression and parsing off the critical startup path into a background task.
+* **Optimized WGPU Configuration**: Direct3D 12 backend specialization on Windows, `LowPower` adapter preference for instant compositor matching, and deferred texture pool allocations.
+* **Release Profile & SIMD Optimization**: Configured `opt-level = 3`, `lto = true`, and `codegen-units = 1` in release profile, accelerating decode throughput across all image formats.
+* **Fast Single-Instance IPC**: Instant IPC file opening via local socket with automated window focus (`w.focus_window()`).
+* **Fast-Path Diagnostics & Tracing**: Defer `color_eyre` panic hook and `tracing_subscriber` initialization behind environment flags (`RUST_BACKTRACE`, `COLORBT`, `RUST_LOG`) to eliminate cold-start overhead.
+* **Streaming GIF Playback**: Background decoder stream with bounded look-ahead ring buffer and zero-latency first frame presentation.
+
 ## [0.9.0] - 2026-08-18
 
 ### Added

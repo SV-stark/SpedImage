@@ -87,6 +87,9 @@ pub struct ImageData {
     pub histogram: Option<([u32; 256], [u32; 256], [u32; 256])>,
     pub exif_loaded: bool,
     pub is_downsampled: bool,
+    /// EXIF orientation expressed in degrees (0, 90, 180, 270).
+    /// Non-zero only when the rotation has NOT been baked into the pixels.
+    pub orientation_deg: u16,
     pub gps_coords: Option<(f64, f64)>,
     pub color_space: Option<u32>,
 }
@@ -138,7 +141,7 @@ impl ImageData {
                 let local_g = bump.alloc([0u32; 256]);
                 let local_b = bump.alloc([0u32; 256]);
 
-                for pixel in chunk.chunks_exact(4) {
+                for pixel in chunk.as_chunks::<4>().0 {
                     local_r[pixel[0] as usize] += 1;
                     local_g[pixel[1] as usize] += 1;
                     local_b[pixel[2] as usize] += 1;
@@ -163,7 +166,7 @@ impl ImageData {
         let mut final_r = r;
         let mut final_g = g;
         let mut final_b = b;
-        for pixel in remainder.chunks_exact(4) {
+        for pixel in remainder.as_chunks::<4>().0 {
             final_r[pixel[0] as usize] += 1;
             final_g[pixel[1] as usize] += 1;
             final_b[pixel[2] as usize] += 1;
@@ -201,7 +204,7 @@ impl ImageData {
         let mut count = 0usize;
 
         // Sample every 16th pixel for high speed
-        for pixel in self.rgba_data.chunks_exact(4 * 16) {
+        for pixel in self.rgba_data.as_chunks::<64>().0 {
             let srgb = palette::Srgb::new(
                 fast_srgb8::srgb8_to_f32(pixel[0]),
                 fast_srgb8::srgb8_to_f32(pixel[1]),
@@ -330,6 +333,7 @@ mod tests {
             exif_loaded: false,
             histogram: None,
             is_downsampled: false,
+            orientation_deg: 0,
             gps_coords: None,
             color_space: None,
         };
@@ -351,6 +355,7 @@ mod tests {
             exif_loaded: false,
             histogram: None,
             is_downsampled: false,
+            orientation_deg: 0,
             gps_coords: None,
             color_space: None,
         };
@@ -371,6 +376,7 @@ mod tests {
             exif_loaded: false,
             histogram: None,
             is_downsampled: false,
+            orientation_deg: 0,
             gps_coords: None,
             color_space: None,
         };
@@ -393,6 +399,7 @@ mod tests {
             exif_loaded: false,
             histogram: None,
             is_downsampled: false,
+            orientation_deg: 0,
             gps_coords: None,
             color_space: None,
         };

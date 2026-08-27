@@ -5,6 +5,23 @@ pub const PREFETCH_CACHE_SIZE: u64 = 100;
 /// Max memory budget for prefetch cache (bytes)
 pub const PREFETCH_CACHE_BYTES: u64 = 256 * 1024 * 1024; // 256 MB
 
+/// Delay after the last zoom interaction before a progressive
+/// high-res re-decode is considered.
+pub const HIGHRES_SETTLE_MS: u64 = 150;
+/// Magnification (screen pixels per texture pixel) that triggers refinement.
+pub const HIGHRES_TRIGGER_SCALE: f32 = 1.15;
+/// Max RGBA byte size a progressive high-res re-decode may produce.
+pub const HIGHRES_MAX_BYTES: u64 = 512 * 1024 * 1024; // 512 MB
+
+/// GPU ring slots for streaming GIF playback.
+pub const GIF_RING_SLOTS: usize = 4;
+/// Frames the GIF streamer may run ahead of playback (bounded channel capacity).
+pub const GIF_LOOKAHEAD: usize = 4;
+/// Max frames buffered CPU-side before draining pauses (applies backpressure).
+pub const GIF_PENDING_MAX: usize = GIF_LOOKAHEAD * 2;
+/// Fallback delay for frames that report none.
+pub const GIF_DEFAULT_FRAME_MS: u32 = 100;
+
 /// Default interval between images in slideshow mode
 pub const DEFAULT_SLIDESHOW_INTERVAL: Duration = Duration::from_secs(3);
 

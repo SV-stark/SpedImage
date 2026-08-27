@@ -2,7 +2,7 @@ use color_eyre::eyre::{Result, eyre};
 use std::path::Path;
 use std::sync::Arc;
 
-use super::loader::ImageLoader;
+use super::loader::{ImageLoader, LoadOptions};
 use super::types::ImageData;
 
 pub struct ImageProcessor;
@@ -16,7 +16,17 @@ impl ImageProcessor {
     /// Load an image from file and downsample it if needed for the current display resolution.
     /// This is used for background loading and prefetching.
     pub fn load_and_downsample(path: &Path, max_w: u32, max_h: u32) -> Result<Vec<ImageData>> {
-        let (frames, _format) = ImageLoader::load(path, Some(max_w), Some(max_h))?;
+        Self::load_and_downsample_with(path, max_w, max_h, LoadOptions::default())
+    }
+
+    /// Like [`Self::load_and_downsample`] with explicit decode options.
+    pub fn load_and_downsample_with(
+        path: &Path,
+        max_w: u32,
+        max_h: u32,
+        opts: LoadOptions,
+    ) -> Result<Vec<ImageData>> {
+        let (frames, _format) = ImageLoader::load_with(path, Some(max_w), Some(max_h), opts)?;
         let mut processed = Vec::with_capacity(frames.len());
 
         use fast_image_resize as fr;
@@ -81,7 +91,7 @@ impl ImageProcessor {
     }
 
     pub fn rotate_rgba(rgba: &[u8], width: u32, height: u32, deg: i32) -> (Vec<u8>, u32, u32) {
-        let deg = (deg % 360 + 360) % 360;
+        let deg = deg.rem_euclid(360);
         match deg {
             90 => {
                 let mut out = vec![0u8; (width * height * 4) as usize];
@@ -475,9 +485,11 @@ mod tests {
     #[test]
     fn test_apply_adjustments_cpu_brightness_contrast() {
         let data = vec![100, 150, 200, 255];
-        let mut adj = crate::render::ImageAdjustments::default();
-        adj.brightness = 1.2;
-        adj.contrast = 1.1;
+        let adj = crate::render::ImageAdjustments {
+            brightness: 1.2,
+            contrast: 1.1,
+            ..Default::default()
+        };
         let (out, w, h) = ImageProcessor::apply_adjustments_cpu(&data, 1, 1, &adj);
         assert_eq!(w, 1);
         assert_eq!(h, 1);

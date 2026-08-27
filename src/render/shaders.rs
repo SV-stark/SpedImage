@@ -101,9 +101,13 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0); // Black background for zoomed out areas
     }
     let color_new = textureSample(t, s, in.tex_coords);
-    let color_old = textureSample(t_prev, s, in.tex_coords);
-    
-    let base_color = mix(color_old, color_new, uniforms.transition_factor);
+    // Skip the previous-frame fetch entirely once a transition has settled;
+    // this is a uniform branch, so both paths are valid uniform control flow.
+    var base_color = color_new;
+    if (uniforms.transition_factor < 1.0) {
+        let color_old = textureSample(t_prev, s, in.tex_coords);
+        base_color = mix(color_old, color_new, uniforms.transition_factor);
+    }
     
     // Split screen A/B comparison divider & left side (original)
     if (uniforms.split_compare > 0.5) {
@@ -210,5 +214,37 @@ fn vertex_main(@builtin(vertex_index) item_index: u32) -> @builtin(position) vec
 @fragment
 fn fragment_main() -> @location(0) vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.5); // Darken for crop regions
+}
+"#;
+
+/// Fullscreen blit used to generate successive mipmap levels on the GPU.
+pub const MIP_SHADER: &str = r#"
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@group(0) @binding(0) var s: sampler;
+@group(0) @binding(1) var t: texture_2d<f32>;
+
+@vertex
+fn vertex_main(@builtin(vertex_index) idx: u32) -> VsOut {
+    var p = array<vec2<f32>, 6>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 1.0, -1.0),
+        vec2<f32>(-1.0,  1.0),
+        vec2<f32>( 1.0, -1.0),
+        vec2<f32>( 1.0,  1.0),
+        vec2<f32>(-1.0,  1.0)
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(p[idx], 0.0, 1.0);
+    out.uv = vec2<f32>((p[idx].x + 1.0) * 0.5, (1.0 - p[idx].y) * 0.5);
+    return out;
+}
+
+@fragment
+fn fragment_main(in: VsOut) -> @location(0) vec4<f32> {
+    return textureSample(t, s, in.uv);
 }
 "#;

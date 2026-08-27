@@ -1,9 +1,11 @@
+mod gif_stream;
 mod loader;
 mod metadata;
 mod processing;
 mod types;
 
-pub use loader::ImageLoader;
+pub use gif_stream::{GifFrameMsg, GifStreamMsg, stream_gif};
+pub use loader::{FrameLimit, ImageLoader, LoadOptions};
 pub use metadata::{extract_exif_and_orientation, extract_orientation};
 pub use processing::ImageProcessor;
 pub use types::{ImageData, ImageError, ImageFormatType};
@@ -26,6 +28,16 @@ impl ImageBackend {
         max_h: u32,
     ) -> Result<Vec<ImageData>> {
         ImageProcessor::load_and_downsample(path, max_w, max_h)
+    }
+
+    /// Load and downsample with explicit decode options
+    pub fn load_and_downsample_with(
+        path: &std::path::Path,
+        max_w: u32,
+        max_h: u32,
+        opts: crate::image::LoadOptions,
+    ) -> Result<Vec<ImageData>> {
+        ImageProcessor::load_and_downsample_with(path, max_w, max_h, opts)
     }
 
     /// Check if format is supported

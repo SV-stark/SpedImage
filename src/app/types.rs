@@ -32,8 +32,12 @@ pub enum AppEvent {
     Prefetched(PathBuf, Vec<ImageData>), // prefetch for adjacent images
     SaveComplete(PathBuf),
     SaveError(String),
-    /// A thumbnail has finished loading: (path, rgba_bytes, width, height)
-    ThumbnailLoaded(PathBuf, Arc<Vec<u8>>, u32, u32),
+    /// A thumbnail has finished loading: (path, rgba_bytes, width, height, order)
+    ThumbnailLoaded(PathBuf, Arc<Vec<u8>>, u32, u32, usize),
+    /// Full-resolution re-decode for progressive refinement of the current image.
+    HighResReady(PathBuf, Box<ImageData>),
+    /// Async GPU renderer initialized (or failed). Boxed to keep enum small.
+    RendererReady(Result<Box<crate::render::Renderer>, String>),
     SetStatus(String),
     FileRenamed(PathBuf, PathBuf),
     DirectoryLoaded(PathBuf, Vec<crate::ui::FileEntry>),

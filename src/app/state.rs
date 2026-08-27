@@ -10,6 +10,7 @@ use notify_debouncer_full::{Debouncer, FileIdMap};
 use rayon::ThreadPool;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::AtomicU64;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
@@ -17,7 +18,7 @@ use winit::window::Window;
 pub struct NavigationState {
     pub(crate) held_key: Option<char>,
     pub(crate) last_advance_time: Option<std::time::Instant>,
-    pub(crate) prefetch_cache: Arc<Cache<PathBuf, Arc<Vec<ImageData>>>>,
+    pub(crate) prefetch_cache: OnceLock<Arc<Cache<PathBuf, Arc<Vec<ImageData>>>>>,
     pub(crate) load_generation: Arc<AtomicU64>,
     pub(crate) thumb_generation: Arc<AtomicU64>,
     pub(crate) thumb_scroll: f32,
@@ -32,6 +33,8 @@ pub struct AnimationState {
     pub(crate) next_frame_time: Option<std::time::Instant>,
     pub(crate) transition_start: Option<std::time::Instant>,
     pub(crate) transition_factor: f32,
+    /// Streamed GIF frames awaiting playback, ordered by index.
+    pub(crate) pending: std::collections::VecDeque<crate::image::GifFrameMsg>,
 }
 
 pub struct SlideshowState {
@@ -56,25 +59,32 @@ pub struct SpedImageApp {
     pub(crate) modifiers: KeyModifiers,
     pub(crate) mouse_drag_start: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) last_cursor_pos: winit::dpi::PhysicalPosition<f64>,
+    /// Set when the user zooms; fires progressive refinement after settling.
+    pub(crate) zoom_settle_at: Option<std::time::Instant>,
+    /// A progressive high-res decode is currently running for this image.
+    pub(crate) highres_in_flight: bool,
     pub(crate) dirty: bool,
     pub(crate) loading: bool,
     pub(crate) initial_path: Option<PathBuf>,
 
     pub(crate) event_tx: Sender<AppEvent>,
     pub(crate) event_rx: Receiver<AppEvent>,
+    /// Look-ahead channel from the streaming GIF decoder (None = idle).
+    pub(crate) gif_rx: Option<crossbeam_channel::Receiver<crate::image::GifStreamMsg>>,
     pub(crate) event_proxy: Option<EventLoopProxy<WakeUp>>,
-    pub(crate) thread_pool: Arc<ThreadPool>,
-    pub(crate) prefetch_pool: Arc<ThreadPool>,
-    pub(crate) thumbnail_pool: Arc<ThreadPool>,
+    pub(crate) thread_pool: OnceLock<Arc<ThreadPool>>,
+    pub(crate) prefetch_pool: OnceLock<Arc<ThreadPool>>,
+    pub(crate) thumbnail_pool: OnceLock<Arc<ThreadPool>>,
     pub(crate) file_watcher: Option<Debouncer<notify::RecommendedWatcher, FileIdMap>>,
     pub(crate) config: crate::config::AppConfig,
 }
 
 impl SpedImageApp {
     pub fn new(proxy: EventLoopProxy<WakeUp>) -> Self {
+        crate::startup::log("App::new enter");
         let (event_tx, event_rx) = crossbeam_channel::unbounded();
 
-        Self {
+        let app = Self {
             window: None,
             renderer: None,
             current_image: None,
@@ -82,18 +92,7 @@ impl SpedImageApp {
             navigation: NavigationState {
                 held_key: None,
                 last_advance_time: None,
-                prefetch_cache: Arc::new(
-                    Cache::builder()
-                        .max_capacity(constants::PREFETCH_CACHE_BYTES)
-                        .weigher(|_k, v: &Arc<Vec<ImageData>>| {
-                            let mut size: u64 = 0;
-                            for frame in v.iter() {
-                                size = size.saturating_add(frame.rgba_data.len() as u64);
-                            }
-                            size.min(u32::MAX as u64) as u32
-                        })
-                        .build(),
-                ),
+                prefetch_cache: OnceLock::new(),
                 load_generation: Arc::new(AtomicU64::new(0)),
                 thumb_generation: Arc::new(AtomicU64::new(0)),
                 thumb_scroll: 0.0,
@@ -107,6 +106,7 @@ impl SpedImageApp {
                 next_frame_time: None,
                 transition_start: None,
                 transition_factor: 1.0,
+                pending: std::collections::VecDeque::new(),
             },
             slideshow: SlideshowState {
                 active: false,
@@ -117,78 +117,85 @@ impl SpedImageApp {
             modifiers: KeyModifiers::default(),
             mouse_drag_start: None,
             last_cursor_pos: winit::dpi::PhysicalPosition::new(0.0, 0.0),
+            zoom_settle_at: None,
+            highres_in_flight: false,
             dirty: true,
             loading: false,
             initial_path: None,
             event_tx,
             event_rx,
+            gif_rx: None,
             event_proxy: Some(proxy),
-            thread_pool: Arc::new(
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(2)
-                    .thread_name(|i| format!("spedimage-main-{}", i))
-                    .build()
-                    .expect("Failed to initialize Rayon thread pool (main). This is fatal."),
-            ),
-            prefetch_pool: Arc::new(
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(1)
-                    .thread_name(|i| format!("spedimage-prefetch-{}", i))
-                    .spawn_handler(|thread| {
-                        let mut b = std::thread::Builder::new();
-                        if let Some(name) = thread.name() {
-                            b = b.name(name.to_string());
-                        }
-                        b.spawn(move || {
-                            #[cfg(target_os = "windows")]
-                            unsafe {
-                                use windows::Win32::System::Threading::{
-                                    GetCurrentThread, SetThreadPriority,
-                                    THREAD_PRIORITY_BELOW_NORMAL,
-                                };
-                                let _ = SetThreadPriority(
-                                    GetCurrentThread(),
-                                    THREAD_PRIORITY_BELOW_NORMAL,
-                                );
-                            }
-                            thread.run();
-                        })
-                        .map(|_| ())
-                    })
-                    .build()
-                    .expect("Failed to initialize Rayon thread pool (prefetch). This is fatal."),
-            ),
-            thumbnail_pool: Arc::new(
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(4)
-                    .thread_name(|i| format!("spedimage-thumbnail-{}", i))
-                    .spawn_handler(|thread| {
-                        let mut b = std::thread::Builder::new();
-                        if let Some(name) = thread.name() {
-                            b = b.name(name.to_string());
-                        }
-                        b.spawn(move || {
-                            #[cfg(target_os = "windows")]
-                            unsafe {
-                                use windows::Win32::System::Threading::{
-                                    GetCurrentThread, SetThreadPriority,
-                                    THREAD_PRIORITY_BELOW_NORMAL,
-                                };
-                                let _ = SetThreadPriority(
-                                    GetCurrentThread(),
-                                    THREAD_PRIORITY_BELOW_NORMAL,
-                                );
-                            }
-                            thread.run();
-                        })
-                        .map(|_| ())
-                    })
-                    .build()
-                    .expect("Failed to initialize Rayon thread pool (thumbnail). This is fatal."),
-            ),
+            thread_pool: OnceLock::new(),
+            prefetch_pool: OnceLock::new(),
+            thumbnail_pool: OnceLock::new(),
             file_watcher: None,
             config: crate::config::AppConfig::load(),
-        }
+        };
+        crate::startup::log("App::new done");
+        app
+    }
+
+    pub(crate) fn thread_pool(&self) -> Arc<ThreadPool> {
+        self.thread_pool
+            .get_or_init(|| {
+                Arc::new(
+                    rayon::ThreadPoolBuilder::new()
+                        .num_threads(2)
+                        .thread_name(|i| format!("spedimage-main-{}", i))
+                        .build()
+                        .expect("Failed to initialize Rayon thread pool (main)."),
+                )
+            })
+            .clone()
+    }
+
+    pub(crate) fn prefetch_pool(&self) -> Arc<ThreadPool> {
+        self.prefetch_pool
+            .get_or_init(|| {
+                Arc::new(
+                    rayon::ThreadPoolBuilder::new()
+                        .num_threads(1)
+                        .thread_name(|i| format!("spedimage-prefetch-{}", i))
+                        .build()
+                        .expect("Failed to initialize Rayon thread pool (prefetch)."),
+                )
+            })
+            .clone()
+    }
+
+    pub(crate) fn thumbnail_pool(&self) -> Arc<ThreadPool> {
+        self.thumbnail_pool
+            .get_or_init(|| {
+                Arc::new(
+                    rayon::ThreadPoolBuilder::new()
+                        .num_threads(4)
+                        .thread_name(|i| format!("spedimage-thumbnail-{}", i))
+                        .build()
+                        .expect("Failed to initialize Rayon thread pool (thumbnail)."),
+                )
+            })
+            .clone()
+    }
+
+    pub(crate) fn prefetch_cache(&self) -> Arc<Cache<PathBuf, Arc<Vec<ImageData>>>> {
+        self.navigation
+            .prefetch_cache
+            .get_or_init(|| {
+                Arc::new(
+                    Cache::builder()
+                        .max_capacity(constants::PREFETCH_CACHE_BYTES)
+                        .weigher(|_k, v: &Arc<Vec<ImageData>>| {
+                            let mut size: u64 = 0;
+                            for frame in v.iter() {
+                                size = size.saturating_add(frame.rgba_data.len() as u64);
+                            }
+                            size.min(u32::MAX as u64) as u32
+                        })
+                        .build(),
+                )
+            })
+            .clone()
     }
 }
 
@@ -298,6 +305,7 @@ mod tests {
             histogram: None,
             exif_loaded: true,
             is_downsampled: false,
+            orientation_deg: 0,
             gps_coords: None,
             color_space: None,
         });

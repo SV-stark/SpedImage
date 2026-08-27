@@ -85,6 +85,8 @@ pub struct ImageAdjustments {
     pub contrast: f32,
     pub saturation: f32,
     pub rotation: f32,
+    /// EXIF orientation applied before user rotation (radians).
+    pub pre_rotation: f32,
     pub crop_rect: [f32; 4],
     pub crop_rect_target: [f32; 4],
     pub crop_rect_actual: Option<[f32; 4]>,
@@ -110,6 +112,7 @@ impl Default for ImageAdjustments {
             contrast: 1.0,
             saturation: 1.0,
             rotation: 0.0,
+            pre_rotation: 0.0,
             crop_rect: [0.0, 0.0, 1.0, 1.0],
             crop_rect_target: [0.0, 0.0, 1.0, 1.0],
             crop_rect_actual: None,
@@ -130,8 +133,21 @@ impl Default for ImageAdjustments {
     }
 }
 
+/// One slot of the streaming GIF texture ring.
+pub struct GifSlot {
+    /// Logical frame index this slot currently holds.
+    pub index: usize,
+    pub texture: Texture,
+    pub bind_group: Arc<BindGroup>,
+    pub bind_group_nearest: Arc<BindGroup>,
+    pub width: u32,
+    pub height: u32,
+}
+
 pub struct ThumbnailEntry {
     pub path: std::path::PathBuf,
+    /// Position in the current directory listing (insert-order key).
+    pub order: usize,
     pub texture: Texture,
     pub bind_group: Arc<BindGroup>,
     pub uniform_buffer: wgpu::Buffer,

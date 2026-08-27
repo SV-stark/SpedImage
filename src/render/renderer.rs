@@ -24,8 +24,12 @@ pub struct Renderer {
     pub(crate) image_bind_group: Option<Arc<BindGroup>>,
     pub(crate) image_bind_group_nearest: Option<Arc<BindGroup>>,
     pub(crate) image_bind_group_prev: Option<Arc<BindGroup>>,
-    pub gif_textures: Vec<(Texture, Arc<BindGroup>, Arc<BindGroup>)>,
+    pub gif_ring: Vec<Option<super::types::GifSlot>>,
     pub(crate) texture_pool: Vec<Texture>,
+    pub(crate) texture_pool_bytes: u64,
+    /// True once the current image texture has a full mip chain.
+    pub(crate) image_mipmapped: bool,
+    pub(crate) mip_pipeline: RenderPipeline,
     pub(crate) config: SurfaceConfiguration,
     pub(crate) image_size: Option<(u32, u32)>,
     pub scale_factor: f64,
@@ -38,10 +42,20 @@ pub struct Renderer {
     pub(crate) last_thumb_state: Option<(u32, u32, f32)>,
 }
 
+/// VRAM budget for recycled image textures.
+const TEXTURE_POOL_MAX_BYTES: u64 = 64 * 1024 * 1024;
+
+fn texture_bytes(t: &Texture) -> u64 {
+    let s = t.size();
+    s.width as u64 * s.height as u64 * 4
+}
+
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Result<Self> {
+        crate::startup::log("Renderer::new enter");
         let (device, queue, surface, adapter) =
             Self::create_device_and_surface(window.clone()).await?;
+        crate::startup::log("Renderer::new after device/surface");
 
         let capabilities = surface.get_capabilities(&adapter);
         let format = capabilities
@@ -113,6 +127,9 @@ impl Renderer {
         let egui_renderer =
             egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
 
+        let mip_pipeline = Self::create_mip_pipeline(&device);
+        crate::startup::log("Renderer::new done");
+
         Ok(Self {
             _window: window.clone(),
             device,
@@ -128,8 +145,13 @@ impl Renderer {
             image_bind_group: None,
             image_bind_group_nearest: None,
             image_bind_group_prev: None,
-            gif_textures: Vec::new(),
+            gif_ring: (0..crate::app::constants::GIF_RING_SLOTS)
+                .map(|_| None)
+                .collect(),
             texture_pool: Vec::new(),
+            texture_pool_bytes: 0,
+            image_mipmapped: false,
+            mip_pipeline,
             config,
             image_size: None,
             scale_factor: window.scale_factor(),
@@ -152,6 +174,7 @@ impl Drop for Renderer {
         for tex in self.texture_pool.drain(..) {
             tex.destroy();
         }
+        self.texture_pool_bytes = 0;
 
         // Destroy all thumbnail textures and uniform buffers
         for thumb in self.thumbnails.drain(..) {
@@ -159,9 +182,11 @@ impl Drop for Renderer {
             thumb.uniform_buffer.destroy();
         }
 
-        // Destroy all GIF textures
-        for (tex, _, _) in self.gif_textures.drain(..) {
-            tex.destroy();
+        // Destroy all GIF ring textures
+        for slot in self.gif_ring.iter_mut() {
+            if let Some(s) = slot.take() {
+                s.texture.destroy();
+            }
         }
     }
 }
@@ -175,14 +200,28 @@ impl Renderer {
         wgpu::Surface<'static>,
         wgpu::Adapter,
     )> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        // Fastest cold start on Windows: DX12 only (no Vulkan ICD enumeration,
+        // no GL driver probing). Matches Photos' D3D path and is ~100-300 ms
+        // faster than Vulkan|DX12 on Intel iGPUs.
+        #[cfg(windows)]
+        let backends = wgpu::Backends::DX12;
+        #[cfg(not(windows))]
+        let backends = wgpu::Backends::PRIMARY;
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends,
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        });
         let surface = instance
             .create_surface(window.clone())
             .context("Failed to create WGPU surface")?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::None,
+                // Prefer the integrated/low-power GPU — it is the one driving
+                // the window on this laptop and avoids enumerating the (absent)
+                // discrete adapter. Mirrors the OS compositor's choice.
+                power_preference: wgpu::PowerPreference::LowPower,
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
@@ -291,7 +330,9 @@ impl Renderer {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    // Decoded buffers use straight alpha; premultiplied blending
+                    // darkened transparent edges (PNG/WebP halos).
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -332,7 +373,7 @@ impl Renderer {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -352,6 +393,72 @@ impl Renderer {
         });
 
         Ok((pipeline, crop_pipeline))
+    }
+
+    /// Pipeline used for the lazy GPU mipmap blit chain.
+    fn create_mip_pipeline(device: &wgpu::Device) -> RenderPipeline {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Mipmap Blit Shader"),
+            source: wgpu::ShaderSource::Wgsl(crate::render::shaders::MIP_SHADER.into()),
+        });
+
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Mipmap Blit Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Mipmap Blit Pipeline Layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Mipmap Blit Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vertex_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fragment_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    // Must match the mipped image texture format.
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        })
     }
 
     fn create_buffers(device: &wgpu::Device) -> (wgpu::Buffer, wgpu::Buffer) {
@@ -395,6 +502,7 @@ impl Renderer {
             && let Some(old_prev) = self.image_texture_prev.replace(current_tex)
         {
             if self.texture_pool.len() < 4 {
+                self.texture_pool_bytes += texture_bytes(&old_prev);
                 self.texture_pool.push(old_prev);
             } else {
                 old_prev.destroy();
@@ -407,8 +515,13 @@ impl Renderer {
             let size = t.size();
             size.width == width && size.height == height
         }) {
-            recycled_texture = Some(self.texture_pool.remove(pos));
+            let tex = self.texture_pool.remove(pos);
+            self.texture_pool_bytes -= texture_bytes(&tex);
+            recycled_texture = Some(tex);
         }
+        self.enforce_pool_budget();
+
+        self.image_mipmapped = false;
 
         let mip_level_count = 1;
 
@@ -462,58 +575,8 @@ impl Renderer {
             .map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
         let actual_view_prev = view_prev.as_ref().or(black_view.as_ref()).unwrap();
 
-        let bind_group_layout = self.pipeline.get_bind_group_layout(0);
-
-        let bind_group = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Image Bind Group"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(
-                        self.uniform_buffer.as_entire_buffer_binding(),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(actual_view_prev),
-                },
-            ],
-        }));
-
-        let bind_group_nearest =
-            Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Image Bind Group (Nearest)"),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Buffer(
-                            self.uniform_buffer.as_entire_buffer_binding(),
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler_nearest),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(actual_view_prev),
-                    },
-                ],
-            }));
+        let (bind_group, bind_group_nearest) =
+            self.create_image_bind_groups(&view, actual_view_prev);
 
         self.image_texture = Some(texture);
         self.image_bind_group = Some(bind_group);
@@ -545,6 +608,228 @@ impl Renderer {
         Ok(())
     }
 
+    /// Destroy oldest pooled textures until the pool fits its byte budget.
+    fn enforce_pool_budget(&mut self) {
+        while self.texture_pool_bytes > TEXTURE_POOL_MAX_BYTES {
+            let Some(tex) = self.texture_pool.first() else {
+                break;
+            };
+            self.texture_pool_bytes -= texture_bytes(tex);
+            let tex = self.texture_pool.remove(0);
+            tex.destroy();
+        }
+    }
+
+    fn create_image_bind_groups(
+        &self,
+        view: &wgpu::TextureView,
+        view_prev: &wgpu::TextureView,
+    ) -> (Arc<BindGroup>, Arc<BindGroup>) {
+        let layout = self.pipeline.get_bind_group_layout(0);
+        let linear = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Image Bind Group"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(
+                        self.uniform_buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(view_prev),
+                },
+            ],
+        }));
+        let nearest = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Image Bind Group (Nearest)"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(
+                        self.uniform_buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler_nearest),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(view_prev),
+                },
+            ],
+        }));
+        (linear, nearest)
+    }
+
+    /// Lazily build a full mip chain for the current image texture.
+    ///
+    /// The texture is recreated with `TEXTURE_BINDING | COPY_DST | RENDER_ATTACHMENT`
+    /// usage, level 0 is re-uploaded from the CPU buffer, and each successive
+    /// level is downsampled on the GPU with a blit pass. Zero cost until the
+    /// image is actually displayed minified beyond ~50%.
+    pub fn ensure_mipmapped(&mut self, image_data: &ImageData) -> Result<()> {
+        if self.image_mipmapped {
+            return Ok(());
+        }
+        let Some(old_tex) = self.image_texture.as_ref() else {
+            return Ok(());
+        };
+        let (width, height) = (old_tex.width(), old_tex.height());
+        if width == 0 || height == 0 || width > 8192 || height > 8192 {
+            return Ok(());
+        }
+
+        let levels = width.max(height).ilog2() + 1;
+        if levels <= 1 {
+            self.image_mipmapped = true;
+            return Ok(());
+        }
+
+        let new_tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Image Texture (Mipped)"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: levels,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &new_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            image_data.as_rgba(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        // Blit chain: downsample level i-1 into level i.
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Mipmap Generation"),
+            });
+        for level in 1..levels {
+            let src_view = new_tex.create_view(&wgpu::TextureViewDescriptor {
+                base_mip_level: level - 1,
+                mip_level_count: Some(1),
+                ..Default::default()
+            });
+            let dst_view = new_tex.create_view(&wgpu::TextureViewDescriptor {
+                base_mip_level: level,
+                mip_level_count: Some(1),
+                ..Default::default()
+            });
+            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Mipmap Blit Bind Group"),
+                layout: &self.mip_pipeline.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&src_view),
+                    },
+                ],
+            });
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Mipmap Blit Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &dst_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.mip_pipeline);
+            pass.set_bind_group(0, &bg, &[]);
+            pass.draw(0..6, 0..1);
+        }
+        self.queue.submit([encoder.finish()]);
+
+        // Swap in the mipped texture and rebuild bind groups against it.
+        let full_view = new_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let prev_view = self
+            .image_texture_prev
+            .as_ref()
+            .map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
+        let black_fallback;
+        let actual_view_prev = match &prev_view {
+            Some(v) => v,
+            None => {
+                let t = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("Black Texture"),
+                    size: wgpu::Extent3d {
+                        width: 1,
+                        height: 1,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                black_fallback = t.create_view(&wgpu::TextureViewDescriptor::default());
+                &black_fallback
+            }
+        };
+
+        old_tex.destroy();
+        let (bg_linear, bg_nearest) = self.create_image_bind_groups(&full_view, actual_view_prev);
+        self.image_texture = Some(new_tex);
+        self.image_bind_group = Some(bg_linear);
+        self.image_bind_group_nearest = Some(bg_nearest);
+        self.image_mipmapped = true;
+
+        Ok(())
+    }
+
     pub(crate) fn encode_image(
         &self,
         adjustments: &ImageAdjustments,
@@ -558,7 +843,8 @@ impl Renderer {
             1.0
         };
 
-        let rot_deg = (adjustments.rotation.to_degrees() % 360.0).round().abs();
+        let total_rotation = adjustments.rotation + adjustments.pre_rotation;
+        let rot_deg = (total_rotation.to_degrees() % 360.0).round().abs();
         let is_sideways = (rot_deg - 90.0).abs() < 1.0 || (rot_deg - 270.0).abs() < 1.0;
         let raw_aspect = self
             .image_size
@@ -587,7 +873,7 @@ impl Renderer {
         };
 
         let uniforms = Uniforms {
-            rotation: adjustments.rotation,
+            rotation: total_rotation,
             aspect_ratio,
             window_aspect_ratio,
             crop_x: adjustments.crop_rect[0],
@@ -657,11 +943,18 @@ impl Renderer {
         }
     }
 
-    pub fn swap_gif_frame(&mut self, idx: usize) {
-        if let Some((tex, bg_linear, bg_nearest)) = self.gif_textures.get(idx) {
-            self.image_size = Some((tex.width(), tex.height()));
-            self.image_bind_group = Some(Arc::clone(bg_linear));
-            self.image_bind_group_nearest = Some(Arc::clone(bg_nearest));
+    /// Point the image bind groups at ring slot `index` if that frame has
+    /// arrived. Returns false when playback must wait for the streamer.
+    pub fn swap_gif_frame(&mut self, index: usize) -> bool {
+        let pos = index % crate::app::constants::GIF_RING_SLOTS;
+        match &self.gif_ring[pos] {
+            Some(slot) if slot.index == index => {
+                self.image_size = Some((slot.width, slot.height));
+                self.image_bind_group = Some(Arc::clone(&slot.bind_group));
+                self.image_bind_group_nearest = Some(Arc::clone(&slot.bind_group_nearest));
+                true
+            }
+            _ => false,
         }
     }
 

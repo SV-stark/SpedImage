@@ -7,7 +7,7 @@ impl SpedImageApp {
     pub(crate) fn load_directory_async(&self, dir: PathBuf) {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
-        let pool = self.thread_pool.clone();
+        let pool = self.thread_pool().clone();
 
         pool.spawn(move || {
             let mut files = Vec::new();
@@ -35,13 +35,33 @@ impl SpedImageApp {
 
         self.thumbnails.paths = files.clone();
 
+        // Position lookup shared by retention, re-indexing and workers.
+        use rustc_hash::FxHashMap;
+        let index: FxHashMap<&PathBuf, usize> =
+            files.iter().enumerate().map(|(i, p)| (p, i)).collect();
+
+        // Incremental refresh: keep textures for files still present,
+        // drop only removed ones, decode only new ones.
         if let Some(ref mut r) = self.renderer {
-            r.clear_thumbnails();
+            r.thumbnails.retain(|t| index.contains_key(&t.path));
+            for thumb in r.thumbnails.iter_mut() {
+                if let Some(i) = index.get(&thumb.path) {
+                    thumb.order = *i;
+                }
+            }
+            r.thumbnails.sort_by_key(|t| t.order);
+            r.last_thumb_state = None;
         }
+
+        let existing: std::collections::HashSet<&PathBuf> = self
+            .renderer
+            .as_ref()
+            .map(|r| r.thumbnails.iter().map(|t| &t.path).collect())
+            .unwrap_or_default();
 
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
-        let pool = self.thumbnail_pool.clone();
+        let pool = self.thumbnail_pool().clone();
 
         // Current generation for thumbnail batch cancellation
         use std::sync::atomic::Ordering;
@@ -52,10 +72,14 @@ impl SpedImageApp {
             + 1;
         let current_gen = self.navigation.thumb_generation.clone();
 
-        // Create a work queue
+        // Work queue of (path, order) pairs that still need a texture.
         let (tx_work, rx_work) = crossbeam_channel::unbounded();
-        for path in files.into_iter().take(MAX_THUMBNAILS) {
-            tx_work.send(path).ok();
+        for path in files.iter().take(MAX_THUMBNAILS) {
+            if existing.contains(&path) {
+                continue;
+            }
+            let order = index.get(&path).copied().unwrap_or(usize::MAX);
+            tx_work.send((path.clone(), order)).ok();
         }
         drop(tx_work); // Close producer so workers exit when queue is empty
 
@@ -67,16 +91,20 @@ impl SpedImageApp {
             let gen_check = current_gen.clone();
 
             pool.spawn(move || {
-                while let Ok(path_clone) = rx.recv() {
+                while let Ok((path_clone, order)) = rx.recv() {
                     // Early exit check
                     if gen_check.load(Ordering::Relaxed) != generation {
                         break;
                     }
 
-                    if let Ok(frames) = ImageBackend::load_and_downsample(
+                    if let Ok(frames) = ImageBackend::load_and_downsample_with(
                         &path_clone,
                         THUMB_LOAD_SIZE,
                         THUMB_LOAD_SIZE,
+                        crate::image::LoadOptions {
+                            frames: crate::image::FrameLimit::First,
+                            bake_orientation: true,
+                        },
                     ) && let Some(frame) = frames.first()
                         && let Some(ref p) = proxy
                     {
@@ -93,6 +121,7 @@ impl SpedImageApp {
                                 frame.rgba_data.clone(),
                                 frame.width,
                                 frame.height,
+                                order,
                             ),
                         );
                     }

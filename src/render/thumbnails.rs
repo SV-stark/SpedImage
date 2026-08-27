@@ -16,6 +16,7 @@ impl Renderer {
         rgba: &[u8],
         width: u32,
         height: u32,
+        order: usize,
     ) -> Result<()> {
         let texture = self.device.create_texture(&TextureDescriptor {
             label: Some("Thumbnail Texture"),
@@ -86,14 +87,18 @@ impl Renderer {
             ],
         }));
 
-        self.thumbnails.push(ThumbnailEntry {
+        let entry = ThumbnailEntry {
             path,
+            order,
             texture,
             bind_group,
             uniform_buffer,
             width,
             height,
-        });
+        };
+        // Keep the list ordered by directory position without a full sort.
+        let pos = self.thumbnails.partition_point(|t| t.order < order);
+        self.thumbnails.insert(pos, entry);
         self.last_thumb_state = None;
 
         Ok(())

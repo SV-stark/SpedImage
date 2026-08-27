@@ -12,6 +12,15 @@ pub struct AppConfig {
     pub last_open_dir: Option<String>,
     pub max_preview_dimension: Option<u32>, // None = auto from window
     pub scroll_to_zoom: Option<bool>,
+    /// Re-decode at full resolution when the user zooms past the preview's
+    /// native resolution. Defaults to true.
+    pub progressive_refinement: Option<bool>,
+}
+
+impl AppConfig {
+    pub fn refinement_enabled(&self) -> bool {
+        self.progressive_refinement.unwrap_or(true)
+    }
 }
 
 impl AppConfig {
@@ -35,10 +44,10 @@ impl AppConfig {
                 let _ = std::fs::create_dir_all(parent);
             }
             let tmp_path = path.with_extension("tmp");
-            if let Ok(json) = serde_json::to_string_pretty(self) {
-                if std::fs::write(&tmp_path, json).is_ok() {
-                    let _ = std::fs::rename(&tmp_path, &path);
-                }
+            if let Ok(json) = serde_json::to_string_pretty(self)
+                && std::fs::write(&tmp_path, json).is_ok()
+            {
+                let _ = std::fs::rename(&tmp_path, &path);
             }
         }
     }

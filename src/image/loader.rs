@@ -5,7 +5,44 @@ use zune_image::image::Image;
 
 use super::types::{ImageData, ImageFormatType};
 
+/// How many frames to decode from animated formats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameLimit {
+    /// Decode every frame.
+    All,
+    /// Stop after the first frame (thumbnails).
+    First,
+}
+
+/// Optional work toggles applied while decoding.
+#[derive(Debug, Clone, Copy)]
+pub struct LoadOptions {
+    pub frames: FrameLimit,
+    /// When false, EXIF orientation is reported via `ImageData::orientation_deg`
+    /// instead of being baked into the pixel buffer (the GPU rotates instead).
+    pub bake_orientation: bool,
+}
+
+impl Default for LoadOptions {
+    fn default() -> Self {
+        Self {
+            frames: FrameLimit::All,
+            bake_orientation: true,
+        }
+    }
+}
+
 pub struct ImageLoader;
+
+/// Map an EXIF orientation value to a rotation in degrees.
+pub(crate) fn exif_orientation_to_degrees(o: u32) -> Option<u16> {
+    match o {
+        3 => Some(180),
+        6 => Some(90),
+        8 => Some(270),
+        _ => None,
+    }
+}
 
 impl ImageLoader {
     /// Load an image from a file path
@@ -13,6 +50,16 @@ impl ImageLoader {
         path: &Path,
         max_w: Option<u32>,
         max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        Self::load_with(path, max_w, max_h, LoadOptions::default())
+    }
+
+    /// Load an image with explicit decode options
+    pub fn load_with(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+        opts: LoadOptions,
     ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         let ext = path
             .extension()
@@ -29,9 +76,11 @@ impl ImageLoader {
         };
 
         let (image_frames, format_type) = if ext == "gif" {
-            Self::load_gif(path, max_w, max_h)?
+            Self::load_gif(path, max_w, max_h, opts)?
+        } else if ext == "jpg" || ext == "jpeg" {
+            Self::load_jpeg(path, max_w, max_h, opts, orientation)?
         } else if ext == "svg" {
-            Self::load_svg(path)?
+            Self::load_svg(path, max_w, max_h)?
         } else if ext == "jxl" {
             Self::load_jxl(path)?
         } else if ext == "qoi" {
@@ -70,14 +119,7 @@ impl ImageLoader {
                 _ => (0, 0),
             };
 
-            let mut options = zune_core::options::DecoderOptions::default();
-            if target_mw > 0 && target_mh > 0 {
-                options = options
-                    .set_max_width(target_mw as usize)
-                    .set_max_height(target_mh as usize);
-            }
-
-            let mut img = Image::read(cursor, options)
+            let mut img = Image::read(cursor, zune_core::options::DecoderOptions::default())
                 .map_err(|e| eyre!("Failed to decode image {path:?}: {e:?}"))?;
 
             // Ensure we are in RGBA8
@@ -85,7 +127,8 @@ impl ImageLoader {
 
             let (src_w, src_h) = (img.dimensions().0 as u32, img.dimensions().1 as u32);
             let icc = img.metadata().icc_chunk().map(|s| s.to_vec());
-            let mut rgba = img.flatten_to_u8()[0].clone();
+            // Take ownership instead of cloning: saves a full-buffer copy per image.
+            let mut rgba = img.flatten_to_u8().swap_remove(0);
 
             let mut final_w = src_w;
             let mut final_h = src_h;
@@ -118,20 +161,19 @@ impl ImageLoader {
                 tracing::warn!("Failed to apply color profile: {:?}", e);
             }
 
-            // Apply EXIF rotation to downsampled buffer
-            if let Some(o) = orientation {
-                let deg = match o {
-                    3 => Some(180),
-                    6 => Some(90),
-                    8 => Some(270),
-                    _ => None,
-                };
-                if let Some(d) = deg {
+            // Apply EXIF rotation: baked into the buffer, or deferred to the GPU.
+            let mut orientation_deg = 0u16;
+            if let Some(o) = orientation
+                && let Some(d) = exif_orientation_to_degrees(o)
+            {
+                if opts.bake_orientation {
                     let (rotated_rgba, rotated_w, rotated_h) =
-                        rotate_rgba(&rgba, final_w, final_h, d);
+                        rotate_rgba(&rgba, final_w, final_h, d as u32);
                     rgba = rotated_rgba;
                     final_w = rotated_w;
                     final_h = rotated_h;
+                } else {
+                    orientation_deg = d;
                 }
             }
 
@@ -148,6 +190,7 @@ impl ImageLoader {
                     exif_loaded: false,
                     histogram: None,
                     is_downsampled,
+                    orientation_deg,
                     gps_coords: None,
                     color_space: None,
                 }],
@@ -158,9 +201,113 @@ impl ImageLoader {
         Ok((image_frames, format_type))
     }
 
+    fn load_jpeg(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+        opts: LoadOptions,
+        orientation: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        let file = std::fs::File::open(path)
+            .map_err(|e| eyre!("Failed to open JPEG file {path:?}: {e:?}"))?;
+        let mmap = unsafe {
+            memmap2::Mmap::map(&file)
+                .map_err(|e| eyre!("Failed to memory map JPEG {path:?}: {e:?}"))?
+        };
+
+        let decoded =
+            libjpeg_turbo_rs::decompress_to(&mmap[..], libjpeg_turbo_rs::PixelFormat::Rgba)
+                .map_err(|e| eyre!("Failed to decode JPEG {path:?}: {e:?}"))?;
+
+        let src_w = decoded.width as u32;
+        let src_h = decoded.height as u32;
+        let mut rgba = decoded.data;
+
+        let (target_mw, target_mh) = match (max_w, max_h) {
+            (Some(mw), Some(mh)) => {
+                let deg = orientation.and_then(exif_orientation_to_degrees);
+                if matches!(deg, Some(90) | Some(270)) {
+                    (mh, mw)
+                } else {
+                    (mw, mh)
+                }
+            }
+            _ => (0, 0),
+        };
+
+        let mut final_w = src_w;
+        let mut final_h = src_h;
+        let mut is_downsampled = false;
+
+        if (max_w.is_some() || max_h.is_some())
+            && target_mw > 0
+            && target_mh > 0
+            && (src_w > target_mw || src_h > target_mh)
+        {
+            let ratio = (src_w as f32 / target_mw as f32).max(src_h as f32 / target_mh as f32);
+            let dst_w = ((src_w as f32 / ratio).round() as u32).max(1);
+            let dst_h = ((src_h as f32 / ratio).round() as u32).max(1);
+
+            use fast_image_resize as fr;
+            let src_image = fr::images::ImageRef::new(src_w, src_h, &rgba, fr::PixelType::U8x4)
+                .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
+            let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
+            let mut resizer = super::processing::ImageProcessor::create_simd_resizer();
+            resizer
+                .resize(&src_image, &mut dst_image, None)
+                .map_err(|e| eyre!("Resize failed: {e:?}"))?;
+
+            rgba = dst_image.into_vec();
+            final_w = dst_w;
+            final_h = dst_h;
+            is_downsampled = true;
+        }
+
+        // Apply EXIF rotation: baked into the buffer, or deferred to the GPU.
+        let mut orientation_deg = 0u16;
+        if let Some(o) = orientation
+            && let Some(d) = exif_orientation_to_degrees(o)
+        {
+            if opts.bake_orientation {
+                let (rotated_rgba, rotated_w, rotated_h) =
+                    rotate_rgba(&rgba, final_w, final_h, d as u32);
+                rgba = rotated_rgba;
+                final_w = rotated_w;
+                final_h = rotated_h;
+            } else {
+                orientation_deg = d;
+            }
+        }
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: Arc::new(rgba),
+                width: final_w,
+                height: final_h,
+                format: ImageFormatType::Jpeg,
+                file_size_bytes: file.metadata()?.len(),
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: false,
+                histogram: None,
+                is_downsampled,
+                orientation_deg,
+                gps_coords: None,
+                color_space: None,
+            }],
+            ImageFormatType::Jpeg,
+        ))
+    }
+
     fn apply_color_profile(rgba: &mut [u8], icc_data: &[u8]) -> Result<()> {
         let in_profile = qcms::Profile::new_from_slice(icc_data, false)
             .ok_or_else(|| eyre!("Failed to parse ICC profile"))?;
+
+        // Identity transform: skip the expensive per-pixel pass entirely.
+        if in_profile.is_sRGB() {
+            return Ok(());
+        }
 
         let out_profile = qcms::Profile::new_sRGB();
 
@@ -241,6 +388,7 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
             }],
@@ -248,7 +396,11 @@ impl ImageLoader {
         ))
     }
 
-    fn load_svg(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    fn load_svg(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use resvg::tiny_skia;
         use resvg::usvg;
 
@@ -260,8 +412,23 @@ impl ImageLoader {
             .map_err(|e| eyre!("Failed to parse SVG: {e:?}"))?;
 
         let size = rtree.size();
-        let width = size.width() as u32;
-        let height = size.height() as u32;
+        let mut width = size.width() as u32;
+        let mut height = size.height() as u32;
+
+        // Rasterize directly at the requested size instead of rendering at
+        // intrinsic resolution and resizing on the CPU afterwards.
+        let mut transform = tiny_skia::Transform::default();
+        if let (Some(mw), Some(mh)) = (max_w, max_h)
+            && (width > mw || height > mh)
+            && width > 0
+            && height > 0
+        {
+            let ratio = (width as f32 / mw as f32).max(height as f32 / mh as f32);
+            let scale = 1.0 / ratio;
+            width = ((width as f32 * scale).round() as u32).max(1);
+            height = ((height as f32 * scale).round() as u32).max(1);
+            transform = tiny_skia::Transform::from_scale(scale, scale);
+        }
 
         let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or_else(|| {
             eyre!(
@@ -271,11 +438,7 @@ impl ImageLoader {
             )
         })?;
 
-        resvg::render(
-            &rtree,
-            tiny_skia::Transform::default(),
-            &mut pixmap.as_mut(),
-        );
+        resvg::render(&rtree, transform, &mut pixmap.as_mut());
 
         let file_size = std::fs::metadata(path)?.len();
 
@@ -292,6 +455,7 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
             }],
@@ -333,7 +497,7 @@ impl ImageLoader {
 
                 let mut img = Image::from_u8(&v, width as usize, height as usize, input_space);
                 img.convert_color(ColorSpace::RGBA)?;
-                img.flatten_to_u8()[0].clone()
+                img.flatten_to_u8().swap_remove(0)
             }
             _ => return Err(eyre!("Unsupported TIFF bit depth")),
         };
@@ -353,6 +517,7 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
             }],
@@ -399,6 +564,7 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
             }],
@@ -410,6 +576,7 @@ impl ImageLoader {
         path: &Path,
         max_w: Option<u32>,
         max_h: Option<u32>,
+        opts: LoadOptions,
     ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use gif::DecodeOptions;
         let file = std::fs::File::open(path)?;
@@ -495,7 +662,7 @@ impl ImageLoader {
                 let y = ft + i;
                 if y < h as usize {
                     let canvas_start = (y * w as usize + fl) * 4;
-                    for (p, pixel) in line.chunks_exact(4).enumerate() {
+                    for (p, pixel) in line.as_chunks::<4>().0.iter().enumerate() {
                         let dst_idx = canvas_start + p * 4;
                         if dst_idx + 4 <= canvas.len() {
                             let alpha = pixel[3];
@@ -541,9 +708,15 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled,
+                orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
             });
+
+            // Thumbnail fast-path: one composited frame is enough.
+            if opts.frames == FrameLimit::First {
+                break;
+            }
         }
 
         Ok((image_frames, ImageFormatType::Gif))
@@ -654,6 +827,7 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: true,
+                orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
             }],
@@ -662,17 +836,18 @@ impl ImageLoader {
     }
 
     fn load_qoi(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
-        let data =
-            std::fs::read(path).map_err(|e| eyre!("Failed to read QOI file {path:?}: {e:?}"))?;
+        let file = std::fs::File::open(path)
+            .map_err(|e| eyre!("Failed to open QOI file {path:?}: {e:?}"))?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
         let (header, decoded) =
-            qoi::decode_to_vec(&data).map_err(|e| eyre!("QOI decode error: {e:?}"))?;
-        let file_size = data.len() as u64;
+            qoi::decode_to_vec(&mmap[..]).map_err(|e| eyre!("QOI decode error: {e:?}"))?;
+        let file_size = mmap.len() as u64;
 
         let rgba_data = match header.channels {
             qoi::Channels::Rgb => {
                 let mut rgba =
                     Vec::with_capacity(header.width as usize * header.height as usize * 4);
-                for rgb in decoded.chunks_exact(3) {
+                for rgb in decoded.as_chunks::<3>().0 {
                     rgba.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
                 }
                 rgba
@@ -693,6 +868,7 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
             }],
@@ -736,6 +912,7 @@ impl ImageLoader {
                 exif_loaded: true,
                 histogram: None,
                 is_downsampled: false,
+                orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
             }],
@@ -799,5 +976,93 @@ fn rotate_rgba(rgba: &[u8], width: u32, height: u32, degrees: u32) -> (Vec<u8>, 
         (out, height, width)
     } else {
         (rgba.to_vec(), width, height)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_exif_orientation_mapping() {
+        assert_eq!(exif_orientation_to_degrees(1), None);
+        assert_eq!(exif_orientation_to_degrees(2), None);
+        assert_eq!(exif_orientation_to_degrees(3), Some(180));
+        assert_eq!(exif_orientation_to_degrees(6), Some(90));
+        assert_eq!(exif_orientation_to_degrees(8), Some(270));
+        assert_eq!(exif_orientation_to_degrees(0), None);
+        assert_eq!(exif_orientation_to_degrees(9), None);
+    }
+
+    /// Build a tiny 3-frame animated GIF in the temp dir.
+    fn write_test_gif(path: &Path) {
+        use gif::Frame;
+        use std::fs::File;
+
+        let mut encoder = gif::Encoder::new(
+            File::create(path).expect("create gif"),
+            4,
+            4,
+            &[0, 0, 0, 255, 255, 255],
+        )
+        .expect("encoder");
+        encoder.set_repeat(gif::Repeat::Infinite).ok();
+        for i in 0..3u8 {
+            let buffer = vec![i; 16];
+            encoder
+                .write_frame(&Frame {
+                    width: 4,
+                    height: 4,
+                    delay: 2,
+                    dispose: gif::DisposalMethod::Keep,
+                    transparent: None,
+                    needs_user_input: false,
+                    top: 0,
+                    left: 0,
+                    interlaced: false,
+                    palette: None,
+                    buffer: std::borrow::Cow::Owned(buffer),
+                })
+                .expect("write frame");
+        }
+    }
+
+    #[test]
+    fn test_gif_first_frame_limit_decodes_one_frame() {
+        let dir = std::env::temp_dir().join(format!("spedimage_test_gif_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let path = dir.join("anim.gif");
+        write_test_gif(&path);
+
+        // First-frame mode (thumbnails / streaming display path).
+        let (frames, format) = ImageLoader::load_with(
+            &path,
+            None,
+            None,
+            LoadOptions {
+                frames: FrameLimit::First,
+                bake_orientation: true,
+            },
+        )
+        .expect("load first");
+        assert_eq!(format, ImageFormatType::Gif);
+        assert_eq!(
+            frames.len(),
+            1,
+            "FrameLimit::First must stop after one frame"
+        );
+
+        // Default mode still returns every frame.
+        let (frames, _) = ImageLoader::load(&path, None, None).expect("load all");
+        assert_eq!(frames.len(), 3);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_load_options_default_bakes_orientation() {
+        let opts = LoadOptions::default();
+        assert!(opts.bake_orientation);
+        assert_eq!(opts.frames, FrameLimit::All);
     }
 }

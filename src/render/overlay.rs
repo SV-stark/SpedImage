@@ -979,101 +979,128 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn preload_gif_textures(&mut self, frames: &[crate::image::ImageData]) -> Result<()> {
-        for (tex, _, _) in self.gif_textures.drain(..) {
-            tex.destroy();
-        }
+    /// Upload a streamed GIF frame into its ring slot, recycling the texture
+    /// when the slot already holds one of matching size.
+    pub fn upload_gif_frame(
+        &mut self,
+        index: usize,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> Result<()> {
+        use crate::app::constants::GIF_RING_SLOTS;
+        let pos = index % GIF_RING_SLOTS;
         let layout = self.pipeline.get_bind_group_layout(0);
-        for frame in frames {
-            let (width, height) = (frame.width, frame.height);
-            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("GIF Frame Texture"),
-                size: wgpu::Extent3d {
+
+        match &mut self.gif_ring[pos] {
+            Some(slot) if slot.index == index && slot.width == width && slot.height == height => {
+                // Loop pass: refresh pixel data of the existing texture.
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &slot.texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    rgba,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(width * 4),
+                        rows_per_image: Some(height),
+                    },
+                    wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+            slot => {
+                if let Some(old) = slot.take() {
+                    old.texture.destroy();
+                }
+                let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("GIF Frame Texture"),
+                    size: wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    rgba,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(width * 4),
+                        rows_per_image: Some(height),
+                    },
+                    wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let make_bg = |sampler: &wgpu::Sampler| {
+                    Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("GIF Frame Bind Group"),
+                        layout: &layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::Buffer(
+                                    self.uniform_buffer.as_entire_buffer_binding(),
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(sampler),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: wgpu::BindingResource::TextureView(&view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 3,
+                                resource: wgpu::BindingResource::TextureView(&view),
+                            },
+                        ],
+                    }))
+                };
+                let bg_linear = make_bg(&self.sampler);
+                let bg_nearest = make_bg(&self.sampler_nearest);
+
+                *slot = Some(super::types::GifSlot {
+                    index,
+                    texture,
+                    bind_group: bg_linear,
+                    bind_group_nearest: bg_nearest,
                     width,
                     height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            self.queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                frame.as_rgba(),
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(width * 4),
-                    rows_per_image: Some(height),
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-            );
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let bind_group = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("GIF Frame Bind Group (Linear)"),
-                layout: &layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Buffer(
-                            self.uniform_buffer.as_entire_buffer_binding(),
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                ],
-            }));
-
-            let bind_group_nearest =
-                Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("GIF Frame Bind Group (Nearest)"),
-                    layout: &layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.uniform_buffer.as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&self.sampler_nearest),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::TextureView(&view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: wgpu::BindingResource::TextureView(&view),
-                        },
-                    ],
-                }));
-
-            self.gif_textures
-                .push((texture, bind_group, bind_group_nearest));
+                });
+            }
         }
         Ok(())
+    }
+
+    pub fn clear_gif_ring(&mut self) {
+        for slot in self.gif_ring.iter_mut() {
+            if let Some(s) = slot.take() {
+                s.texture.destroy();
+            }
+        }
     }
 }
