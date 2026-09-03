@@ -136,17 +136,16 @@ impl ImageData {
         let (r, g, b) = rgba
             .par_chunks_exact(chunk_size)
             .map(|chunk| {
-                let bump = bumpalo::Bump::new();
-                let local_r = bump.alloc([0u32; 256]);
-                let local_g = bump.alloc([0u32; 256]);
-                let local_b = bump.alloc([0u32; 256]);
+                let mut local_r = [0u32; 256];
+                let mut local_g = [0u32; 256];
+                let mut local_b = [0u32; 256];
 
                 for pixel in chunk.as_chunks::<4>().0 {
                     local_r[pixel[0] as usize] += 1;
                     local_g[pixel[1] as usize] += 1;
                     local_b[pixel[2] as usize] += 1;
                 }
-                (*local_r, *local_g, *local_b)
+                (local_r, local_g, local_b)
             })
             .reduce(
                 || ([0u32; 256], [0u32; 256], [0u32; 256]),

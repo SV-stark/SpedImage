@@ -85,8 +85,9 @@ impl ImageProcessor {
     /// Get list of supported file extensions
     pub fn supported_extensions() -> Vec<&'static str> {
         vec![
-            "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "webp", "ico", "avif", "jxl", "svg",
-            "qoi", "exr", "arw", "cr2", "nef", "dng", "orf", "raf", "srw",
+            "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "tif", "webp", "ico", "heic",
+            "heif", "avif", "jxl", "svg", "qoi", "exr", "arw", "cr2", "nef", "dng", "orf", "raf",
+            "srw",
         ]
     }
 
@@ -345,7 +346,10 @@ mod tests {
         assert!(exts.contains(&"gif"));
         assert!(exts.contains(&"bmp"));
         assert!(exts.contains(&"tiff"));
+        assert!(exts.contains(&"tif"));
         assert!(exts.contains(&"webp"));
+        assert!(exts.contains(&"heic"));
+        assert!(exts.contains(&"heif"));
         assert!(exts.contains(&"avif"));
         assert!(exts.contains(&"jxl"));
         assert!(exts.contains(&"svg"));

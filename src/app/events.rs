@@ -1,7 +1,6 @@
 use crate::app::constants;
 use crate::app::state::SpedImageApp;
 use crate::app::types::{APP_ICON, AppEvent, WakeUp};
-use crate::config::AppConfig;
 use crate::render::{RenderParams, Renderer, STRIP_HEIGHT_PX};
 use color_eyre::eyre::Result;
 use std::path::PathBuf;
@@ -626,21 +625,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         }
         match event {
             WindowEvent::CloseRequested => {
-                // Save config on exit
-                let mut config = AppConfig::load();
-                if let Some(ref w) = self.window {
-                    let size = w.inner_size();
-                    let scale_factor = w.scale_factor();
-                    let logical_size = size.to_logical::<f64>(scale_factor);
-                    config.window_width = logical_size.width.round() as u32;
-                    config.window_height = logical_size.height.round() as u32;
-                }
-                config.show_sidebar = self.ui_state.show_sidebar;
-                config.show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
-                config.show_info = self.ui_state.show_info;
-                config.show_histogram = self.ui_state.show_histogram;
-                config.save();
-
+                self.save_config_on_exit();
                 event_loop.exit();
             }
             WindowEvent::Resized(size) => {

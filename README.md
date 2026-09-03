@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Version-0.9.1-blue" alt="Version: 0.9.1"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-0.9.2-blue" alt="Version: 0.9.2"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-1.94+-orange" alt="Rust: 1.94+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
@@ -33,8 +33,8 @@
 <h2 align="center">🚀 Key Features</h2>
 
 ### ⚡ High-Performance Image Loading
-- **Sub-100ms Millisecond Opening**: Re-engineered downsampling pipeline decodes and scales raw pixels before ICC color transforms and rotation, cutting pixel processing overhead by ~12x.
-- **JPEG Scale-on-Decode**: Configured native sub-sampled IDCT decoding directly in `zune-jpeg` for 8x faster JPEG loading at target display dimensions.
+- **Sub-100ms Image Transitions**: Re-engineered downsampling pipeline decodes and scales raw pixels before ICC color transforms and rotation, cutting pixel processing overhead by ~12x.
+- **Pure-Rust SIMD JPEG Acceleration**: Native AVX2/SSE2 SIMD acceleration via `libjpeg-turbo-rs` for ultra-fast JPEG loading with zero C/NASM dependencies.
 - **Directional Predictive Prefetching**: Intelligent navigation velocity tracking (`+1, +2, +3` or `-1, -2, -3`) pre-decodes upcoming images into RAM ahead of time for instant arrow-key transitions.
 - **Multi-Threaded Parallel ICC Transforms**: Parallelized `qcms` color profile conversions across CPU threads with Rayon.
 - **Instant Zero-Mipmap GPU Uploads**: Streamlined WGPU texture creation eliminating CPU-side mipmap generation loops for < 1ms texture writes.
@@ -65,40 +65,41 @@ All adjustments are processed dynamically in WGSL fragment shaders.
 <h2 align="center">🖼️ Format Support</h2>
 
 <div align="center">
-
+ 
 | Format | Decoding Engine | OS Support |
 |--------|-----------------|------------|
-| JPEG, PNG, GIF, BMP, TIFF, WebP, JXL | Pure Rust (`zune-image` / `jxl-oxide`) | All Platforms |
+| JPEG | Pure Rust SIMD (`libjpeg-turbo-rs`) | All Platforms |
+| PNG, GIF, BMP, TIFF, WebP, JXL | Pure Rust (`zune-image` / `jxl-oxide`) | All Platforms |
 | QOI (Quite OK Image) | Pure Rust (`qoi` crate) | All Platforms |
 | OpenEXR (32-bit HDR `.exr`) | Pure Rust (`exr` crate) | All Platforms |
 | RAW (CR2, NEF, ARW, DNG, etc.)* | Pure Rust (`rawloader` crate) | All Platforms |
 | SVG | `resvg` crate | All Platforms |
 | HEIC / AVIF | Pure Rust (`heic` crate with `av1` feature) | All Platforms |
-
+ 
 </div>
-
+ 
 *\* Supported RAW formats include Canon (CR2, CRW), Sony (ARW, SRF, SR2), Nikon (NEF, NRW), Fujifilm (RAF), Olympus (ORF), Pentax (PEF), Samsung (SRW), Minolta (MRW), Kodak (KDC, DCR), Panasonic/Leica (RW2), and Adobe DNG.*
-
+ 
 ---
-
+ 
 <h2 align="center">⚡ Performance Benchmarks</h2>
-
+ 
 <p align="center">
   Based on typical consumer systems (Apple M-series or Intel/AMD multicore CPU + mid-range GPU). Latencies and memory scales represent high-resolution (24MP+) photos.
 </p>
-
+ 
 <div align="center">
-
+ 
 | Operation | Typical Latency | CPU Usage | Memory Impact | 
 |-----------|-----------------|-----------|---------------|
-| **Cold Start to Render** | < 50ms | Spike on load | Base app size (~10MB) |
-| **Decoding (e.g., 24MP JPEG)** | < 30ms (Scale-on-decode) | Multi-core spike | Dependent on display res |
+| **Cold Process Startup** | ~400ms (to visible window) | Brief spike | Base app size (~10MB) |
+| **Decoding (e.g., 24MP JPEG)** | < 30ms (Downsampled) | Multi-core spike | Dependent on display res |
 | **GPU Upload (Zero-Copy)** | < 1ms | Near Zero | Video RAM mapped directly |
-| **Directional Prefetch Navigation** | < 1ms (Cached) | Low background thread | Controlled RAM cache |
+| **Cached Navigation / Transitions** | < 1ms (Cached RAM) | Low background thread | Controlled RAM cache |
 | **HDR Toning (Filmic)** | < 0.1ms (GPU Shader) | GPU-Bound | None |
 | **Smooth Crop/Zoom Animation** | 60 FPS | Nominal (< 2%) | None |
 | **Brightness/Contrast Adjust** | < 0.1ms (GPU Shader) | GPU-Bound | None |
-
+ 
 </div>
 
 ### 📊 Measured: SpedImage vs Windows 11 Photos
@@ -203,7 +204,7 @@ spedimage /path/to/image.jpg
 | **Language** | Rust 2024 | Eliminates buffer overflows and data races. |
 | **Windowing** | winit | Cross-platform, reliable event loop. |
 | **GPU Rendering** | WGPU | Safe access to Vulkan/Metal/DX12/OpenGL. |
-| **Image Decoding**| `zune-image` / `jxl-oxide` / `rawloader` / `heic` / `resvg` | High-performance pure Rust & hardware-accelerated decoders. |
+| **Image Decoding**| `libjpeg-turbo-rs` / `zune-image` / `jxl-oxide` / `rawloader` / `heic` / `resvg` | High-performance pure Rust & hardware-accelerated decoders. |
 | **Shaders** | WGSL | Highly optimized GPU processing blocks. |
 
 </div>
@@ -219,13 +220,18 @@ spedimage /path/to/image.jpg
 | `A` / `W` | Previous image |
 | `D` / `S` | Next image |
 | `Right` / `Left` Arrow | Next / Previous image |
+| `Space` | Toggle Slideshow |
+| `[` / `]` | Decrease / Increase slideshow interval |
 | `R` | Rotate 90° |
 | `H` | Toggle HDR Toning |
+| `Shift+H` | Toggle RGB Histogram curve overlay |
+| `Z` | Toggle Pixel-Perfect (Nearest-Neighbor / Bilinear filter) |
 | `C` | Toggle crop mode |
 | `I` | Toggle image info (EXIF) |
 | `O` | Open file dialog |
 | `Ctrl+P` | Print image (Windows) |
 | `Ctrl+S` | Save image |
+| `Ctrl+Shift+S` | Batch save selected images |
 | `Ctrl+F` | Open Search / Find |
 | `F11` / `Double Click` | Toggle Fullscreen |
 | `Ctrl+W` | Set as Desktop Wallpaper |
@@ -242,8 +248,8 @@ spedimage /path/to/image.jpg
 | `+` / `=` | Zoom in |
 | `-` | Zoom out |
 | `0` | Zoom to fit |
-| `Esc` | Cancel crop / Quit |
-| `?` | Toggle help overlay |
+| `Esc` | Cancel crop / Dismiss search / Quit |
+| `F1` / `?` | Toggle help overlay |
 
 </div>
 

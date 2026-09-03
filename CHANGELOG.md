@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-09-03
+
+### Added & Fixed
+* **Expanded Format Discovery**: Registered `.tif`, `.heic`, and `.heif` extensions in `ImageProcessor::supported_extensions()`, resolving directory filtering and file dialog omissions for TIFF, HEIC, and HEIF files.
+* **Persistent Settings on `Esc` Exit**: Added graceful state preservation via `save_config_on_exit()` when exiting with the `Escape` key, ensuring window dimensions and toggled UI panels persist.
+* **Clipboard Reliability**: Replaced unchecked `.unwrap()` calls in `copy_to_clipboard` and `copy_path_to_clipboard` with non-panicking error handling.
+* **Portable Diagnostic Logging**: Removed hardcoded developer machine drive paths in `startup::log`, directing diagnostic traces to stderr and optionally `SPEDIMAGE_STARTUP_LOG_FILE`.
+* **Zero-Allocation Histogram Acceleration**: Replaced per-chunk heap arena allocations in `compute_rgb_histogram` with stack buffers for faster parallel RGB analysis.
+
 ## [0.9.1] - 2026-08-27
 
 ### Performance & Startup Optimization

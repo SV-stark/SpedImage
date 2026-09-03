@@ -24,6 +24,7 @@ impl SpedImageApp {
                     self.ui_state.show_help = false;
                     self.dirty = true;
                 } else {
+                    self.save_config_on_exit();
                     event_loop.exit();
                 }
                 return;
@@ -951,7 +952,19 @@ impl SpedImageApp {
             let (w, h) = (img.width, img.height);
 
             self.thread_pool().spawn(move || {
-                let mut clipboard = arboard::Clipboard::new().unwrap();
+                let mut clipboard = match arboard::Clipboard::new() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        if let Some(ref p) = proxy {
+                            send_event(
+                                &tx,
+                                p,
+                                AppEvent::SetStatus(format!("Clipboard error: {e}")),
+                            );
+                        }
+                        return;
+                    }
+                };
                 let image_data = arboard::ImageData {
                     width: w as usize,
                     height: h as usize,
@@ -1144,7 +1157,19 @@ impl SpedImageApp {
             let proxy = self.event_proxy.clone();
 
             self.thread_pool().spawn(move || {
-                let mut clipboard = arboard::Clipboard::new().unwrap();
+                let mut clipboard = match arboard::Clipboard::new() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        if let Some(ref p) = proxy {
+                            send_event(
+                                &tx,
+                                p,
+                                AppEvent::SetStatus(format!("Clipboard error: {e}")),
+                            );
+                        }
+                        return;
+                    }
+                };
                 if clipboard.set_text(path_str).is_ok()
                     && let Some(ref p) = proxy
                 {
@@ -1267,5 +1292,21 @@ impl SpedImageApp {
                 self.set_crop_target(crop_w, crop_h, cursor);
             }
         }
+    }
+
+    pub(crate) fn save_config_on_exit(&self) {
+        let mut config = crate::config::AppConfig::load();
+        if let Some(ref w) = self.window {
+            let size = w.inner_size();
+            let scale_factor = w.scale_factor();
+            let logical_size = size.to_logical::<f64>(scale_factor);
+            config.window_width = logical_size.width.round() as u32;
+            config.window_height = logical_size.height.round() as u32;
+        }
+        config.show_sidebar = self.ui_state.show_sidebar;
+        config.show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
+        config.show_info = self.ui_state.show_info;
+        config.show_histogram = self.ui_state.show_histogram;
+        config.save();
     }
 }
