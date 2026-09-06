@@ -154,20 +154,96 @@ impl Renderer {
             && !status.is_empty()
         {
             egui::Window::new("Status")
-                .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 10.0))
+                .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 50.0))
                 .title_bar(false)
                 .auto_sized()
                 .frame(
-                    egui::Frame::NONE
-                        .fill(egui::Color32::from_black_alpha(150))
-                        .inner_margin(5.0),
+                    egui::Frame::window(ctx.global_style().as_ref())
+                        .fill(egui::Color32::from_rgba_unmultiplied(12, 14, 23, 210))
+                        .stroke(egui::Stroke::new(
+                            1.0_f32,
+                            egui::Color32::from_rgb(0, 180, 216),
+                        ))
+                        .corner_radius(8.0)
+                        .inner_margin(egui::Margin::symmetric(10, 6)),
                 )
                 .show(ctx, |ui| {
                     ui.label(
                         egui::RichText::new(status)
-                            .size(18.0)
+                            .size(13.0)
                             .color(egui::Color32::WHITE),
                     );
+                });
+        }
+
+        // On-Screen Display (OSD) HUD pill: filename, index, dimensions, file size, zoom %
+        if params.show_osd
+            && let Some((name, w, h, size_bytes, zoom)) = &params.current_image_info
+        {
+            let total = params.files.len();
+            let idx_str = params
+                .active_thumb_idx
+                .map(|i| format!("{}/{}", i + 1, total))
+                .unwrap_or_default();
+            let size_str = if *size_bytes >= 1024 * 1024 {
+                format!("{:.1} MB", *size_bytes as f64 / (1024.0 * 1024.0))
+            } else if *size_bytes >= 1024 {
+                format!("{} KB", *size_bytes / 1024)
+            } else if *size_bytes > 0 {
+                format!("{} B", *size_bytes)
+            } else {
+                String::new()
+            };
+
+            egui::Window::new("osd_overlay")
+                .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 12.0))
+                .title_bar(false)
+                .resizable(false)
+                .movable(false)
+                .frame(
+                    egui::Frame::window(ctx.global_style().as_ref())
+                        .fill(egui::Color32::from_rgba_unmultiplied(12, 14, 23, 200))
+                        .stroke(egui::Stroke::new(
+                            1.0_f32,
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+                        ))
+                        .corner_radius(8.0)
+                        .inner_margin(egui::Margin::symmetric(10, 5)),
+                )
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(name)
+                                .size(12.0)
+                                .strong()
+                                .color(egui::Color32::WHITE),
+                        );
+                        if !idx_str.is_empty() {
+                            ui.label(
+                                egui::RichText::new(format!("• [{}]", idx_str))
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(0, 180, 216)),
+                            );
+                        }
+                        ui.label(
+                            egui::RichText::new(format!("• {}×{}", w, h))
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(180, 195, 215)),
+                        );
+                        if !size_str.is_empty() {
+                            ui.label(
+                                egui::RichText::new(format!("• {}", size_str))
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(150, 165, 185)),
+                            );
+                        }
+                        ui.label(
+                            egui::RichText::new(format!("• {:.0}%", zoom))
+                                .size(11.0)
+                                .strong()
+                                .color(egui::Color32::from_rgb(100, 220, 150)),
+                        );
+                    });
                 });
         }
 
@@ -198,18 +274,23 @@ impl Renderer {
                     ui.separator();
                     ui.add_space(6.0);
 
-                    ui.label("A / W / ◀: Prev Image");
-                    ui.label("D / S / ▶: Next Image");
+                    ui.label("A / W / ◀ / Mouse Back: Prev Image");
+                    ui.label("D / S / ▶ / Mouse Fwd: Next Image");
+                    ui.label("PgUp / PgDown: Prev / Next");
+                    ui.label("Home / End: First / Last Image");
+                    ui.label("Tab: Toggle OSD Info Bar");
                     ui.label("R: Rotate 90°");
                     ui.label("C: Toggle Crop");
                     ui.label("H: Toggle HDR Toning");
                     ui.label("Enter: Toggle Zoom 100%");
-                    ui.label("Double-Click: Fullscreen");
+                    ui.label("Double-Click: Fullscreen / 100%");
+                    ui.label("Ctrl+S: Save Edited");
+                    ui.label("Ctrl+Shift+S: Save As...");
+                    ui.label("Ctrl+C: Copy Image / File");
                     ui.label("Ctrl+Shift+C: Copy Path");
-                    ui.label("Ctrl+C: Copy Image");
                     ui.label("Ctrl+V: Paste Image");
                     ui.label("F2: Rename File");
-                    ui.label("Delete: Recycle Bin");
+                    ui.label("Delete: Move to Recycle Bin");
                     ui.label("F: Toggle Sidebar");
                     ui.label("T: Toggle Thumbnails");
                     ui.label("Esc: Quit");
@@ -553,11 +634,35 @@ impl Renderer {
                             pref_changed = true;
                         }
 
+                        let mut show_osd = params.config.osd_enabled();
+                        if ui.checkbox(&mut show_osd, "Show OSD Info Bar (Tab)").changed() {
+                            params.config.show_osd = Some(show_osd);
+                            pref_changed = true;
+                        }
+
+                        let mut checkerboard = params.config.checkerboard_enabled();
+                        if ui.checkbox(&mut checkerboard, "Transparency Checkerboard").changed() {
+                            params.config.transparency_checkerboard = Some(checkerboard);
+                            pref_changed = true;
+                        }
+
                         ui.separator();
 
                         let mut scroll_to_zoom = params.config.scroll_to_zoom.unwrap_or(true);
                         if ui.checkbox(&mut scroll_to_zoom, "Scroll wheel zooms").on_hover_text("Uncheck to navigate next/prev using scroll wheel (Ctrl+Scroll will zoom)").changed() {
                             params.config.scroll_to_zoom = Some(scroll_to_zoom);
+                            pref_changed = true;
+                        }
+
+                        let mut double_click_zoom = params.config.double_click_zoom_enabled();
+                        if ui.checkbox(&mut double_click_zoom, "Double-click toggles 100% zoom").on_hover_text("Uncheck to toggle Fullscreen on double-click").changed() {
+                            params.config.double_click_zoom = Some(double_click_zoom);
+                            pref_changed = true;
+                        }
+
+                        let mut confirm_del = params.config.confirm_delete_enabled();
+                        if ui.checkbox(&mut confirm_del, "Confirm before Recycle Bin").on_hover_text("When unchecked, pressing Delete instantly moves to Recycle Bin").changed() {
+                            params.config.confirm_delete = Some(confirm_del);
                             pref_changed = true;
                         }
 

@@ -98,7 +98,7 @@ fn vertex_main(
 @fragment
 fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (in.tex_coords.x < 0.0 || in.tex_coords.x > 1.0 || in.tex_coords.y < 0.0 || in.tex_coords.y > 1.0) {
-        return vec4<f32>(0.0, 0.0, 0.0, 1.0); // Black background for zoomed out areas
+        return vec4<f32>(0.047, 0.055, 0.09, 1.0); // Clean dark canvas (#0c0e17) for zoomed out border
     }
     let color_new = textureSample(t, s, in.tex_coords);
     // Skip the previous-frame fetch entirely once a transition has settled;
@@ -193,6 +193,14 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
         var x = color.rgb * 1.6;
         x = x / (1.0 + x);
         color = vec4<f32>(x * x * (3.0 - 2.0 * x), color.a);
+    }
+    
+    // 8. Transparency Handling with Subtle Checkerboard Canvas
+    if (color.a < 0.999) {
+        let checker_size = 16.0;
+        let check_val = (floor(in.position.x / checker_size) + floor(in.position.y / checker_size)) % 2.0;
+        let check_bg = select(vec3<f32>(0.14, 0.15, 0.19), vec3<f32>(0.20, 0.22, 0.27), check_val > 0.5);
+        color = vec4<f32>(mix(check_bg, color.rgb, color.a), 1.0);
     }
     
     return color;

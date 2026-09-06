@@ -37,6 +37,33 @@ impl SpedImageApp {
                 self.next_image();
                 return;
             }
+            Key::Named(NamedKey::PageUp) => {
+                self.prev_image();
+                return;
+            }
+            Key::Named(NamedKey::PageDown) => {
+                self.next_image();
+                return;
+            }
+            Key::Named(NamedKey::Home) => {
+                self.first_image();
+                return;
+            }
+            Key::Named(NamedKey::End) => {
+                self.last_image();
+                return;
+            }
+            Key::Named(NamedKey::Backspace) => {
+                self.prev_image();
+                return;
+            }
+            Key::Named(NamedKey::Tab) => {
+                self.ui_state.show_osd = !self.ui_state.show_osd;
+                self.config.show_osd = Some(self.ui_state.show_osd);
+                self.config.save();
+                self.dirty = true;
+                return;
+            }
             Key::Named(NamedKey::F1) => {
                 self.ui_state.show_help = !self.ui_state.show_help;
                 self.dirty = true;
@@ -99,7 +126,11 @@ impl SpedImageApp {
                 }
                 "s" | "S" => {
                     if ctrl && self.modifiers.shift {
-                        self.batch_save_selected();
+                        if self.ui_state.selected_indices.len() > 1 {
+                            self.batch_save_selected();
+                        } else {
+                            self.save_image_as();
+                        }
                     } else if ctrl {
                         self.save_image();
                     } else if event.repeat {
@@ -456,25 +487,104 @@ impl SpedImageApp {
     pub(crate) fn delete_current_image(&mut self) {
         if let Some(ref image) = self.current_image {
             let path = image.path.clone();
+            if self.config.confirm_delete_enabled() {
+                let tx = self.event_tx.clone();
+                let proxy = self.event_proxy.clone();
+
+                self.thread_pool().spawn(move || {
+                    let dialog = rfd::AsyncMessageDialog::new()
+                        .set_title("Delete Image")
+                        .set_description(format!(
+                            "Delete {}?",
+                            path.file_name().unwrap_or_default().to_string_lossy()
+                        ))
+                        .set_buttons(rfd::MessageButtons::YesNo);
+
+                    pollster::block_on(async move {
+                        if dialog.show().await == rfd::MessageDialogResult::Yes
+                            && let Some(ref p) = proxy
+                        {
+                            send_event(&tx, p, AppEvent::ConfirmDelete(path));
+                        }
+                    });
+                });
+            } else if let Some(ref p) = self.event_proxy {
+                send_event(&self.event_tx, p, AppEvent::ConfirmDelete(path));
+            }
+        }
+    }
+
+    pub(crate) fn save_image_as(&mut self) {
+        if let Some(ref image_data) = self.current_image {
+            let path = image_data.path.clone();
+            let stem = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "image".to_string());
+            let default_name = format!("{stem}_edited.png");
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
 
-            self.thread_pool().spawn(move || {
-                let dialog = rfd::AsyncMessageDialog::new()
-                    .set_title("Delete Image")
-                    .set_description(format!(
-                        "Delete {}?",
-                        path.file_name().unwrap_or_default().to_string_lossy()
-                    ))
-                    .set_buttons(rfd::MessageButtons::YesNo);
+            let rgba_data = image_data.rgba_data.clone();
+            let (width, height) = (image_data.width, image_data.height);
+            let is_downsampled = image_data.is_downsampled;
+            let path_clone = path.clone();
+            let adjustments = self.ui_state.adjustments;
 
-                pollster::block_on(async move {
-                    if dialog.show().await == rfd::MessageDialogResult::Yes
-                        && let Some(ref p) = proxy
-                    {
-                        send_event(&tx, p, AppEvent::ConfirmDelete(path));
+            self.thread_pool().spawn(move || {
+                let picked = rfd::FileDialog::new()
+                    .set_title("Save Image As...")
+                    .set_file_name(&default_name)
+                    .add_filter("PNG Image", &["png"])
+                    .add_filter("JPEG Image", &["jpg", "jpeg"])
+                    .add_filter("WebP Image", &["webp"])
+                    .save_file();
+
+                if let Some(save_path) = picked {
+                    let result = (|| -> color_eyre::eyre::Result<()> {
+                        let full_res =
+                            if is_downsampled {
+                                let (frames, _) =
+                                    crate::image::ImageLoader::load(&path_clone, None, None)
+                                        .map_err(|e| {
+                                            color_eyre::eyre::eyre!(
+                                                "Failed to open full-resolution image: {e:?}"
+                                            )
+                                        })?;
+                                Some(frames.into_iter().next().ok_or_else(|| {
+                                    color_eyre::eyre::eyre!("No image frames loaded")
+                                })?)
+                            } else {
+                                None
+                            };
+                        let source: Arc<Vec<u8>> = match &full_res {
+                            Some(f) => Arc::clone(&f.rgba_data),
+                            None => Arc::clone(&rgba_data),
+                        };
+                        let (orig_w, orig_h) = match &full_res {
+                            Some(f) => (f.width, f.height),
+                            None => (width, height),
+                        };
+
+                        let (final_rgba, final_w, final_h) = ImageBackend::apply_adjustments_cpu(
+                            &source,
+                            orig_w,
+                            orig_h,
+                            &adjustments,
+                        );
+
+                        ImageBackend::save(&save_path, &final_rgba, final_w, final_h)?;
+                        Ok(())
+                    })();
+
+                    let event = match result {
+                        Ok(()) => AppEvent::SaveComplete(save_path),
+                        Err(e) => AppEvent::SaveError(e.to_string()),
+                    };
+                    if let Some(ref p) = proxy {
+                        send_event(&tx, p, event);
                     }
-                });
+                }
             });
         }
     }
@@ -681,6 +791,28 @@ impl SpedImageApp {
         }
     }
 
+    pub(crate) fn first_image(&mut self) {
+        if !self.ui_state.files.is_empty() {
+            self.navigation.last_direction = -1;
+            self.ui_state.current_file_index = Some(0);
+            let path = self.ui_state.current_file().cloned();
+            if let Some(p) = path {
+                self.load_image(&p);
+            }
+        }
+    }
+
+    pub(crate) fn last_image(&mut self) {
+        if !self.ui_state.files.is_empty() {
+            self.navigation.last_direction = 1;
+            self.ui_state.current_file_index = Some(self.ui_state.files.len() - 1);
+            let path = self.ui_state.current_file().cloned();
+            if let Some(p) = path {
+                self.load_image(&p);
+            }
+        }
+    }
+
     pub(crate) fn rotate_image(&mut self) {
         self.ui_state.rotate_90();
         self.dirty = true;
@@ -838,7 +970,9 @@ impl SpedImageApp {
 
                 let items = [
                     "Open in Explorer",
-                    "Copy (Ctrl+C)",
+                    "Copy Image (Ctrl+C)",
+                    "Copy File Path (Ctrl+Shift+C)",
+                    "Save As... (Ctrl+Shift+S)",
                     "Rename (F2)",
                     "Delete (Del)",
                     "Set as Wallpaper (Ctrl+W)",
@@ -875,9 +1009,11 @@ impl SpedImageApp {
                 match cmd.0 {
                     1 => self.open_in_explorer(),
                     2 => self.copy_to_clipboard(),
-                    3 => self.rename_current_image(),
-                    4 => self.delete_current_image(),
-                    5 => self.set_as_wallpaper(),
+                    3 => self.copy_path_to_clipboard(),
+                    4 => self.save_image_as(),
+                    5 => self.rename_current_image(),
+                    6 => self.delete_current_image(),
+                    7 => self.set_as_wallpaper(),
                     _ => {}
                 }
             }
@@ -950,6 +1086,7 @@ impl SpedImageApp {
             let proxy = self.event_proxy.clone();
             let rgba = img.rgba_data.clone();
             let (w, h) = (img.width, img.height);
+            let path = img.path.clone();
 
             self.thread_pool().spawn(move || {
                 let mut clipboard = match arboard::Clipboard::new() {
@@ -970,16 +1107,70 @@ impl SpedImageApp {
                     height: h as usize,
                     bytes: std::borrow::Cow::from(&rgba[..]),
                 };
-                if clipboard.set_image(image_data).is_ok()
-                    && let Some(ref p) = proxy
-                {
-                    send_event(
-                        &tx,
-                        p,
-                        AppEvent::SetStatus("Copied to clipboard".to_string()),
-                    );
+                if clipboard.set_image(image_data).is_ok() {
+                    #[cfg(windows)]
+                    if path.exists() {
+                        Self::set_clipboard_hdrop(&path);
+                    }
+                    if let Some(ref p) = proxy {
+                        send_event(
+                            &tx,
+                            p,
+                            AppEvent::SetStatus("Copied image to clipboard".to_string()),
+                        );
+                    }
                 }
             });
+        }
+    }
+
+    #[cfg(windows)]
+    fn set_clipboard_hdrop(path: &std::path::Path) {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::System::DataExchange::{
+            CloseClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows::Win32::System::Memory::{
+            GLOBAL_ALLOC_FLAGS, GlobalAlloc, GlobalLock, GlobalUnlock,
+        };
+        use windows::Win32::UI::Shell::DROPFILES;
+
+        let abs = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir().unwrap_or_default().join(path)
+        };
+        let mut wide: Vec<u16> = abs.as_os_str().encode_wide().collect();
+        wide.push(0);
+        wide.push(0); // Double null-terminate
+
+        let dropfiles_size = std::mem::size_of::<DROPFILES>();
+        let total_bytes = dropfiles_size + wide.len() * 2;
+
+        unsafe {
+            if let Ok(h_global) = GlobalAlloc(
+                GLOBAL_ALLOC_FLAGS(0x0042 /* GMEM_MOVEABLE | GMEM_ZEROINIT */),
+                total_bytes,
+            ) {
+                let ptr = GlobalLock(h_global);
+                if !ptr.is_null() {
+                    let drop_files = ptr as *mut DROPFILES;
+                    (*drop_files).pFiles = dropfiles_size as u32;
+                    (*drop_files).fWide = true.into(); // Unicode
+
+                    let dest = (ptr as usize + dropfiles_size) as *mut u16;
+                    std::ptr::copy_nonoverlapping(wide.as_ptr(), dest, wide.len());
+                    let _ = GlobalUnlock(h_global);
+
+                    if OpenClipboard(None).is_ok() {
+                        let _ = SetClipboardData(
+                            15, /* CF_HDROP */
+                            Some(windows::Win32::Foundation::HANDLE(h_global.0)),
+                        );
+                        let _ = CloseClipboard();
+                    }
+                }
+            }
         }
     }
 
@@ -1302,11 +1493,13 @@ impl SpedImageApp {
             let logical_size = size.to_logical::<f64>(scale_factor);
             config.window_width = logical_size.width.round() as u32;
             config.window_height = logical_size.height.round() as u32;
+            config.window_maximized = w.is_maximized();
         }
         config.show_sidebar = self.ui_state.show_sidebar;
         config.show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
         config.show_info = self.ui_state.show_info;
         config.show_histogram = self.ui_state.show_histogram;
+        config.show_osd = Some(self.ui_state.show_osd);
         config.save();
     }
 }

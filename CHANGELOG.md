@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-09-06
+
+### Daily Driver Experience & Shell Integration
+* **Natural Numerical Sorting**: Implemented natural alphanumeric sorting (`img1 < img2 < img10`), aligning directory navigation sequence with Windows File Explorer.
+* **Seamless Folder Switching**: Resolved cross-directory image opening bug where the active folder, thumbnail strip, and file watcher remained locked to the first folder.
+* **Single-Instance Focus & Un-Minimize**: On Windows, secondary process invocations now restore the primary window if minimized (`ShowWindow(SW_RESTORE)`) and bring it to foreground (`SetForegroundWindow`, `BringWindowToTop`).
+* **Windows File Clipboard (`CF_HDROP`)**: Added `CF_HDROP` file drop list to clipboard alongside raw DIB bitmap (`Ctrl+C`), allowing images to be pasted directly as file objects into File Explorer, Discord, Slack, and email clients.
+* **Window Maximized & State Persistence**: Persists maximized window state, window dimensions, and OSD display preference in `config.json`.
+
+### Canvas & Visual Polish
+* **Transparency Checkerboard Backdrop**: Added a GPU checkerboard pattern for transparent PNG, SVG, WebP, and ICO graphics, eliminating invisible dark artwork on black backgrounds.
+* **On-Screen Display (OSD) HUD**: Added a sleek, non-intrusive floating status pill showing filename, index `[x/total]`, resolution, file size, and zoom % (toggleable via `Tab` and Preferences).
+* **Dark Slate Canvas**: Replaced pitch-black out-of-bounds border with unified `#0c0e17` slate background matching the interface theme.
+
+### Ergonomics, Navigation & Workflow
+* **Mouse Navigation**: Added support for Mouse Back and Forward side buttons (`X1`/`X2`) to navigate between photos.
+* **Extended Keyboard Shortcuts**: Added `PageUp`/`PageDown` (previous/next image), `Home`/`End` (jump to first/last file in folder), `Backspace` (previous image), and `Tab` (toggle OSD).
+* **Rotation-Aware Intuitive Panning**: Transformed mouse delta vector by image rotation angle and flip state, ensuring mouse drag panning strictly matches screen movement.
+* **Prioritized Thumbnail Scheduling**: Work queue dynamically sorts and prioritizes thumbnails centered around the currently viewed image, preventing thumbnail starvation in large folders (500+ files).
+* **Fast Recycle Bin Deletion**: Deletion immediately removes file from view and moves to Recycle Bin without blocking confirmation dialogs (configurable in Preferences).
+* **Save As... Dialog (`Ctrl+Shift+S`)**: Added dedicated "Save As..." dialog with format filter (PNG, JPEG, WebP) and automatic filename defaulting.
+* **Configurable Double-Click Action**: Added preference to toggle between Fullscreen and 100% Zoom (actual pixels) on double-click.
+
 ## [0.9.2] - 2026-09-03
 
 ### Added & Fixed

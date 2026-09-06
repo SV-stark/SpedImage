@@ -3,6 +3,52 @@ use crate::app::types::{AppEvent, MAX_THUMB_THREADS, MAX_THUMBNAILS, THUMB_LOAD_
 use crate::image::ImageBackend;
 use std::path::{Path, PathBuf};
 
+/// Natural numerical comparison (e.g. "img1" < "img2" < "img10"), matching Windows Explorer
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let mut a_chars = a.chars().peekable();
+    let mut b_chars = b.chars().peekable();
+
+    loop {
+        match (a_chars.peek(), b_chars.peek()) {
+            (None, None) => return std::cmp::Ordering::Equal,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (Some(&ca), Some(&cb)) if ca.is_ascii_digit() && cb.is_ascii_digit() => {
+                let mut num_a = 0u64;
+                while let Some(&c) = a_chars.peek() {
+                    if let Some(d) = c.to_digit(10) {
+                        num_a = num_a.saturating_mul(10).saturating_add(d as u64);
+                        a_chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                let mut num_b = 0u64;
+                while let Some(&c) = b_chars.peek() {
+                    if let Some(d) = c.to_digit(10) {
+                        num_b = num_b.saturating_mul(10).saturating_add(d as u64);
+                        b_chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if num_a != num_b {
+                    return num_a.cmp(&num_b);
+                }
+            }
+            (Some(&ca), Some(&cb)) => {
+                let lower_a = ca.to_lowercase().next().unwrap_or(ca);
+                let lower_b = cb.to_lowercase().next().unwrap_or(cb);
+                if lower_a != lower_b {
+                    return lower_a.cmp(&lower_b);
+                }
+                a_chars.next();
+                b_chars.next();
+            }
+        }
+    }
+}
+
 impl SpedImageApp {
     pub(crate) fn load_directory_async(&self, dir: PathBuf) {
         let tx = self.event_tx.clone();
@@ -18,7 +64,7 @@ impl SpedImageApp {
                         files.push(crate::ui::FileEntry::new(path));
                     }
                 }
-                files.sort_by_key(|a| a.name.to_lowercase());
+                files.sort_by(|a, b| natural_cmp(&a.name, &b.name));
 
                 if let Some(ref p) = proxy {
                     send_event(&tx, p, AppEvent::DirectoryLoaded(dir, files));
@@ -72,14 +118,20 @@ impl SpedImageApp {
             + 1;
         let current_gen = self.navigation.thumb_generation.clone();
 
+        // Prioritize work closest to currently viewed image
+        let center = self.ui_state.current_file_index.unwrap_or(0);
+        let mut work_order: Vec<(PathBuf, usize)> = files
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !existing.contains(p))
+            .map(|(i, p)| (p.clone(), i))
+            .collect();
+        work_order.sort_by_key(|(_, i)| (*i as isize - center as isize).abs());
+
         // Work queue of (path, order) pairs that still need a texture.
         let (tx_work, rx_work) = crossbeam_channel::unbounded();
-        for path in files.iter().take(MAX_THUMBNAILS) {
-            if existing.contains(&path) {
-                continue;
-            }
-            let order = index.get(&path).copied().unwrap_or(usize::MAX);
-            tx_work.send((path.clone(), order)).ok();
+        for (path, order) in work_order.into_iter().take(MAX_THUMBNAILS) {
+            tx_work.send((path, order)).ok();
         }
         drop(tx_work); // Close producer so workers exit when queue is empty
 
@@ -156,5 +208,22 @@ impl SpedImageApp {
             let _ = d.watcher().watch(&dir, RecursiveMode::NonRecursive);
         }
         self.file_watcher = debouncer;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_natural_cmp() {
+        use std::cmp::Ordering;
+        assert_eq!(natural_cmp("img1.jpg", "img2.jpg"), Ordering::Less);
+        assert_eq!(natural_cmp("img2.jpg", "img10.jpg"), Ordering::Less);
+        assert_eq!(natural_cmp("img10.jpg", "img2.jpg"), Ordering::Greater);
+        assert_eq!(natural_cmp("photo.png", "photo.png"), Ordering::Equal);
+        assert_eq!(natural_cmp("Photo.png", "photo.png"), Ordering::Equal);
+        assert_eq!(natural_cmp("a10b", "a2b"), Ordering::Greater);
+        assert_eq!(natural_cmp("100", "20"), Ordering::Greater);
     }
 }

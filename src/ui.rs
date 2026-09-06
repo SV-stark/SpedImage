@@ -28,6 +28,7 @@ impl FileEntry {
 pub struct UiState {
     pub files: Vec<FileEntry>,
     pub current_file_index: Option<usize>,
+    pub current_dir: Option<PathBuf>,
     pub adjustments: ImageAdjustments,
     pub is_cropping: bool,
     pub show_help: bool,
@@ -35,6 +36,7 @@ pub struct UiState {
     pub show_thumbnail_strip: bool,
     pub show_info: bool,
     pub show_histogram: bool,
+    pub show_osd: bool,
     pub selected_indices: rustc_hash::FxHashSet<usize>,
     pub status_message: Option<(String, std::time::Instant)>,
     pub sidebar_text: Option<String>,
@@ -47,6 +49,7 @@ impl Default for UiState {
         Self {
             files: Vec::new(),
             current_file_index: None,
+            current_dir: None,
             adjustments: ImageAdjustments::default(),
             is_cropping: false,
             show_help: false,
@@ -54,6 +57,7 @@ impl Default for UiState {
             show_thumbnail_strip: true,
             show_info: false,
             show_histogram: false,
+            show_osd: true,
             selected_indices: rustc_hash::FxHashSet::default(),
             status_message: None,
             sidebar_text: None,

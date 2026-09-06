@@ -182,4 +182,6 @@ pub struct RenderParams<'a> {
     pub show_search: &'a mut bool,
     pub search_query: &'a mut String,
     pub gps_coords: Option<(f64, f64)>,
+    pub current_image_info: Option<(String, u32, u32, u64, f32)>,
+    pub show_osd: bool,
 }

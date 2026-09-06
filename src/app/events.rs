@@ -113,7 +113,12 @@ impl SpedImageApp {
                     if let Some(first) = frames.first() {
                         let path = first.path.clone();
                         let dir = path.parent().unwrap_or(&path).to_path_buf();
-                        if self.ui_state.files.is_empty() || self.file_watcher.is_none() {
+                        let dir_changed = self.ui_state.current_dir.as_ref() != Some(&dir);
+                        if dir_changed
+                            || self.ui_state.files.is_empty()
+                            || self.file_watcher.is_none()
+                        {
+                            self.ui_state.current_dir = Some(dir.clone());
                             self.load_directory_async(dir.clone());
                             self.setup_file_watcher(&dir);
                         } else if let Some(idx) =
@@ -195,6 +200,27 @@ impl SpedImageApp {
                 AppEvent::OpenPath(path) => {
                     if let Some(ref w) = self.window {
                         w.focus_window();
+                        #[cfg(windows)]
+                        {
+                            use windows::Win32::Foundation::HWND;
+                            use windows::Win32::UI::WindowsAndMessaging::{
+                                BringWindowToTop, IsIconic, SW_RESTORE, SetForegroundWindow,
+                                ShowWindow,
+                            };
+                            use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                            if let Ok(handle) = w.window_handle()
+                                && let RawWindowHandle::Win32(h) = handle.as_raw()
+                            {
+                                let hwnd = HWND(h.hwnd.get() as *mut _);
+                                unsafe {
+                                    if IsIconic(hwnd).as_bool() {
+                                        let _ = ShowWindow(hwnd, SW_RESTORE);
+                                    }
+                                    let _ = BringWindowToTop(hwnd);
+                                    let _ = SetForegroundWindow(hwnd);
+                                }
+                            }
+                        }
                     }
                     self.load_image(&path);
                 }
@@ -243,8 +269,13 @@ impl SpedImageApp {
                 AppEvent::ConfirmDelete(path) => {
                     let tx = self.event_tx.clone();
                     let proxy = self.event_proxy.clone();
+                    let file_name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "file".to_string());
+                    let path_for_delete = path.clone();
                     self.thread_pool().spawn(move || {
-                        if let Err(e) = trash::delete(&path) {
+                        if let Err(e) = trash::delete(&path_for_delete) {
                             if let Some(ref p) = proxy {
                                 crate::app::types::send_event(
                                     &tx,
@@ -252,18 +283,30 @@ impl SpedImageApp {
                                     AppEvent::SetStatus(format!("Delete failed: {e}")),
                                 );
                             }
-                        } else if let Some(ref p) = proxy
-                            && let Some(dir) = path.parent()
-                        {
+                        } else if let Some(ref p) = proxy {
                             crate::app::types::send_event(
                                 &tx,
                                 p,
-                                AppEvent::DirectoryChanged(dir.to_path_buf()),
+                                AppEvent::SetStatus(format!("Moved to Recycle Bin: {file_name}")),
                             );
                         }
                     });
-                    self.current_image = None;
-                    self.next_image();
+                    if let Some(pos) = self.ui_state.files.iter().position(|f| f.path == path) {
+                        self.ui_state.files.remove(pos);
+                        if self.ui_state.files.is_empty() {
+                            self.ui_state.current_file_index = None;
+                            self.current_image = None;
+                        } else {
+                            let next_idx = pos.min(self.ui_state.files.len() - 1);
+                            self.ui_state.current_file_index = Some(next_idx);
+                            let next_path = self.ui_state.files[next_idx].path.clone();
+                            self.load_image(&next_path);
+                        }
+                        file_list_or_selection_changed = true;
+                    } else {
+                        self.current_image = None;
+                        self.next_image();
+                    }
                     self.dirty = true;
                 }
                 AppEvent::ConfirmBatchDelete(selected) => {
@@ -427,6 +470,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     WindowAttributes::default()
                         .with_title(title)
                         .with_visible(true)
+                        .with_maximized(config.window_maximized)
                         .with_inner_size(winit::dpi::LogicalSize::new(
                             if config.window_width > 0 {
                                 config.window_width as f64
@@ -701,12 +745,27 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let is_loading = self.loading;
                     let gps_coords = self.current_image.as_ref().and_then(|img| img.gps_coords);
 
+                    let current_image_info = self.current_image.as_ref().map(|img| {
+                        let name = img
+                            .path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| "Image".to_string());
+                        let zoom_pct = if self.ui_state.adjustments.crop_rect[2] > 0.0 {
+                            (1.0 / self.ui_state.adjustments.crop_rect[2]) * 100.0
+                        } else {
+                            100.0
+                        };
+                        (name, img.width, img.height, img.file_size_bytes, zoom_pct)
+                    });
+
                     let status_str = self.ui_state.get_status().to_string();
                     let is_cropping = self.ui_state.is_cropping;
                     let crop_rect = self.ui_state.adjustments.crop_rect;
                     let show_help = self.ui_state.show_help;
                     let show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
                     let show_histogram = self.ui_state.show_histogram;
+                    let show_osd = self.ui_state.show_osd && self.config.osd_enabled();
                     let mut slideshow_interval_secs = self.slideshow.interval.as_secs();
                     let old_slideshow_active = self.slideshow.active;
                     let slideshow_progress = if self.slideshow.active
@@ -752,6 +811,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                             show_search: &mut self.ui_state.show_search,
                             search_query: &mut self.ui_state.search_query,
                             gps_coords,
+                            current_image_info,
+                            show_osd,
                         })
                     {
                         tracing::warn!("render frame error: {e}");
@@ -802,8 +863,26 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     let dx = (position.x - start.x) as f32 / r.config.width as f32;
                     let dy = (position.y - start.y) as f32 / r.config.height as f32;
 
-                    let new_x = self.ui_state.adjustments.crop_rect[0] - dx;
-                    let new_y = self.ui_state.adjustments.crop_rect[1] - dy;
+                    // Rotate delta by total rotation and flipping so panning tracks cursor intuitively
+                    let rot =
+                        self.ui_state.adjustments.rotation + self.ui_state.adjustments.pre_rotation;
+                    let cos_a = rot.cos();
+                    let sin_a = rot.sin();
+
+                    let mut tex_dx = dx;
+                    let mut tex_dy = dy;
+                    if self.ui_state.adjustments.flip_horizontal {
+                        tex_dx = -tex_dx;
+                    }
+                    if self.ui_state.adjustments.flip_vertical {
+                        tex_dy = -tex_dy;
+                    }
+
+                    let r_dx = tex_dx * cos_a + tex_dy * sin_a;
+                    let r_dy = -tex_dx * sin_a + tex_dy * cos_a;
+
+                    let new_x = self.ui_state.adjustments.crop_rect[0] - r_dx;
+                    let new_y = self.ui_state.adjustments.crop_rect[1] - r_dy;
 
                     let min_x = 0.0f32.min(1.0 - self.ui_state.adjustments.crop_rect[2]);
                     let max_x = 0.0f32.max(1.0 - self.ui_state.adjustments.crop_rect[2]);
@@ -818,8 +897,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     self.dirty = true;
                 }
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if button == MouseButton::Left {
+            WindowEvent::MouseInput { state, button, .. } => match button {
+                MouseButton::Left => {
                     if state == ElementState::Pressed {
                         let now = std::time::Instant::now();
                         let is_double_click =
@@ -831,17 +910,29 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         self.navigation.last_left_click_time = Some(now);
 
                         if is_double_click {
-                            self.toggle_fullscreen();
+                            if self.config.double_click_zoom_enabled() {
+                                self.toggle_zoom_100();
+                            } else {
+                                self.toggle_fullscreen();
+                            }
                         } else {
                             self.handle_left_click(self.last_cursor_pos);
                         }
                     } else {
                         self.mouse_drag_start = None;
                     }
-                } else if button == MouseButton::Right && state == ElementState::Pressed {
+                }
+                MouseButton::Right if state == ElementState::Pressed => {
                     self.show_context_menu();
                 }
-            }
+                MouseButton::Back if state == ElementState::Pressed => {
+                    self.prev_image();
+                }
+                MouseButton::Forward if state == ElementState::Pressed => {
+                    self.next_image();
+                }
+                _ => {}
+            },
             WindowEvent::MouseWheel { delta, .. } => {
                 let win_h = self
                     .renderer
