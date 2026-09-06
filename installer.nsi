@@ -26,6 +26,7 @@ RequestExecutionLevel admin
 
 !macro RegisterExtension ext
     WriteRegStr HKLM "Software\Classes\.${ext}" "" "${PROG_ID}"
+    WriteRegStr HKLM "Software\Classes\.${ext}" "PerceivedType" "image"
     WriteRegStr HKLM "Software\Classes\.${ext}\OpenWithProgids" "${PROG_ID}" ""
     WriteRegStr HKLM "Software\${APP_NAME}\Capabilities\FileAssociations" ".${ext}" "${PROG_ID}"
 !macroend
@@ -57,13 +58,16 @@ Section "Install"
     
     ; 1. Create the ProgID (The actual handler)
     WriteRegStr HKLM "Software\Classes\${PROG_ID}" "" "SpedImage Image File"
-    WriteRegStr HKLM "Software\Classes\${PROG_ID}\DefaultIcon" "" "$INSTDIR\spedimage.exe,0"
+    WriteRegStr HKLM "Software\Classes\${PROG_ID}" "PerceivedType" "image"
+    WriteRegStr HKLM "Software\Classes\${PROG_ID}\DefaultIcon" "" "$INSTDIR\icon.ico"
     WriteRegStr HKLM "Software\Classes\${PROG_ID}\shell\open\command" "" '"$INSTDIR\spedimage.exe" "%1"'
+    ; Register Windows thumbnail provider so photo previews are displayed in Windows Explorer instead of a blank white sheet:
+    WriteRegStr HKLM "Software\Classes\${PROG_ID}\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" "" "{C7657C4A-9F68-40fa-A4DF-96BC08EB3551}"
     
     ; 2. Define Application Capabilities
     WriteRegStr HKLM "Software\${APP_NAME}\Capabilities" "ApplicationName" "${APP_NAME}"
     WriteRegStr HKLM "Software\${APP_NAME}\Capabilities" "ApplicationDescription" "Ultra-Lightweight GPU-Accelerated Image Viewer"
-    WriteRegStr HKLM "Software\${APP_NAME}\Capabilities" "ApplicationIcon" "$INSTDIR\icon.ico,0"
+    WriteRegStr HKLM "Software\${APP_NAME}\Capabilities" "ApplicationIcon" "$INSTDIR\icon.ico"
     
     ; 3. Register individual extensions
     !insertmacro RegisterExtension "jpg"
