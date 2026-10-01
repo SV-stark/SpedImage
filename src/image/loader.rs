@@ -35,6 +35,9 @@ impl Default for LoadOptions {
 pub struct ImageLoader;
 
 /// Map an EXIF orientation value to a rotation in degrees.
+///
+/// Only the pure rotations are representable on the GPU; the mirrored values
+/// (2, 4, 5, 7) are baked into the pixels by [`exif_orientation_transform`].
 pub(crate) fn exif_orientation_to_degrees(o: u32) -> Option<u16> {
     match o {
         3 => Some(180),
@@ -42,6 +45,153 @@ pub(crate) fn exif_orientation_to_degrees(o: u32) -> Option<u16> {
         8 => Some(270),
         _ => None,
     }
+}
+
+/// Full EXIF orientation transform as `(rotate_cw_degrees, mirror_h, mirror_v)`.
+///
+/// The mirror is applied to the stored pixels *before* the rotation, which is
+/// what distinguishes orientation 5 (main-diagonal transpose) from 7
+/// (anti-diagonal transverse).
+pub(crate) fn exif_orientation_transform(o: u32) -> Option<(u32, bool, bool)> {
+    match o {
+        2 => Some((0, true, false)),
+        3 => Some((180, false, false)),
+        4 => Some((0, false, true)),
+        5 => Some((270, true, false)),
+        6 => Some((90, false, false)),
+        7 => Some((90, true, false)),
+        8 => Some((270, false, false)),
+        _ => None,
+    }
+}
+
+/// Apply an EXIF orientation to a decoded buffer.
+///
+/// Mirrored orientations always bake (the GPU path can only express a
+/// rotation); pure rotations are baked only when `bake` is set, otherwise they
+/// are reported through [`ImageData::orientation_deg`] and applied by the shader.
+///
+/// Takes the buffer by value so the deferred path — the common one, since the
+/// preview load sets `bake_orientation: false` — hands the `Vec` straight back
+/// instead of cloning a full-resolution frame.
+fn apply_orientation(
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+    orientation: u32,
+    bake: bool,
+) -> (Vec<u8>, u32, u32, u16) {
+    let Some((deg, mirror_h, mirror_v)) = exif_orientation_transform(orientation) else {
+        return (rgba, width, height, 0);
+    };
+
+    // A rotation the GPU can do for free stays deferred; a mirror cannot.
+    if !bake && let Some(d) = exif_orientation_to_degrees(orientation) {
+        return (rgba, width, height, d);
+    }
+
+    let mut buf = rgba;
+    let (mut w, mut h) = (width, height);
+    super::processing::ImageProcessor::flip_rgba(&mut buf, w, h, mirror_h, mirror_v);
+    if deg != 0 {
+        let (rotated, rw, rh) =
+            super::processing::ImageProcessor::rotate_rgba(&buf, w, h, deg as i32);
+        buf = rotated;
+        w = rw;
+        h = rh;
+    }
+    (buf, w, h, 0)
+}
+
+/// Resolve the decode budget into a `(target_w, target_h)` box.
+///
+/// Both bounds are required: a partial box used to divide by zero and collapse
+/// the image to 1x1. Returns `None` when the caller wants full resolution.
+fn decode_box(max_w: Option<u32>, max_h: Option<u32>) -> Option<(u32, u32)> {
+    match (max_w, max_h) {
+        (Some(mw), Some(mh)) if mw > 0 && mh > 0 => Some((mw, mh)),
+        _ => None,
+    }
+}
+
+/// Swap the box bounds for sideways EXIF orientations so the decoded buffer is
+/// measured in the same axis order as the display.
+fn orient_box(box_wh: Option<(u32, u32)>, orientation: Option<u32>) -> Option<(u32, u32)> {
+    let (mw, mh) = box_wh?;
+    if orientation
+        .and_then(exif_orientation_to_degrees)
+        .is_some_and(|d| d == 90 || d == 270)
+    {
+        Some((mh, mw))
+    } else {
+        Some((mw, mh))
+    }
+}
+
+/// Largest DCT decode downscale (1/8, 1/4, 1/2, 1/1) that still leaves the frame
+/// at least as large as the final fit target.
+///
+/// Guarantees the subsequent `fast_image_resize` pass is always a *downscale*,
+/// so output quality is unchanged while the decode does less work.
+///
+/// Measured on a 6000x4000 baseline JPEG: entropy decoding dominates, so a
+/// scale factor of 8 only cuts total decode time to roughly 70% rather than the
+/// 64x the IDCT saving alone would suggest. It also shrinks the output buffer
+/// from 96 MB to 1.5 MB, which is what actually makes the preview and thumbnail
+/// paths cheap. See `benches/image_processing.rs`.
+fn pick_dct_scale(
+    src_w: u32,
+    src_h: u32,
+    target_w: u32,
+    target_h: u32,
+) -> libjpeg_turbo_rs::ScalingFactor {
+    let denom = match decode_box(Some(target_w), Some(target_h)) {
+        Some(_) => {
+            let ratio = (src_w as f64 / target_w as f64).max(src_h as f64 / target_h as f64);
+            let mut d = 8u32;
+            while ratio < d as f64 && d > 1 {
+                d /= 2;
+            }
+            d
+        }
+        None => 1,
+    };
+    libjpeg_turbo_rs::ScalingFactor::new(1, denom)
+}
+
+/// Aspect-fit `rgba` into the `(target_w, target_h)` box.
+///
+/// Returns the buffer unchanged (no copy) when no bound is set, when the source
+/// already fits, or when the decoder already produced something small enough.
+fn downsample_to_fit(
+    rgba: Vec<u8>,
+    src_w: u32,
+    src_h: u32,
+    box_wh: Option<(u32, u32)>,
+) -> Result<(Vec<u8>, u32, u32, bool)> {
+    let Some((target_w, target_h)) = box_wh else {
+        return Ok((rgba, src_w, src_h, false));
+    };
+    if src_w == 0 || src_h == 0 || (src_w <= target_w && src_h <= target_h) {
+        return Ok((rgba, src_w, src_h, false));
+    }
+
+    let ratio = (src_w as f64 / target_w as f64).max(src_h as f64 / target_h as f64);
+    let dst_w = ((src_w as f64 / ratio).round() as u32).max(1);
+    let dst_h = ((src_h as f64 / ratio).round() as u32).max(1);
+    if dst_w == src_w && dst_h == src_h {
+        return Ok((rgba, src_w, src_h, false));
+    }
+
+    use fast_image_resize as fr;
+    let src_image = fr::images::ImageRef::new(src_w, src_h, &rgba, fr::PixelType::U8x4)
+        .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
+    let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
+    super::processing::ImageProcessor::create_simd_resizer()
+        .resize(&src_image, &mut dst_image, None)
+        .map_err(|e| eyre!("Resize failed: {e:?}"))?;
+
+    Ok((dst_image.into_vec(), dst_w, dst_h, true))
 }
 
 impl ImageLoader {
@@ -68,29 +218,35 @@ impl ImageLoader {
             .to_lowercase();
 
         let format_type = ImageFormatType::from_extension(&ext);
+        let is_jpeg = ext == "jpg" || ext == "jpeg";
 
-        let orientation = if ext != "svg" && ext != "gif" {
-            crate::image::extract_orientation(path)
+        // JPEG reads orientation / GPS / color space straight out of the APP1
+        // marker it already parsed for decoding, so it skips this pass. Every
+        // other container is scanned exactly once, here, and the result is
+        // reused for both the transform and the metadata fields.
+        let exif = if is_jpeg || ext == "svg" || ext == "gif" {
+            crate::image::metadata::ExifMeta::default()
         } else {
-            None
+            crate::image::metadata::read_exif_meta(path)
         };
+        let orientation = exif.orientation;
 
         let (image_frames, format_type) = if ext == "gif" {
             Self::load_gif(path, max_w, max_h, opts)?
-        } else if ext == "jpg" || ext == "jpeg" {
-            Self::load_jpeg(path, max_w, max_h, opts, orientation)?
+        } else if is_jpeg {
+            Self::load_jpeg(path, max_w, max_h, opts)?
         } else if ext == "svg" {
             Self::load_svg(path, max_w, max_h)?
         } else if ext == "jxl" {
-            Self::load_jxl(path)?
+            Self::load_jxl(path, max_w, max_h)?
         } else if ext == "qoi" {
-            Self::load_qoi(path)?
+            Self::load_qoi(path, max_w, max_h)?
         } else if ext == "exr" {
-            Self::load_exr(path)?
+            Self::load_exr(path, max_w, max_h)?
         } else if ext == "heic" || ext == "heif" || ext == "avif" {
-            Self::load_heic(path, format_type)?
+            Self::load_heic(path, max_w, max_h, format_type)?
         } else if ext == "tiff" || ext == "tif" {
-            Self::load_tiff(path)?
+            Self::load_tiff(path, max_w, max_h)?
         } else if format_type == ImageFormatType::Raw {
             Self::load_raw(path)?
         } else {
@@ -102,22 +258,7 @@ impl ImageLoader {
             };
             let cursor = std::io::Cursor::new(&mmap[..]);
 
-            let (target_mw, target_mh) = match (max_w, max_h) {
-                (Some(mw), Some(mh)) => {
-                    let deg = orientation.and_then(|o| match o {
-                        3 => Some(180),
-                        6 => Some(90),
-                        8 => Some(270),
-                        _ => None,
-                    });
-                    if matches!(deg, Some(90) | Some(270)) {
-                        (mh, mw)
-                    } else {
-                        (mw, mh)
-                    }
-                }
-                _ => (0, 0),
-            };
+            let target_box = orient_box(decode_box(max_w, max_h), orientation);
 
             let mut img = Image::read(cursor, zune_core::options::DecoderOptions::default())
                 .map_err(|e| eyre!("Failed to decode image {path:?}: {e:?}"))?;
@@ -126,56 +267,29 @@ impl ImageLoader {
             img.convert_color(zune_core::colorspace::ColorSpace::RGBA)?;
 
             let (src_w, src_h) = (img.dimensions().0 as u32, img.dimensions().1 as u32);
+            if src_w == 0 || src_h == 0 {
+                return Err(eyre!("Image {path:?} reports a zero dimension"));
+            }
             let icc = img.metadata().icc_chunk().map(|s| s.to_vec());
             // Take ownership instead of cloning: saves a full-buffer copy per image.
-            let mut rgba = img.flatten_to_u8().swap_remove(0);
+            let rgba = img.flatten_to_u8().swap_remove(0);
 
-            let mut final_w = src_w;
-            let mut final_h = src_h;
-            let mut is_downsampled = false;
+            let meta = &exif;
 
-            if (max_w.is_some() || max_h.is_some()) && (src_w > target_mw || src_h > target_mh) {
-                let ratio = (src_w as f32 / target_mw as f32).max(src_h as f32 / target_mh as f32);
-                let dst_w = ((src_w as f32 / ratio).round() as u32).max(1);
-                let dst_h = ((src_h as f32 / ratio).round() as u32).max(1);
+            let (mut rgba, final_w, final_h, is_downsampled) =
+                downsample_to_fit(rgba, src_w, src_h, target_box)?;
 
-                use fast_image_resize as fr;
-                let src_image = fr::images::ImageRef::new(src_w, src_h, &rgba, fr::PixelType::U8x4)
-                    .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
-                let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
-                let mut resizer = super::processing::ImageProcessor::create_simd_resizer();
-                resizer
-                    .resize(&src_image, &mut dst_image, None)
-                    .map_err(|e| eyre!("Resize failed: {e:?}"))?;
-
-                rgba = dst_image.into_vec();
-                final_w = dst_w;
-                final_h = dst_h;
-                is_downsampled = true;
-            }
-
-            // Apply color profile to downsampled buffer in parallel
+            // Apply color profile to the (already reduced) buffer in parallel.
             if let Some(ref icc_bytes) = icc
                 && let Err(e) = Self::apply_color_profile(&mut rgba, icc_bytes)
             {
                 tracing::warn!("Failed to apply color profile: {:?}", e);
             }
 
-            // Apply EXIF rotation: baked into the buffer, or deferred to the GPU.
-            let mut orientation_deg = 0u16;
-            if let Some(o) = orientation
-                && let Some(d) = exif_orientation_to_degrees(o)
-            {
-                if opts.bake_orientation {
-                    let (rotated_rgba, rotated_w, rotated_h) =
-                        rotate_rgba(&rgba, final_w, final_h, d as u32);
-                    rgba = rotated_rgba;
-                    final_w = rotated_w;
-                    final_h = rotated_h;
-                } else {
-                    orientation_deg = d;
-                }
-            }
+            let (rgba, final_w, final_h, orientation_deg) = match orientation {
+                Some(o) => apply_orientation(rgba, final_w, final_h, o, opts.bake_orientation),
+                None => (rgba, final_w, final_h, 0),
+            };
 
             (
                 vec![ImageData {
@@ -191,8 +305,8 @@ impl ImageLoader {
                     histogram: None,
                     is_downsampled,
                     orientation_deg,
-                    gps_coords: None,
-                    color_space: None,
+                    gps_coords: meta.gps_coords,
+                    color_space: meta.color_space,
                 }],
                 format_type,
             )
@@ -201,12 +315,13 @@ impl ImageLoader {
         Ok((image_frames, format_type))
     }
 
+    /// Decode a JPEG, using libjpeg-turbo's scaled IDCT so thumbnails and
+    /// previews never pay for a full-resolution decode of a 24 MP photo.
     fn load_jpeg(
         path: &Path,
         max_w: Option<u32>,
         max_h: Option<u32>,
         opts: LoadOptions,
-        orientation: Option<u32>,
     ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         let file = std::fs::File::open(path)
             .map_err(|e| eyre!("Failed to open JPEG file {path:?}: {e:?}"))?;
@@ -215,69 +330,71 @@ impl ImageLoader {
                 .map_err(|e| eyre!("Failed to memory map JPEG {path:?}: {e:?}"))?
         };
 
-        let decoded =
-            libjpeg_turbo_rs::decompress_to(&mmap[..], libjpeg_turbo_rs::PixelFormat::Rgba)
-                .map_err(|e| eyre!("Failed to decode JPEG {path:?}: {e:?}"))?;
+        // Header parse only: gives dimensions, EXIF orientation, ICC and EXIF
+        // blocks with no pixel work.
+        let mut decoder = libjpeg_turbo_rs::Decoder::new(&mmap[..])
+            .map_err(|e| eyre!("Failed to parse JPEG {path:?}: {e:?}"))?;
 
-        let src_w = decoded.width as u32;
-        let src_h = decoded.height as u32;
-        let mut rgba = decoded.data;
+        let header = decoder.header();
+        let src_w = header.width() as u32;
+        let src_h = header.height() as u32;
+        if src_w == 0 || src_h == 0 {
+            return Err(eyre!("JPEG {path:?} reports a zero dimension"));
+        }
 
-        let (target_mw, target_mh) = match (max_w, max_h) {
-            (Some(mw), Some(mh)) => {
-                let deg = orientation.and_then(exif_orientation_to_degrees);
-                if matches!(deg, Some(90) | Some(270)) {
-                    (mh, mw)
-                } else {
-                    (mw, mh)
-                }
-            }
-            _ => (0, 0),
+        let orientation = decoder.exif_orientation().map(u32::from);
+        let target_box = orient_box(decode_box(max_w, max_h), orientation);
+
+        // Largest DCT reduction that still leaves room for a downscale-only
+        // CPU pass, so the resize never has to upscale. Also keeps the
+        // intermediate buffer small: a 24 MP RGBA frame is 96 MB at 1/1 but
+        // only 1.5 MB at 1/8.
+        let scale = match target_box {
+            Some((tw, th)) => pick_dct_scale(src_w, src_h, tw, th),
+            None => libjpeg_turbo_rs::ScalingFactor::new(1, 1),
         };
+        decoder.set_scale(scale);
+        decoder.set_output_format(libjpeg_turbo_rs::PixelFormat::Rgba);
 
-        let mut final_w = src_w;
-        let mut final_h = src_h;
-        let mut is_downsampled = false;
+        let mut buf = vec![0u8; decoder.output_buffer_size()?];
+        let info = decoder.decode_image_into(&mut buf)?;
+        let dec_w = info.width as u32;
+        let dec_h = info.height as u32;
+        // `output_buffer_size` is an upper bound on some paths; trim to what
+        // was actually written before the buffer is reused as an RGBA image.
+        buf.truncate(info.bytes_written);
 
-        if (max_w.is_some() || max_h.is_some())
-            && target_mw > 0
-            && target_mh > 0
-            && (src_w > target_mw || src_h > target_mh)
+        let icc = info.icc_profile.clone();
+        let meta = info
+            .exif_data
+            .as_deref()
+            .and_then(crate::image::metadata::parse_exif_block)
+            .unwrap_or_default();
+
+        let mut rgba = buf;
+        let (mut final_w, mut final_h) = (dec_w, dec_h);
+        let is_downsampled = scale.denom > 1;
+
+        if let Some(box_wh) = target_box
+            && (dec_w, dec_h) != (src_w, src_h)
         {
-            let ratio = (src_w as f32 / target_mw as f32).max(src_h as f32 / target_mh as f32);
-            let dst_w = ((src_w as f32 / ratio).round() as u32).max(1);
-            let dst_h = ((src_h as f32 / ratio).round() as u32).max(1);
-
-            use fast_image_resize as fr;
-            let src_image = fr::images::ImageRef::new(src_w, src_h, &rgba, fr::PixelType::U8x4)
-                .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
-            let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
-            let mut resizer = super::processing::ImageProcessor::create_simd_resizer();
-            resizer
-                .resize(&src_image, &mut dst_image, None)
-                .map_err(|e| eyre!("Resize failed: {e:?}"))?;
-
-            rgba = dst_image.into_vec();
-            final_w = dst_w;
-            final_h = dst_h;
-            is_downsampled = true;
+            let (r, w, h, _downsampled) = downsample_to_fit(rgba, dec_w, dec_h, Some(box_wh))?;
+            rgba = r;
+            final_w = w;
+            final_h = h;
         }
 
-        // Apply EXIF rotation: baked into the buffer, or deferred to the GPU.
-        let mut orientation_deg = 0u16;
-        if let Some(o) = orientation
-            && let Some(d) = exif_orientation_to_degrees(o)
+        // ICC transform runs on the reduced buffer, so it is proportionally cheaper.
+        if let Some(ref icc_bytes) = icc
+            && let Err(e) = Self::apply_color_profile(&mut rgba, icc_bytes)
         {
-            if opts.bake_orientation {
-                let (rotated_rgba, rotated_w, rotated_h) =
-                    rotate_rgba(&rgba, final_w, final_h, d as u32);
-                rgba = rotated_rgba;
-                final_w = rotated_w;
-                final_h = rotated_h;
-            } else {
-                orientation_deg = d;
-            }
+            tracing::warn!("Failed to apply color profile for {path:?}: {e:?}");
         }
+
+        let (rgba, final_w, final_h, orientation_deg) = match orientation {
+            Some(o) => apply_orientation(rgba, final_w, final_h, o, opts.bake_orientation),
+            None => (rgba, final_w, final_h, 0),
+        };
 
         Ok((
             vec![ImageData {
@@ -293,8 +410,8 @@ impl ImageLoader {
                 histogram: None,
                 is_downsampled,
                 orientation_deg,
-                gps_coords: None,
-                color_space: None,
+                gps_coords: meta.gps_coords,
+                color_space: meta.color_space,
             }],
             ImageFormatType::Jpeg,
         ))
@@ -328,7 +445,11 @@ impl ImageLoader {
         Ok(())
     }
 
-    fn load_jxl(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    fn load_jxl(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use jxl_oxide::JxlImage;
 
         let image = JxlImage::builder()
@@ -374,6 +495,8 @@ impl ImageLoader {
             });
 
         let file_size = std::fs::metadata(path)?.len();
+        let (rgba, width, height, is_downsampled) =
+            downsample_to_fit(rgba, width, height, decode_box(max_w, max_h))?;
 
         Ok((
             vec![ImageData {
@@ -387,7 +510,7 @@ impl ImageLoader {
                 exif_info: None,
                 exif_loaded: true,
                 histogram: None,
-                is_downsampled: false,
+                is_downsampled,
                 orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
@@ -463,7 +586,11 @@ impl ImageLoader {
         ))
     }
 
-    fn load_tiff(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    fn load_tiff(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use tiff::decoder::{Decoder, DecodingResult};
         let file = std::fs::File::open(path)?;
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
@@ -503,6 +630,8 @@ impl ImageLoader {
         };
 
         let file_size = std::fs::metadata(path)?.len();
+        let (rgba_data, width, height, is_downsampled) =
+            downsample_to_fit(rgba_data, width, height, decode_box(max_w, max_h))?;
 
         Ok((
             vec![ImageData {
@@ -516,7 +645,7 @@ impl ImageLoader {
                 exif_info: None,
                 exif_loaded: true,
                 histogram: None,
-                is_downsampled: false,
+                is_downsampled,
                 orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
@@ -527,6 +656,8 @@ impl ImageLoader {
 
     fn load_heic(
         path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
         format_type: ImageFormatType,
     ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         let file = std::fs::File::open(path)?;
@@ -550,6 +681,8 @@ impl ImageLoader {
             .map_err(|e| eyre!("HEIC/AVIF decode failed: {:?}", e))?;
 
         let file_size = std::fs::metadata(path)?.len();
+        let (rgba, width, height, is_downsampled) =
+            downsample_to_fit(rgba, width, height, decode_box(max_w, max_h))?;
 
         Ok((
             vec![ImageData {
@@ -563,7 +696,7 @@ impl ImageLoader {
                 exif_info: None,
                 exif_loaded: true,
                 histogram: None,
-                is_downsampled: false,
+                is_downsampled,
                 orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
@@ -595,14 +728,12 @@ impl ImageLoader {
 
         let mut dst_w = w;
         let mut dst_h = h;
-        if let (Some(mw), Some(mh)) = (max_w, max_h)
+        if let Some((mw, mh)) = decode_box(max_w, max_h)
             && (w > mw || h > mh)
         {
-            let ratio = (w as f32 / mw as f32).max(h as f32 / mh as f32);
-            dst_w = (w as f32 / ratio).round() as u32;
-            dst_h = (h as f32 / ratio).round() as u32;
-            dst_w = dst_w.max(1);
-            dst_h = dst_h.max(1);
+            let ratio = (w as f64 / mw as f64).max(h as f64 / mh as f64);
+            dst_w = ((w as f64 / ratio).round() as u32).max(1);
+            dst_h = ((h as f64 / ratio).round() as u32).max(1);
         }
 
         // A GIF frame might not cover the full canvas, so we need a canvas to compose them.
@@ -632,13 +763,15 @@ impl ImageLoader {
                     let (fl, ft, fw, fh) = prev_frame_rect;
                     for row in 0..fh {
                         let y = ft + row;
-                        if y < h as usize {
-                            let start = (y * w as usize + fl) * 4;
-                            let end = start + fw * 4;
-                            if end <= canvas.len() {
-                                canvas[start..end].fill(0);
-                            }
+                        // A frame rect can sit outside the logical screen in a
+                        // malformed GIF; clamp instead of trusting it.
+                        if y >= h as usize || fl >= w as usize {
+                            break;
                         }
+                        let span = fw.min(w as usize - fl);
+                        let start = (y * w as usize + fl) * 4;
+                        let end = start + span * 4;
+                        canvas[start..end].fill(0);
                     }
                 }
                 gif::DisposalMethod::Previous => {
@@ -657,18 +790,30 @@ impl ImageLoader {
             let fw = frame.width as usize;
             let fh = frame.height as usize;
 
-            let line_len = fw * 4;
-            for (i, line) in frame.buffer.chunks_exact(line_len).enumerate() {
-                let y = ft + i;
-                if y < h as usize {
-                    let canvas_start = (y * w as usize + fl) * 4;
-                    for (p, pixel) in line.as_chunks::<4>().0.iter().enumerate() {
+            // A zero-width sub-frame is legal in a malformed GIF and would
+            // panic `chunks_exact(0)`.
+            if fw > 0 && fh > 0 {
+                let line_len = fw * 4;
+                for (i, line) in frame.buffer.chunks_exact(line_len).enumerate() {
+                    let y = ft + i;
+                    if y >= h as usize {
+                        break;
+                    }
+                    let row_base = y * w as usize;
+                    let copy_pixels = fw.min(w as usize - fl);
+                    if copy_pixels == 0 {
+                        break;
+                    }
+                    let canvas_start = (row_base + fl) * 4;
+                    let copy_bytes = copy_pixels * 4;
+                    if line.len() < copy_bytes {
+                        break;
+                    }
+                    for (p, pixel) in line[..copy_bytes].as_chunks::<4>().0.iter().enumerate() {
                         let dst_idx = canvas_start + p * 4;
-                        if dst_idx + 4 <= canvas.len() {
-                            let alpha = pixel[3];
-                            if alpha > 0 {
-                                canvas[dst_idx..dst_idx + 4].copy_from_slice(pixel);
-                            }
+                        // `gif` already zeroed fully transparent pixels.
+                        if pixel[3] > 0 {
+                            canvas[dst_idx..dst_idx + 4].copy_from_slice(pixel);
                         }
                     }
                 }
@@ -835,7 +980,11 @@ impl ImageLoader {
         ))
     }
 
-    fn load_qoi(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    fn load_qoi(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         let file = std::fs::File::open(path)
             .map_err(|e| eyre!("Failed to open QOI file {path:?}: {e:?}"))?;
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
@@ -855,19 +1004,26 @@ impl ImageLoader {
             qoi::Channels::Rgba => decoded,
         };
 
+        let (rgba_data, width, height, is_downsampled) = downsample_to_fit(
+            rgba_data,
+            header.width,
+            header.height,
+            decode_box(max_w, max_h),
+        )?;
+
         Ok((
             vec![ImageData {
                 path: path.to_path_buf(),
                 rgba_data: Arc::new(rgba_data),
-                width: header.width,
-                height: header.height,
+                width,
+                height,
                 format: ImageFormatType::Qoi,
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
                 exif_info: None,
                 exif_loaded: true,
                 histogram: None,
-                is_downsampled: false,
+                is_downsampled,
                 orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
@@ -876,7 +1032,11 @@ impl ImageLoader {
         ))
     }
 
-    fn load_exr(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {
+    fn load_exr(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use exr::prelude::*;
         let image = read_first_rgba_layer_from_file(
             path,
@@ -898,6 +1058,8 @@ impl ImageLoader {
         let height = image.layer_data.size.height() as u32;
         let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         let rgba = image.layer_data.channel_data.pixels;
+        let (rgba, width, height, is_downsampled) =
+            downsample_to_fit(rgba, width, height, decode_box(max_w, max_h))?;
 
         Ok((
             vec![ImageData {
@@ -911,7 +1073,7 @@ impl ImageLoader {
                 exif_info: None,
                 exif_loaded: true,
                 histogram: None,
-                is_downsampled: false,
+                is_downsampled,
                 orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
@@ -921,67 +1083,10 @@ impl ImageLoader {
     }
 }
 
-fn rotate_rgba(rgba: &[u8], width: u32, height: u32, degrees: u32) -> (Vec<u8>, u32, u32) {
-    use rayon::prelude::*;
-    let w = width as usize;
-    let h = height as usize;
-
-    if degrees == 90 {
-        let mut out = vec![0u8; rgba.len()];
-        out.par_chunks_exact_mut(h * 4)
-            .enumerate()
-            .for_each(|(dst_y, row)| {
-                let x = dst_y;
-                for dst_x in 0..h {
-                    let y = h - 1 - dst_x;
-                    let src_idx = (y * w + x) * 4;
-                    let dst_idx = dst_x * 4;
-                    if src_idx + 3 < rgba.len() && dst_idx + 3 < row.len() {
-                        row[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
-                    }
-                }
-            });
-        (out, height, width)
-    } else if degrees == 180 {
-        let mut out = vec![0u8; rgba.len()];
-        out.par_chunks_exact_mut(w * 4)
-            .enumerate()
-            .for_each(|(dst_y, row)| {
-                let y = h - 1 - dst_y;
-                for dst_x in 0..w {
-                    let x = w - 1 - dst_x;
-                    let src_idx = (y * w + x) * 4;
-                    let dst_idx = dst_x * 4;
-                    if src_idx + 3 < rgba.len() && dst_idx + 3 < row.len() {
-                        row[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
-                    }
-                }
-            });
-        (out, width, height)
-    } else if degrees == 270 {
-        let mut out = vec![0u8; rgba.len()];
-        out.par_chunks_exact_mut(h * 4)
-            .enumerate()
-            .for_each(|(dst_y, row)| {
-                let x = w - 1 - dst_y;
-                for dst_x in 0..h {
-                    let y = dst_x;
-                    let src_idx = (y * w + x) * 4;
-                    let dst_idx = dst_x * 4;
-                    if src_idx + 3 < rgba.len() && dst_idx + 3 < row.len() {
-                        row[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
-                    }
-                }
-            });
-        (out, height, width)
-    } else {
-        (rgba.to_vec(), width, height)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image::{parse_exif_block, read_exif_meta};
 
     #[test]
     fn test_exif_orientation_mapping() {
@@ -1059,10 +1164,250 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Build a little-endian EXIF/TIFF block with Orientation in IFD0 and
+    /// ColorSpace in the Exif sub-IFD (where the spec puts it, and where
+    /// `exif::Tag::ColorSpace`'s context requires it to be).
+    fn exif_fixture(orientation: u16, color_space: u16) -> Vec<u8> {
+        fn entry(tag: u16, typ: u16, value: u32) -> [u8; 12] {
+            let mut e = [0u8; 12];
+            e[0..2].copy_from_slice(&tag.to_le_bytes());
+            e[2..4].copy_from_slice(&typ.to_le_bytes());
+            e[4..8].copy_from_slice(&1u32.to_le_bytes()); // count
+            e[8..10].copy_from_slice(&(value as u16).to_le_bytes()); // SHORT, left-justified
+            e
+        }
+        fn ifd(entries: &[[u8; 12]], next_ifd: u32) -> Vec<u8> {
+            let mut v = Vec::new();
+            v.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+            for e in entries {
+                v.extend_from_slice(e);
+            }
+            v.extend_from_slice(&next_ifd.to_le_bytes());
+            v
+        }
+
+        // Layout: header(8) | IFD0 | ExifIFD
+        let ifd0 = ifd(
+            &[
+                entry(0x0112, 3, orientation as u32), // Orientation, PRIMARY
+                entry(0x8769, 4, 0),                  // ExifIFDPointer, offset patched below
+            ],
+            0,
+        );
+        let exif_ifd_ofs = 8 + ifd0.len() as u32;
+        let exif_ifd = ifd(&[entry(0xA001, 3, color_space as u32)], 0);
+
+        let mut block = Vec::new();
+        block.extend_from_slice(b"II");
+        block.extend_from_slice(&42u16.to_le_bytes());
+        block.extend_from_slice(&8u32.to_le_bytes());
+        block.extend_from_slice(&ifd0);
+        // Patch the ExifIFDPointer value field now that the offset is known.
+        let ptr_at = 8 + 2 + 12 + 8;
+        block[ptr_at..ptr_at + 4].copy_from_slice(&exif_ifd_ofs.to_le_bytes());
+        block.extend_from_slice(&exif_ifd);
+        block
+    }
+
+    #[test]
+    fn test_exif_meta_parses_orientation_and_colorspace() {
+        let meta = parse_exif_block(&exif_fixture(6, 2)).expect("parse exif");
+        assert_eq!(meta.orientation, Some(6));
+        assert_eq!(meta.color_space, Some(2));
+
+        // With the "Exif\0\0" identifier still attached, as APP1 carries it.
+        let mut with_prefix = b"Exif\0\0".to_vec();
+        with_prefix.extend_from_slice(&exif_fixture(3, 1));
+        let meta = parse_exif_block(&with_prefix).expect("parse prefixed exif");
+        assert_eq!(meta.orientation, Some(3));
+        assert_eq!(meta.color_space, Some(1));
+
+        // Orientation 6 must route to a GPU rotation, not a bake.
+        let (out, w, h, deg) = apply_orientation(vec![0u8; 16], 2, 2, 6, false);
+        assert_eq!((w, h, deg), (2, 2, 90));
+        assert!(out.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn test_exif_meta_is_default_for_garbage() {
+        assert!(parse_exif_block(b"not exif at all").is_none());
+        assert!(parse_exif_block(b"").is_none());
+        let meta = read_exif_meta(std::path::Path::new("__no_such_file__.jpg"));
+        assert!(meta.orientation.is_none());
+        assert!(meta.gps_coords.is_none());
+    }
+
     #[test]
     fn test_load_options_default_bakes_orientation() {
         let opts = LoadOptions::default();
         assert!(opts.bake_orientation);
         assert_eq!(opts.frames, FrameLimit::All);
+    }
+
+    // --- decode budget regressions -------------------------------------
+
+    #[test]
+    fn test_decode_box_rejects_partial_or_zero_bounds() {
+        // A partial box used to divide by zero and collapse the image to 1x1.
+        assert_eq!(decode_box(None, None), None);
+        assert_eq!(decode_box(Some(80), None), None);
+        assert_eq!(decode_box(None, Some(80)), None);
+        assert_eq!(decode_box(Some(0), Some(80)), None);
+        assert_eq!(decode_box(Some(80), Some(60)), Some((80, 60)));
+    }
+
+    #[test]
+    fn test_downsample_to_fit_is_identity_without_a_full_box() {
+        let data = vec![7u8; 4 * 2 * 4];
+        let (out, w, h, downsampled) = downsample_to_fit(data.clone(), 4, 2, None).unwrap();
+        assert_eq!((w, h), (4, 2));
+        assert!(!downsampled);
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn test_downsample_to_fit_fits_inside_the_box() {
+        // 400x200 into a 100x100 box -> ratio 4 -> 100x50.
+        let data = vec![3u8; 400 * 200 * 4];
+        let (out, w, h, downsampled) = downsample_to_fit(data, 400, 200, Some((100, 100))).unwrap();
+        assert!((w, h) == (100, 50), "got {w}x{h}");
+        assert!(downsampled);
+        assert_eq!(out.len(), (100 * 50 * 4) as usize);
+    }
+
+    #[test]
+    fn test_downsample_to_fit_leaves_small_images_alone() {
+        let data = vec![1u8; 40 * 20 * 4];
+        let (out, w, h, downsampled) = downsample_to_fit(data, 40, 20, Some((800, 600))).unwrap();
+        assert_eq!((w, h), (40, 20));
+        assert!(!downsampled);
+        assert_eq!(out.len(), 40 * 20 * 4);
+    }
+
+    #[test]
+    fn test_orient_box_swaps_for_sideways_exif() {
+        assert_eq!(orient_box(Some((800, 600)), Some(3)), Some((800, 600)));
+        assert_eq!(orient_box(Some((800, 600)), Some(6)), Some((600, 800)));
+        assert_eq!(orient_box(Some((800, 600)), Some(8)), Some((600, 800)));
+        assert_eq!(orient_box(Some((800, 600)), Some(2)), Some((800, 600)));
+        assert_eq!(orient_box(None, Some(6)), None);
+    }
+
+    #[test]
+    fn test_dct_scale_never_forces_an_upscale() {
+        // The chosen DCT factor must leave the frame at least as large as the
+        // aspect-fit result, otherwise the CPU pass would have to upscale.
+        for &(src_w, src_h) in &[(6000u32, 4000u32), (4000, 3000), (1024, 768), (300, 200)] {
+            for &(tw, th) in &[(80u32, 80u32), (1920, 1080), (1, 1)] {
+                let s = pick_dct_scale(src_w, src_h, tw, th);
+                let dec_w = s.scale_dim(src_w as usize) as u32;
+                let dec_h = s.scale_dim(src_h as usize) as u32;
+                let ratio = (src_w as f64 / tw as f64).max(src_h as f64 / th as f64);
+                if ratio > 1.0 {
+                    let dst_w = (src_w as f64 / ratio).round() as u32;
+                    let dst_h = (src_h as f64 / ratio).round() as u32;
+                    assert!(
+                        dec_w >= dst_w && dec_h >= dst_h,
+                        "scale 1/{s_denom} upscales {src_w}x{src_h} for box {tw}x{th}: got {dec_w}x{dec_h}, need >= {dst_w}x{dst_h}",
+                        s_denom = s.denom
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_dct_scale_picks_the_largest_reduction() {
+        // 6000x4000 thumbnail: needs 1/8 to stay above 80px.
+        assert_eq!(pick_dct_scale(6000, 4000, 80, 80).denom, 8);
+        // 6000x4000 preview in a 1920x1080 window: 1/4 is too small, so 1/2.
+        assert_eq!(pick_dct_scale(6000, 4000, 1920, 1080).denom, 2);
+        // Image already fits: no DCT scaling at all.
+        assert_eq!(pick_dct_scale(640, 480, 1920, 1080).denom, 1);
+    }
+
+    // --- EXIF orientation regressions ----------------------------------
+
+    #[test]
+    fn test_exif_orientation_transform_covers_mirrored_values() {
+        // Pure rotations stay on the GPU.
+        assert_eq!(exif_orientation_transform(1), None);
+        assert_eq!(exif_orientation_transform(3), Some((180, false, false)));
+        assert_eq!(exif_orientation_transform(6), Some((90, false, false)));
+        assert_eq!(exif_orientation_transform(8), Some((270, false, false)));
+        // Mirrored values were previously dropped entirely, showing the photo
+        // unrotated. 5 is the main-diagonal transpose, 7 the anti-diagonal.
+        assert_eq!(exif_orientation_transform(2), Some((0, true, false)));
+        assert_eq!(exif_orientation_transform(4), Some((0, false, true)));
+        assert_eq!(exif_orientation_transform(5), Some((270, true, false)));
+        assert_eq!(exif_orientation_transform(7), Some((90, true, false)));
+        assert_eq!(exif_orientation_transform(99), None);
+    }
+
+    #[test]
+    fn test_apply_orientation_defers_only_pure_rotations() {
+        // 2x2 RGBA, one byte per channel.
+        let data: Vec<u8> = (0..16u32).map(|v| v as u8).collect();
+        let (out, w, h, deg) = apply_orientation(data.clone(), 2, 2, 6, false);
+        assert_eq!((w, h, deg), (2, 2, 90));
+        assert_eq!(out, data, "deferred rotation must not touch pixels");
+
+        // Mirrored: cannot be expressed by `pre_rotation`, so it must bake.
+        let (out, w, h, deg) = apply_orientation(data.clone(), 2, 2, 5, false);
+        assert_eq!(deg, 0, "a mirror must never be deferred to the GPU");
+        assert_eq!((w, h), (2, 2), "transpose keeps dimensions");
+        assert_ne!(out, data);
+    }
+
+    #[test]
+    fn test_apply_orientation_transposes_and_transverses() {
+        // 2x2 where the red channel is a unique pixel id:
+        //   1 2
+        //   3 4
+        let data: Vec<u8> = vec![1, 0, 0, 255, 2, 0, 0, 255, 3, 0, 0, 255, 4, 0, 0, 255];
+        // Orientation 5 == transpose: [[1,2],[3,4]] -> [[1,3],[2,4]]
+        let (out, w, h, _) = apply_orientation(data.clone(), 2, 2, 5, true);
+        assert_eq!((w, h), (2, 2));
+        assert_eq!(&out[0..4], &[1, 0, 0, 255]);
+        assert_eq!(&out[4..8], &[3, 0, 0, 255]);
+        assert_eq!(&out[8..12], &[2, 0, 0, 255]);
+        assert_eq!(&out[12..16], &[4, 0, 0, 255]);
+
+        // Orientation 7 == transverse (anti-diagonal flip):
+        // [[1,2],[3,4]] -> [[4,2],[3,1]]
+        let (out, w, h, _) = apply_orientation(data.clone(), 2, 2, 7, true);
+        assert_eq!((w, h), (2, 2));
+        assert_eq!(out[0], 4);
+        assert_eq!(out[4], 2);
+        assert_eq!(out[8], 3);
+        assert_eq!(out[12], 1);
+
+        // Orientation 2 == mirror horizontal: [[1,2],[3,4]] -> [[2,1],[4,3]]
+        let (out, _, _, _) = apply_orientation(data.clone(), 2, 2, 2, true);
+        assert_eq!((out[0], out[4], out[8], out[12]), (2, 1, 4, 3));
+
+        // Orientation 8 == rotate 270 CW: dimensions swap.
+        let (out, w, h, _) = apply_orientation(data.clone(), 2, 2, 8, true);
+        assert_eq!((w, h), (2, 2));
+        assert_eq!(out[0], 2);
+    }
+
+    #[test]
+    fn test_apply_orientation_sideways_swaps_dimensions() {
+        let data: Vec<u8> = (0..12).map(|v| v as u8).collect();
+        let (_, w, h, deg) = apply_orientation(data.clone(), 3, 1, 6, true);
+        assert_eq!((w, h, deg), (1, 3, 0));
+        let (_, w, h, deg) = apply_orientation(data.clone(), 3, 1, 6, false);
+        assert_eq!((w, h, deg), (3, 1, 90));
+    }
+
+    #[test]
+    fn test_apply_orientation_identity_for_missing_tag() {
+        let data: Vec<u8> = (0..16u32).map(|v| v as u8).collect();
+        for o in [0, 1, 9, 42] {
+            let (out, w, h, deg) = apply_orientation(data.clone(), 2, 2, o, true);
+            assert_eq!((w, h, deg), (2, 2, 0));
+            assert_eq!(out, data);
+        }
     }
 }

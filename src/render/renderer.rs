@@ -40,6 +40,9 @@ pub struct Renderer {
 
     pub thumbnails: Vec<ThumbnailEntry>,
     pub(crate) last_thumb_state: Option<(u32, u32, f32)>,
+    /// Largest square 2D texture the device accepts; oversized images are
+    /// rejected with a clear error rather than a driver-side failure.
+    pub(crate) max_texture_dim: u32,
 }
 
 /// VRAM budget for recycled image textures.
@@ -53,7 +56,7 @@ fn texture_bytes(t: &Texture) -> u64 {
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Result<Self> {
         crate::startup::log("Renderer::new enter");
-        let (device, queue, surface, adapter) =
+        let (device, queue, surface, adapter, max_texture_dim) =
             Self::create_device_and_surface(window.clone()).await?;
         crate::startup::log("Renderer::new after device/surface");
 
@@ -77,7 +80,7 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        let (pipeline, _crop_pipeline) = Self::create_pipelines(&device, format)?;
+        let pipeline = Self::create_pipelines(&device, format)?;
         let (vertex_buffer, uniform_buffer) = Self::create_buffers(&device);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -159,6 +162,7 @@ impl Renderer {
             egui_renderer,
             thumbnails: Vec::new(),
             last_thumb_state: None,
+            max_texture_dim,
         })
     }
 }
@@ -199,6 +203,7 @@ impl Renderer {
         wgpu::Queue,
         wgpu::Surface<'static>,
         wgpu::Adapter,
+        u32,
     )> {
         // Fastest cold start on Windows: DX12 only (no Vulkan ICD enumeration,
         // no GL driver probing). Matches Photos' D3D path and is ~100-300 ms
@@ -232,7 +237,10 @@ impl Renderer {
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("SpedImage Device"),
                 required_features: wgpu::Features::default(),
-                required_limits: wgpu::Limits::default(),
+                // `Limits::default()` caps 2D textures at 8192px, which made
+                // every larger image fail to upload (silently, see load_image).
+                // Take whatever the adapter actually supports.
+                required_limits: adapter.limits(),
                 memory_hints: wgpu::MemoryHints::default(),
                 experimental_features: wgpu::ExperimentalFeatures::default(),
                 trace: wgpu::Trace::Off,
@@ -240,13 +248,17 @@ impl Renderer {
             .await
             .context("Failed to request WGPU device")?;
 
-        Ok((device, queue, surface, adapter))
+        // Remember the hard ceiling so oversized images get a real error
+        // instead of a device-lost panic deep in the driver.
+        let max_texture_dim = device.limits().max_texture_dimension_2d;
+
+        Ok((device, queue, surface, adapter, max_texture_dim))
     }
 
     fn create_pipelines(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-    ) -> Result<(wgpu::RenderPipeline, wgpu::RenderPipeline)> {
+    ) -> Result<wgpu::RenderPipeline> {
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(crate::render::shaders::SHADER.into()),
@@ -347,52 +359,7 @@ impl Renderer {
             cache: None,
         });
 
-        let crop_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Crop Shader"),
-            source: wgpu::ShaderSource::Wgsl(crate::render::shaders::CROP_SHADER.into()),
-        });
-
-        let crop_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Crop Pipeline Layout"),
-            bind_group_layouts: &[],
-            immediate_size: 0,
-        });
-
-        let crop_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Crop Overlay Pipeline"),
-            layout: Some(&crop_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &crop_shader_module,
-                entry_point: Some("vertex_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &crop_shader_module,
-                entry_point: Some("fragment_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Cw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-
-        Ok((pipeline, crop_pipeline))
+        Ok(pipeline)
     }
 
     /// Pipeline used for the lazy GPU mipmap blit chain.
@@ -496,6 +463,21 @@ impl Renderer {
     pub fn load_image(&mut self, image_data: &ImageData) -> Result<()> {
         let width = image_data.width;
         let height = image_data.height;
+
+        if width == 0 || height == 0 {
+            return Err(color_eyre::eyre::eyre!("Image has a zero dimension"));
+        }
+        if width > self.max_texture_dim || height > self.max_texture_dim {
+            return Err(color_eyre::eyre::eyre!(
+                "Image is {width}x{height}, larger than the {}px GPU texture limit",
+                self.max_texture_dim
+            ));
+        }
+        if image_data.rgba_data.len() < (width as usize) * (height as usize) * 4 {
+            return Err(color_eyre::eyre::eyre!(
+                "Pixel buffer too small for {width}x{height}"
+            ));
+        }
 
         // Move current to prev for transition
         if let Some(current_tex) = self.image_texture.take()

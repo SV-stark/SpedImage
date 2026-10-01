@@ -207,24 +207,6 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
-pub const CROP_SHADER: &str = r#"
-@vertex
-fn vertex_main(@builtin(vertex_index) item_index: u32) -> @builtin(position) vec4<f32> {
-    var pos = array<vec2<f32>, 4>(
-        vec2<f32>(-1.0,  1.0),
-        vec2<f32>( 1.0,  1.0),
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>( 1.0, -1.0)
-    );
-    return vec4<f32>(pos[item_index], 0.0, 1.0);
-}
-
-@fragment
-fn fragment_main() -> @location(0) vec4<f32> {
-    return vec4<f32>(0.0, 0.0, 0.0, 0.5); // Darken for crop regions
-}
-"#;
-
 /// Fullscreen blit used to generate successive mipmap levels on the GPU.
 pub const MIP_SHADER: &str = r#"
 struct VsOut {

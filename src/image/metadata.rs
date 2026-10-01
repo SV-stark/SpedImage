@@ -69,30 +69,70 @@ pub fn format_exif_data(exif_data: &exif::Exif) -> Option<String> {
     }
 }
 
-pub fn extract_exif_lazy(path: &std::path::Path) -> Option<String> {
-    let file = std::fs::File::open(path).ok()?;
+/// Everything a single EXIF parse can yield, so the file is only opened and
+/// scanned once per load instead of once per field.
+#[derive(Debug, Default, Clone)]
+pub struct ExifMeta {
+    pub exif_info: Option<String>,
+    pub orientation: Option<u32>,
+    pub gps_coords: Option<(f64, f64)>,
+    /// 1 = sRGB, 2 = Adobe RGB (only value with a GPU-side conversion matrix).
+    pub color_space: Option<u32>,
+}
+
+/// Read a numeric EXIF field as `u32`, accepting the integer encodings the
+/// spec allows for it.
+fn numeric_field(exif_data: &exif::Exif, tag: exif::Tag) -> Option<u32> {
+    let field = exif_data.get_field(tag, exif::In::PRIMARY)?;
+    match &field.value {
+        exif::Value::Short(v) => v.first().map(|&x| x as u32),
+        exif::Value::Byte(v) => v.first().map(|&x| x as u32),
+        exif::Value::Long(v) => v.first().copied(),
+        _ => None,
+    }
+}
+
+impl ExifMeta {
+    fn from_exif(exif_data: &exif::Exif) -> Self {
+        Self {
+            exif_info: format_exif_data(exif_data),
+            orientation: numeric_field(exif_data, exif::Tag::Orientation),
+            gps_coords: extract_gps(exif_data),
+            color_space: numeric_field(exif_data, exif::Tag::ColorSpace),
+        }
+    }
+}
+
+/// Parse an EXIF block straight out of memory. Accepts either a raw APP1
+/// payload or one that still carries the `Exif\0\0` identifier.
+pub fn parse_exif_block(raw: &[u8]) -> Option<ExifMeta> {
+    let tiff_block = raw.strip_prefix(b"Exif\0\0").unwrap_or(raw);
+    if tiff_block.is_empty() {
+        return None;
+    }
+    let exif_data = exif::Reader::new().read_raw(tiff_block.to_vec()).ok()?;
+    Some(ExifMeta::from_exif(&exif_data))
+}
+
+/// Read EXIF (orientation, GPS, color space, display text) from a container on
+/// disk. Never fails hard: a malformed or missing block yields defaults.
+pub fn read_exif_meta(path: &std::path::Path) -> ExifMeta {
+    let Ok(file) = std::fs::File::open(path) else {
+        return ExifMeta::default();
+    };
     let mut bufreader = std::io::BufReader::new(&file);
-    let exifreader = exif::Reader::new();
-    let exif_data = exifreader.read_from_container(&mut bufreader).ok()?;
-    format_exif_data(&exif_data)
+    exif::Reader::new()
+        .read_from_container(&mut bufreader)
+        .map(|e| ExifMeta::from_exif(&e))
+        .unwrap_or_default()
+}
+
+pub fn extract_exif_lazy(path: &std::path::Path) -> Option<String> {
+    read_exif_meta(path).exif_info
 }
 
 pub fn extract_orientation(path: &std::path::Path) -> Option<u32> {
-    let file = std::fs::File::open(path).ok()?;
-    let mut bufreader = std::io::BufReader::new(&file);
-    let exifreader = exif::Reader::new();
-    let exif_data = exifreader.read_from_container(&mut bufreader).ok()?;
-
-    if let Some(field) = exif_data.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
-        match &field.value {
-            exif::Value::Short(v) => v.first().map(|&x| x as u32),
-            exif::Value::Byte(v) => v.first().map(|&x| x as u32),
-            exif::Value::Long(v) => v.first().copied(),
-            _ => None,
-        }
-    } else {
-        None
-    }
+    read_exif_meta(path).orientation
 }
 
 fn parse_gps_rational(field: &exif::Field) -> Option<f64> {
@@ -134,44 +174,11 @@ fn extract_gps(exif_data: &exif::Exif) -> Option<(f64, f64)> {
 pub fn extract_exif_and_orientation(
     path: &std::path::Path,
 ) -> (Option<String>, Option<u32>, Option<(f64, f64)>, Option<u32>) {
-    let file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return (None, None, None, None),
-    };
-    let mut bufreader = std::io::BufReader::new(&file);
-    let exifreader = exif::Reader::new();
-    let exif_data = match exifreader.read_from_container(&mut bufreader) {
-        Ok(data) => data,
-        Err(_) => return (None, None, None, None),
-    };
-
-    let exif_info = format_exif_data(&exif_data);
-
-    let orientation =
-        if let Some(field) = exif_data.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
-            match &field.value {
-                exif::Value::Short(v) => v.first().map(|&x| x as u32),
-                exif::Value::Byte(v) => v.first().map(|&x| x as u32),
-                exif::Value::Long(v) => v.first().copied(),
-                _ => None,
-            }
-        } else {
-            None
-        };
-
-    let gps_coords = extract_gps(&exif_data);
-
-    let color_space =
-        if let Some(field) = exif_data.get_field(exif::Tag::ColorSpace, exif::In::PRIMARY) {
-            match &field.value {
-                exif::Value::Short(v) => v.first().map(|&x| x as u32),
-                exif::Value::Byte(v) => v.first().map(|&x| x as u32),
-                exif::Value::Long(v) => v.first().copied(),
-                _ => None,
-            }
-        } else {
-            None
-        };
-
-    (exif_info, orientation, gps_coords, color_space)
+    let meta = read_exif_meta(path);
+    (
+        meta.exif_info,
+        meta.orientation,
+        meta.gps_coords,
+        meta.color_space,
+    )
 }

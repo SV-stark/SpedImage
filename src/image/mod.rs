@@ -6,7 +6,9 @@ mod types;
 
 pub use gif_stream::{GifFrameMsg, GifStreamMsg, stream_gif};
 pub use loader::{FrameLimit, ImageLoader, LoadOptions};
-pub use metadata::{extract_exif_and_orientation, extract_orientation};
+pub use metadata::{
+    ExifMeta, extract_exif_and_orientation, extract_orientation, parse_exif_block, read_exif_meta,
+};
 pub use processing::ImageProcessor;
 pub use types::{ImageData, ImageError, ImageFormatType};
 
@@ -46,7 +48,7 @@ impl ImageBackend {
     }
 
     /// Supported extensions list
-    pub fn supported_extensions() -> Vec<&'static str> {
+    pub fn supported_extensions() -> &'static [&'static str] {
         ImageProcessor::supported_extensions()
     }
 

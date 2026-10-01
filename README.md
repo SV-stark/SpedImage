@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Version-0.10.0-blue" alt="Version: 0.10.0"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-0.10.1-blue" alt="Version: 0.10.1"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-1.94+-orange" alt="Rust: 1.94+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>

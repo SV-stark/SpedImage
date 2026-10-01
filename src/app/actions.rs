@@ -298,35 +298,49 @@ impl SpedImageApp {
     }
 
     pub(crate) fn load_image(&mut self, path: &std::path::Path) {
-        // Evict far-away cache entries based on current navigation index
-        let current_idx = if self.ui_state.files.len() > 8 {
-            self.ui_state.files.iter().position(|f| f.path == path)
-        } else {
-            None
-        };
+        // Evict far-away cache entries based on current navigation index.
+        // Only the paths are cloned (not the whole `FileEntry` list): this runs
+        // on the UI thread for every keystroke during fast browsing.
+        let current_idx = self
+            .ui_state
+            .files
+            .iter()
+            .position(|f| f.path == path)
+            .filter(|_| self.ui_state.files.len() > 8);
         if let Some(current_idx) = current_idx {
             let cache = self.prefetch_cache();
-            let files = self.ui_state.files.clone();
-            self.thread_pool().spawn(move || {
-                let keep_range = 4; // Maintain a window of 4 images in each direction
-                let mut to_remove = Vec::new();
-                for entry in cache.iter() {
-                    let cached_path = entry.0;
-                    if let Some(idx) = files.iter().position(|f| f.path == **cached_path) {
-                        let dist = (idx as i32 - current_idx as i32).abs();
-                        // Handle wrap-around distance
-                        let wrapped_dist = dist.min((files.len() as i32 - dist).abs());
-                        if wrapped_dist > keep_range {
+            if cache.entry_count() > 0 {
+                let files: Vec<PathBuf> =
+                    self.ui_state.files.iter().map(|f| f.path.clone()).collect();
+                self.thread_pool().spawn(move || {
+                    let len = files.len() as i32;
+                    let keep_range = 4; // Maintain a window of 4 images in each direction
+                    // Index once: a linear scan per cached entry made this
+                    // O(cache x files) string comparisons on every navigation.
+                    let index: rustc_hash::FxHashMap<&PathBuf, i32> = files
+                        .iter()
+                        .enumerate()
+                        .map(|(i, p)| (p, i as i32))
+                        .collect();
+                    let mut to_remove = Vec::new();
+                    for entry in cache.iter() {
+                        let cached_path = entry.0;
+                        if let Some(idx) = index.get(cached_path.as_ref()) {
+                            let dist = (idx - current_idx as i32).abs();
+                            // Handle wrap-around distance
+                            let wrapped_dist = dist.min((len - dist).abs());
+                            if wrapped_dist > keep_range {
+                                to_remove.push(cached_path);
+                            }
+                        } else {
                             to_remove.push(cached_path);
                         }
-                    } else {
-                        to_remove.push(cached_path);
                     }
-                }
-                for p in to_remove {
-                    cache.invalidate(p.as_ref());
-                }
-            });
+                    for p in to_remove {
+                        cache.invalidate(p.as_ref());
+                    }
+                });
+            }
         }
 
         let generation = self
@@ -825,9 +839,16 @@ impl SpedImageApp {
             self.ensure_baked_current();
         }
         self.ui_state.is_cropping = !self.ui_state.is_cropping;
+        self.crop_drag = None;
         if !self.ui_state.is_cropping {
+            // Leaving crop mode clears the preview rect, but must not discard
+            // a crop the user already committed via "Crop to View".
+            let committed = self.ui_state.adjustments.crop_rect_actual.is_some();
             self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
             self.ui_state.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
+            if committed {
+                self.ui_state.adjustments.crop_rect_actual = None;
+            }
         }
         self.dirty = true;
     }
@@ -848,8 +869,10 @@ impl SpedImageApp {
         img.width = w;
         img.height = h;
         img.orientation_deg = 0;
-        if let Some(ref mut r) = self.renderer {
-            r.load_image(img).ok();
+        if let Some(ref mut r) = self.renderer
+            && let Err(e) = r.load_image(img)
+        {
+            tracing::warn!("GPU upload failed after baking orientation: {e}");
         }
         self.dirty = true;
     }
@@ -861,6 +884,7 @@ impl SpedImageApp {
 
     pub(crate) fn cancel_crop(&mut self) {
         self.ui_state.is_cropping = false;
+        self.crop_drag = None;
         self.ui_state.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
         self.ui_state.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
         self.dirty = true;
@@ -1244,7 +1268,7 @@ impl SpedImageApp {
         let proxy = self.event_proxy.clone();
         self.thread_pool().spawn(move || {
             if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Images", &ImageBackend::supported_extensions())
+                .add_filter("Images", ImageBackend::supported_extensions())
                 .pick_file()
                 && let Some(ref proxy) = proxy
             {
@@ -1326,8 +1350,19 @@ impl SpedImageApp {
     pub(crate) fn zoom_by(&mut self, factor: f32, cursor: Option<PhysicalPosition<f64>>) {
         let old_w = self.ui_state.adjustments.crop_rect_target[2];
         let old_h = self.ui_state.adjustments.crop_rect_target[3];
-        let new_w = (old_w * factor).clamp(0.01, 5.0);
-        let new_h = (old_h * factor).clamp(0.01, 5.0);
+        // Clamp on the *larger* side and derive the other from it, so the two
+        // axes always scale by the same factor. Clamping each axis separately
+        // silently stretched the image once one side hit the 5x/0.01x limit.
+        let limit = 5.0f32;
+        let (new_w, new_h) = if old_w >= old_h {
+            let new_w = (old_w * factor).clamp(0.01, limit);
+            let ratio = if old_w > 0.0 { old_h / old_w } else { 1.0 };
+            (new_w, (new_w * ratio).clamp(0.01, limit))
+        } else {
+            let new_h = (old_h * factor).clamp(0.01, limit);
+            let ratio = if old_h > 0.0 { old_w / old_h } else { 1.0 };
+            ((new_h * ratio).clamp(0.01, limit), new_h)
+        };
         self.set_crop_target(new_w, new_h, cursor);
     }
 

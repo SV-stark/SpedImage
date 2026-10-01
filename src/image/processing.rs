@@ -72,103 +72,125 @@ impl ImageProcessor {
     }
 
     /// Return true if the file extension is one of the supported formats.
+    ///
+    /// Allocation-free: this runs once per directory entry, so building a
+    /// lowercase `String` and a `Vec` per file dominated large-folder scans.
     pub fn is_supported(path: &Path) -> bool {
-        let ext = path
-            .extension()
+        path.extension()
             .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        let exts = Self::supported_extensions();
-        exts.contains(&ext.as_str())
+            .is_some_and(|ext| {
+                Self::SUPPORTED_EXTENSIONS
+                    .iter()
+                    .any(|k| ext.eq_ignore_ascii_case(k))
+            })
     }
+
+    /// Extensions the viewer accepts, without any per-call allocation.
+    pub const SUPPORTED_EXTENSIONS: &'static [&'static str] = &[
+        "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "tif", "webp", "ico", "heic", "heif",
+        "avif", "jxl", "svg", "qoi", "exr", "arw", "cr2", "nef", "dng", "orf", "raf", "srw",
+    ];
 
     /// Get list of supported file extensions
-    pub fn supported_extensions() -> Vec<&'static str> {
-        vec![
-            "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "tif", "webp", "ico", "heic",
-            "heif", "avif", "jxl", "svg", "qoi", "exr", "arw", "cr2", "nef", "dng", "orf", "raf",
-            "srw",
-        ]
+    pub fn supported_extensions() -> &'static [&'static str] {
+        Self::SUPPORTED_EXTENSIONS
     }
-
     pub fn rotate_rgba(rgba: &[u8], width: u32, height: u32, deg: i32) -> (Vec<u8>, u32, u32) {
-        let deg = deg.rem_euclid(360);
-        match deg {
-            90 => {
-                let mut out = vec![0u8; (width * height * 4) as usize];
-                for y in 0..height {
-                    for x in 0..width {
-                        let src_idx = ((y * width + x) * 4) as usize;
-                        let dst_x = height - 1 - y;
-                        let dst_y = x;
-                        let dst_idx = ((dst_y * height + dst_x) * 4) as usize;
-                        out[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
-                    }
-                }
-                (out, height, width)
-            }
-            180 => {
-                let mut out = vec![0u8; (width * height * 4) as usize];
-                for y in 0..height {
-                    for x in 0..width {
-                        let src_idx = ((y * width + x) * 4) as usize;
-                        let dst_x = width - 1 - x;
-                        let dst_y = height - 1 - y;
-                        let dst_idx = ((dst_y * width + dst_x) * 4) as usize;
-                        out[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
-                    }
-                }
-                (out, width, height)
-            }
-            270 => {
-                let mut out = vec![0u8; (width * height * 4) as usize];
-                for y in 0..height {
-                    for x in 0..width {
-                        let src_idx = ((y * width + x) * 4) as usize;
-                        let dst_x = y;
-                        let dst_y = width - 1 - x;
-                        let dst_idx = ((dst_y * height + dst_x) * 4) as usize;
-                        out[dst_idx..dst_idx + 4].copy_from_slice(&rgba[src_idx..src_idx + 4]);
-                    }
-                }
-                (out, height, width)
-            }
-            _ => (rgba.to_vec(), width, height),
+        use rayon::prelude::*;
+        let (w, h) = (width as usize, height as usize);
+        if w == 0 || h == 0 || rgba.len() < w * h * 4 {
+            return (rgba.to_vec(), width, height);
         }
+
+        let deg = deg.rem_euclid(360);
+        let mut out = vec![0u8; rgba.len()];
+        // Each destination row is written independently, so the passes below
+        // are embarrassingly parallel (a single-threaded loop made every
+        // rotate/flip on a 24 MP export visibly stutter).
+        match deg {
+            90 => out
+                .par_chunks_exact_mut(h * 4)
+                .enumerate()
+                .for_each(|(dst_y, row)| {
+                    for (dst_x, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                        let src = ((h - 1 - dst_x) * w + dst_y) * 4;
+                        px.copy_from_slice(&rgba[src..src + 4]);
+                    }
+                }),
+            180 => out
+                .par_chunks_exact_mut(w * 4)
+                .enumerate()
+                .for_each(|(dst_y, row)| {
+                    let y = h - 1 - dst_y;
+                    for (dst_x, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                        let src = (y * w + (w - 1 - dst_x)) * 4;
+                        px.copy_from_slice(&rgba[src..src + 4]);
+                    }
+                }),
+            270 => out
+                .par_chunks_exact_mut(h * 4)
+                .enumerate()
+                .for_each(|(dst_y, row)| {
+                    for (dst_x, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                        let src = (dst_x * w + (w - 1 - dst_y)) * 4;
+                        px.copy_from_slice(&rgba[src..src + 4]);
+                    }
+                }),
+            _ => return (rgba.to_vec(), width, height),
+        }
+        let (nw, nh) = if deg == 180 {
+            (width, height)
+        } else {
+            (height, width)
+        };
+        (out, nw, nh)
     }
 
     pub fn flip_rgba(rgba: &mut [u8], width: u32, height: u32, flip_h: bool, flip_v: bool) {
+        use rayon::prelude::*;
         if !flip_h && !flip_v {
             return;
         }
-        let w = width as usize;
-        let h = height as usize;
+        let (w, h) = (width as usize, height as usize);
+        if w == 0 || h == 0 || rgba.len() < w * h * 4 {
+            return;
+        }
 
         if flip_h {
-            for y in 0..h {
-                let row_start = y * w * 4;
-                for x in 0..w / 2 {
-                    let left = row_start + x * 4;
-                    let right = row_start + (w - 1 - x) * 4;
-                    for c in 0..4 {
-                        rgba.swap(left + c, right + c);
-                    }
+            let half = w / 2;
+            // Each row is an independent mirror, so the rows run in parallel.
+            rgba.par_chunks_exact_mut(w * 4).for_each(|row| {
+                for x in 0..half {
+                    let l = x * 4;
+                    let r = (w - 1 - x) * 4;
+                    row.swap(l, r);
+                    row.swap(l + 1, r + 1);
+                    row.swap(l + 2, r + 2);
+                    row.swap(l + 3, r + 3);
                 }
-            }
+            });
         }
 
         if flip_v {
-            for y in 0..h / 2 {
-                let top_start = y * w * 4;
-                let bot_start = (h - 1 - y) * w * 4;
-                for x in 0..w * 4 {
-                    rgba.swap(top_start + x, bot_start + x);
-                }
-            }
+            // Pair row `y` with row `h - 1 - y`. Splitting in half only works
+            // for even heights, so the bottom half is walked in reverse; with
+            // an odd height the extra middle row stays put on its own.
+            let row_bytes = w * 4;
+            let top_rows = h.div_ceil(2);
+            let (top, bottom) = rgba.split_at_mut(top_rows * row_bytes);
+            let bottom = bottom.par_rchunks_exact_mut(row_bytes);
+            top.par_chunks_exact_mut(row_bytes)
+                .zip(bottom)
+                .for_each(|(a, b)| a.swap_with_slice(b));
         }
     }
 
     pub fn crop_rgba(rgba: &[u8], width: u32, height: u32, rect: [f32; 4]) -> (Vec<u8>, u32, u32) {
+        use rayon::prelude::*;
+        if width == 0 || height == 0 || rgba.len() < (width as usize) * (height as usize) * 4 {
+            return (rgba.to_vec(), width, height);
+        }
+
         let (rx, ry, rw, rh) = (
             rect[0].clamp(0.0, 1.0),
             rect[1].clamp(0.0, 1.0),
@@ -176,21 +198,23 @@ impl ImageProcessor {
             rect[3].clamp(0.01, 1.0),
         );
 
-        let cx = ((rx * width as f32) as u32).min(width.saturating_sub(1));
-        let cy = ((ry * height as f32) as u32).min(height.saturating_sub(1));
-        let cw = ((rw * width as f32).round() as u32).clamp(1, width - cx);
-        let ch = ((rh * height as f32).round() as u32).clamp(1, height - cy);
+        let cx = ((rx * width as f32) as u32).min(width - 1);
+        let cy = ((ry * height as f32) as u32).min(height - 1);
+        let cw = ((rw * width as f32).round() as u32).max(1).min(width - cx);
+        let ch = ((rh * height as f32).round() as u32)
+            .max(1)
+            .min(height - cy);
 
         let mut out = vec![0u8; (cw * ch * 4) as usize];
-        for y in 0..ch {
-            let src_start = (((cy + y) * width + cx) * 4) as usize;
-            let src_end = src_start + (cw * 4) as usize;
-            let dst_start = (y * cw * 4) as usize;
-            let dst_end = dst_start + (cw * 4) as usize;
-            if src_end <= rgba.len() && dst_end <= out.len() {
-                out[dst_start..dst_end].copy_from_slice(&rgba[src_start..src_end]);
-            }
-        }
+        out.par_chunks_exact_mut((cw * 4) as usize)
+            .enumerate()
+            .for_each(|(y, row)| {
+                let src_start = (((cy + y as u32) * width + cx) * 4) as usize;
+                let end = src_start + (cw * 4) as usize;
+                if end <= rgba.len() {
+                    row.copy_from_slice(&rgba[src_start..end]);
+                }
+            });
 
         (out, cw, ch)
     }
@@ -201,6 +225,12 @@ impl ImageProcessor {
         height: u32,
         adjustments: &crate::render::ImageAdjustments,
     ) -> (Vec<u8>, u32, u32) {
+        // A buffer shorter than `width * height * 4` (a truncated decode, a
+        // clipboard image with mismatched metadata) would otherwise be handed
+        // to the GPU upload as a short buffer. Drop the ragged tail so the
+        // result is always whole pixels.
+        let rgba = &rgba[..rgba.len().min(width as usize * height as usize * 4)];
+
         // 1. Crop
         let (mut data, mut w, mut h) = if let Some(crop) = adjustments.crop_rect_actual {
             Self::crop_rgba(rgba, width, height, crop)
@@ -500,5 +530,123 @@ mod tests {
         assert!(out[0] > 100);
         assert!(out[1] > 150);
         assert_eq!(out[3], 255);
+    }
+
+    // --- degenerate geometry regressions -------------------------------
+    //
+    // `crop_rgba` used to call `clamp(1, width - cx)`, which panics when the
+    // image has a zero dimension (min > max).
+
+    #[test]
+    fn test_zero_dimension_images_do_not_panic() {
+        let empty: Vec<u8> = Vec::new();
+        let (out, w, h) = ImageProcessor::crop_rgba(&empty, 0, 0, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!((w, h), (0, 0));
+        assert!(out.is_empty());
+
+        let (out, w, h) = ImageProcessor::rotate_rgba(&empty, 0, 10, 90);
+        assert_eq!((w, h), (0, 10));
+        assert!(out.is_empty());
+
+        let mut buf: Vec<u8> = Vec::new();
+        ImageProcessor::flip_rgba(&mut buf, 4, 0, true, true);
+        assert!(buf.is_empty());
+
+        let mut buf: Vec<u8> = Vec::new();
+        ImageProcessor::flip_rgba(&mut buf, 0, 4, true, true);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_truncated_buffer_is_treated_as_noop() {
+        let data: Vec<u8> = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let (out, w, h) = ImageProcessor::crop_rgba(&data, 4, 4, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!((w, h), (4, 4));
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn test_flip_rgba_both_axes() {
+        let data: Vec<u8> = (1..=16u8).collect();
+
+        let mut buf = data.clone();
+        ImageProcessor::flip_rgba(&mut buf, 2, 2, true, true);
+        // Mirror H then mirror V == rotate 180.
+        let (rot, _, _) = ImageProcessor::rotate_rgba(&data, 2, 2, 180);
+        assert_eq!(buf, rot);
+    }
+
+    #[test]
+    fn test_flip_rgba_odd_height_leaves_middle_row_in_place() {
+        // 1x3: only the top and bottom rows may swap.
+        let mut buf: Vec<u8> = (1..=12u8).collect();
+        ImageProcessor::flip_rgba(&mut buf, 1, 3, false, true);
+        assert_eq!(buf[0], 9);
+        assert_eq!(buf[4], 5);
+        assert_eq!(buf[8], 1);
+    }
+
+    #[test]
+    fn test_apply_adjustments_cpu_trailing_partial_pixel_is_dropped_not_misread() {
+        // `par_chunks_exact_mut(4)` silently ignores a ragged tail; the output
+        // must still be a whole number of pixels for the GPU upload.
+        let data: Vec<u8> = vec![100, 150, 200, 255, 50];
+        let adj = crate::render::ImageAdjustments {
+            brightness: 1.5,
+            ..Default::default()
+        };
+        let (out, w, h) = ImageProcessor::apply_adjustments_cpu(&data, 1, 1, &adj);
+        assert_eq!((w, h), (1, 1));
+        // The stray trailing byte must not reach the encoder/GPU upload.
+        assert_eq!(out.len(), 4);
+        // brightness 1.5 adds 0.5 to the normalized red channel: 100/255+0.5.
+        let expected = ((100.0f32 / 255.0 + 0.5).clamp(0.0, 1.0) * 255.0).round() as u8;
+        assert_eq!(out[0], expected, "the real pixel is still adjusted");
+        assert_eq!(out[3], 255, "alpha is untouched");
+    }
+
+    #[test]
+    fn test_apply_adjustments_cpu_passes_through_when_no_adjustments() {
+        let data = vec![10u8, 20, 30, 40, 50, 60, 70, 80];
+        let (out, w, h) = ImageProcessor::apply_adjustments_cpu(
+            &data,
+            2,
+            1,
+            &crate::render::ImageAdjustments::default(),
+        );
+        assert_eq!((w, h), (2, 1));
+        assert_eq!(out, data, "identity adjustments must not alter pixels");
+    }
+
+    #[test]
+    fn test_apply_adjustments_cpu_crop_then_rotate_swaps_dimensions() {
+        let data: Vec<u8> = (0..(4u32 * 2 * 4)).map(|i| i as u8).collect();
+        let adj = crate::render::ImageAdjustments {
+            crop_rect_actual: Some([0.0, 0.0, 0.5, 1.0]), // 2x2 crop
+            rotation: std::f32::consts::FRAC_PI_2,        // then 90 CW -> 2x2
+            ..Default::default()
+        };
+        let (out, w, h) = ImageProcessor::apply_adjustments_cpu(&data, 4, 2, &adj);
+        assert_eq!((w, h), (2, 2));
+        assert_eq!(out.len(), 2 * 2 * 4);
+    }
+
+    #[test]
+    fn test_supported_extensions_is_a_shared_static() {
+        // Returning a `Vec` forced a heap allocation per directory entry.
+        let a = ImageProcessor::supported_extensions();
+        let b = ImageProcessor::supported_extensions();
+        assert!(std::ptr::eq(a.as_ptr(), b.as_ptr()));
+        assert!(a.len() > 20);
+    }
+
+    #[test]
+    fn test_crop_rgba_is_stable_under_repeated_calls() {
+        let data: Vec<u8> = (0..(64 * 64 * 4)).map(|i| (i % 251) as u8).collect();
+        let (first, w1, h1) = ImageProcessor::crop_rgba(&data, 64, 64, [0.1, 0.2, 0.5, 0.5]);
+        let (second, w2, h2) = ImageProcessor::crop_rgba(&data, 64, 64, [0.1, 0.2, 0.5, 0.5]);
+        assert_eq!((w1, h1), (w2, h2));
+        assert_eq!(first, second);
+        assert_eq!(first.len(), (w1 * h1 * 4) as usize);
     }
 }

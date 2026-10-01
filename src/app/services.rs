@@ -1,5 +1,5 @@
 use crate::app::state::SpedImageApp;
-use crate::app::types::{AppEvent, MAX_THUMB_THREADS, MAX_THUMBNAILS, THUMB_LOAD_SIZE, send_event};
+use crate::app::types::{AppEvent, MAX_THUMB_THREADS, THUMB_LOAD_SIZE, send_event};
 use crate::image::ImageBackend;
 use std::path::{Path, PathBuf};
 
@@ -56,19 +56,27 @@ impl SpedImageApp {
         let pool = self.thread_pool().clone();
 
         pool.spawn(move || {
+            let Some(entries) = std::fs::read_dir(&dir).ok() else {
+                if let Some(p) = proxy.as_ref() {
+                    send_event(
+                        &tx,
+                        p,
+                        AppEvent::DirectoryError(format!("Cannot read {}", dir.display())),
+                    );
+                }
+                return;
+            };
             let mut files = Vec::new();
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    let path = entry.path();
-                    if ImageBackend::is_supported(&path) {
-                        files.push(crate::ui::FileEntry::new(path));
-                    }
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if ImageBackend::is_supported(&path) {
+                    files.push(crate::ui::FileEntry::new(path));
                 }
-                files.sort_by(|a, b| natural_cmp(&a.name, &b.name));
+            }
+            files.sort_by(|a, b| natural_cmp(&a.name, &b.name));
 
-                if let Some(ref p) = proxy {
-                    send_event(&tx, p, AppEvent::DirectoryLoaded(dir, files));
-                }
+            if let Some(p) = proxy.as_ref() {
+                send_event(&tx, p, AppEvent::DirectoryLoaded(dir, files));
             }
         });
     }
@@ -80,6 +88,7 @@ impl SpedImageApp {
         }
 
         self.thumbnails.paths = files.clone();
+        self.ui_state.thumbnail_paths = files.clone();
 
         // Position lookup shared by retention, re-indexing and workers.
         use rustc_hash::FxHashMap;
@@ -129,8 +138,12 @@ impl SpedImageApp {
         work_order.sort_by_key(|(_, i)| (*i as isize - center as isize).abs());
 
         // Work queue of (path, order) pairs that still need a texture.
+        // The queue is ordered by distance from the current image and drained
+        // by the workers continuously: truncating it to MAX_THUMBNAILS meant
+        // that in a folder with more files than the cap, everything past the
+        // cap *never* got a thumbnail, no matter how far you scrolled.
         let (tx_work, rx_work) = crossbeam_channel::unbounded();
-        for (path, order) in work_order.into_iter().take(MAX_THUMBNAILS) {
+        for (path, order) in work_order {
             tx_work.send((path, order)).ok();
         }
         drop(tx_work); // Close producer so workers exit when queue is empty

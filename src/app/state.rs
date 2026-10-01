@@ -15,6 +15,15 @@ use std::sync::atomic::AtomicU64;
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
+/// What an in-progress crop drag is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CropDrag {
+    /// Dragging inside the crop rect moves it.
+    Move,
+    /// Dragging the bottom-right handle resizes it.
+    Resize,
+}
+
 pub struct NavigationState {
     pub(crate) held_key: Option<char>,
     pub(crate) last_advance_time: Option<std::time::Instant>,
@@ -59,6 +68,9 @@ pub struct SpedImageApp {
     pub(crate) modifiers: KeyModifiers,
     pub(crate) mouse_drag_start: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) last_cursor_pos: winit::dpi::PhysicalPosition<f64>,
+    /// Corner being dragged while crop mode is active (bottom-right = resize,
+    /// inside the rect = move). `None` until a crop drag starts.
+    pub(crate) crop_drag: Option<CropDrag>,
     /// Set when the user zooms; fires progressive refinement after settling.
     pub(crate) zoom_settle_at: Option<std::time::Instant>,
     /// A progressive high-res decode is currently running for this image.
@@ -117,6 +129,7 @@ impl SpedImageApp {
             modifiers: KeyModifiers::default(),
             mouse_drag_start: None,
             last_cursor_pos: winit::dpi::PhysicalPosition::new(0.0, 0.0),
+            crop_drag: None,
             zoom_settle_at: None,
             highres_in_flight: false,
             dirty: true,

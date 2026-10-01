@@ -1,6 +1,6 @@
 [package]
 name = "spedimage"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2024"
 description = "Ultra-Lightweight GPU-Accelerated Image Viewer"
 authors = ["SpedImage Team"]
@@ -82,7 +82,10 @@ windows = { version = "0.62", features = [
 ] }
 
 [dev-dependencies]
+crossbeam-channel = "0.5"
 divan = "0.1"
+gif = "0.13"
+libjpeg-turbo-rs = "0.8.0"
 
 [lib]
 name = "spedimage_lib"

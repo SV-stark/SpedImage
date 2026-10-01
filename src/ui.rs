@@ -29,6 +29,10 @@ pub struct UiState {
     pub files: Vec<FileEntry>,
     pub current_file_index: Option<usize>,
     pub current_dir: Option<PathBuf>,
+    /// File paths as of the last thumbnail build. Kept here (rather than only
+    /// in `ThumbnailState`) so index-based selections can be checked against
+    /// the listing they were made against.
+    pub thumbnail_paths: Vec<PathBuf>,
     pub adjustments: ImageAdjustments,
     pub is_cropping: bool,
     pub show_help: bool,
@@ -50,6 +54,7 @@ impl Default for UiState {
             files: Vec::new(),
             current_file_index: None,
             current_dir: None,
+            thumbnail_paths: Vec::new(),
             adjustments: ImageAdjustments::default(),
             is_cropping: false,
             show_help: false,
@@ -72,13 +77,31 @@ impl UiState {
         self.status_message = Some((msg.into(), std::time::Instant::now()));
     }
 
-    pub fn get_status(&self) -> &str {
-        if let Some((ref msg, time)) = self.status_message
-            && time.elapsed().as_secs() < 3
-        {
-            return msg;
+    /// Visible status text for a `status_message` slot, or `None` once it
+    /// expires. Free-standing so callers can borrow just that field while a
+    /// mutable borrow of `adjustments` is live.
+    pub fn status_of(message: &Option<(String, std::time::Instant)>) -> Option<&str> {
+        match message {
+            Some((msg, at)) if at.elapsed().as_secs() < 3 && !msg.is_empty() => Some(msg),
+            _ => None,
         }
-        ""
+    }
+
+    pub fn get_status(&self) -> &str {
+        Self::status_of(&self.status_message).unwrap_or("")
+    }
+
+    /// Whether the thumbnail strip's path list no longer matches `files`.
+    ///
+    /// Selections and thumbnail slots are both index-based, so any change to
+    /// the listing's length or order invalidates them.
+    pub fn thumbnail_paths_differ(&self) -> bool {
+        self.files.len() != self.thumbnail_paths.len()
+            || self
+                .files
+                .iter()
+                .zip(self.thumbnail_paths.iter())
+                .any(|(a, b)| &a.path != b)
     }
 
     pub fn current_file(&self) -> Option<&PathBuf> {
@@ -327,6 +350,44 @@ mod tests {
         assert!(ui.status_message.is_some());
         let (msg, _) = ui.status_message.as_ref().unwrap();
         assert_eq!(msg, "Test message");
+    }
+
+    #[test]
+    fn test_thumbnail_paths_differ_detects_listing_changes() {
+        let mut ui = UiState::default();
+        assert!(!ui.thumbnail_paths_differ(), "both empty");
+
+        ui.files = vec![make_entry("a.jpg"), make_entry("b.jpg")];
+        assert!(ui.thumbnail_paths_differ(), "no thumbnails built yet");
+
+        ui.thumbnail_paths = ui.files.iter().map(|f| f.path.clone()).collect();
+        assert!(!ui.thumbnail_paths_differ());
+
+        // Reorder: same paths, different positions.
+        ui.files.reverse();
+        assert!(ui.thumbnail_paths_differ(), "reorder must invalidate");
+        ui.thumbnail_paths = ui.files.iter().map(|f| f.path.clone()).collect();
+        assert!(!ui.thumbnail_paths_differ());
+
+        // Removed file.
+        ui.files.pop();
+        assert!(ui.thumbnail_paths_differ(), "removal must invalidate");
+    }
+
+    #[test]
+    fn test_status_of_hides_expired_and_empty() {
+        let fresh = Some(("Loading".to_string(), std::time::Instant::now()));
+        assert_eq!(UiState::status_of(&fresh), Some("Loading"));
+
+        let empty = Some((String::new(), std::time::Instant::now()));
+        assert_eq!(UiState::status_of(&empty), None, "empty is not shown");
+
+        let expired = Some((
+            "Old".to_string(),
+            std::time::Instant::now() - std::time::Duration::from_secs(5),
+        ));
+        assert_eq!(UiState::status_of(&expired), None, "expired is hidden");
+        assert_eq!(UiState::status_of(&None), None);
     }
 
     #[test]

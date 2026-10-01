@@ -41,12 +41,14 @@ pub fn stream_gif(
 ) {
     let mut pass = 0usize;
     while gen_flag.load(Ordering::Relaxed) == generation {
-        if let Err(e) = stream_one_pass(&path, start_index, pass, max_w, max_h, &tx) {
-            if !matches!(e.kind, SendErrorKind::Disconnected) {
-                tracing::warn!("GIF stream stopped: {e:?}");
+        match stream_one_pass(&path, start_index, pass, max_w, max_h, &tx) {
+            Ok(()) => {}
+            // The UI dropped the receiver (image changed, app closed): normal.
+            Err(StreamError::ReceiverGone) => return,
+            Err(StreamError::Decode(e)) => {
+                tracing::warn!("GIF stream stopped after {e:?}");
                 return;
             }
-            return; // receiver dropped: app moved on or shut down
         }
         if gen_flag.load(Ordering::Relaxed) != generation {
             return;
@@ -60,21 +62,15 @@ pub fn stream_gif(
 }
 
 #[derive(Debug)]
-enum SendErrorKind {
-    Disconnected,
-    Other,
-}
-
-#[derive(Debug)]
-struct StreamError {
-    kind: SendErrorKind,
+enum StreamError {
+    /// The receiving side is gone — a normal navigation/exit, not a failure.
+    ReceiverGone,
+    Decode(color_eyre::eyre::Report),
 }
 
 impl From<crossbeam_channel::SendError<GifStreamMsg>> for StreamError {
     fn from(_: crossbeam_channel::SendError<GifStreamMsg>) -> Self {
-        Self {
-            kind: SendErrorKind::Disconnected,
-        }
+        Self::ReceiverGone
     }
 }
 
@@ -86,19 +82,25 @@ fn stream_one_pass(
     max_h: u32,
     tx: &Sender<GifStreamMsg>,
 ) -> Result<(), StreamError> {
-    let inner = (|| -> Result<()> {
-        let file = std::fs::File::open(path)?;
-        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+    (|| -> Result<(), StreamError> {
+        let file = std::fs::File::open(path).map_err(|e| StreamError::Decode(eyre!("{e}")))?;
+        let mmap =
+            unsafe { memmap2::Mmap::map(&file).map_err(|e| StreamError::Decode(eyre!("{e}")))? };
         let cursor = std::io::Cursor::new(&mmap[..]);
 
         let mut options = DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
         let mut decoder = options
             .read_info(cursor)
-            .map_err(|e| eyre!("Failed to read GIF info: {e:?}"))?;
+            .map_err(|e| StreamError::Decode(eyre!("Failed to read GIF info: {e:?}")))?;
 
         let w = decoder.width() as u32;
         let h = decoder.height() as u32;
+        // A zero-sized logical screen makes every canvas allocation degenerate
+        // and every frame rect an out-of-bounds write.
+        if w == 0 || h == 0 {
+            return Err(StreamError::Decode(eyre!("GIF {path:?} is empty")));
+        }
 
         let (dst_w, dst_h) = if max_w > 0 && max_h > 0 && (w > max_w || h > max_h) {
             let ratio = (w as f32 / max_w as f32).max(h as f32 / max_h as f32);
@@ -128,13 +130,18 @@ fn stream_one_pass(
                     let (fl, ft, fw, fh) = prev_frame_rect;
                     for row in 0..fh {
                         let y = ft + row;
-                        if y < h as usize {
-                            let start = (y * w as usize + fl) * 4;
-                            let end = start + fw * 4;
-                            if end <= canvas.len() {
-                                canvas[start..end].fill(0);
-                            }
+                        // A frame rect can sit outside the logical screen in a
+                        // malformed GIF; clamp instead of trusting it.
+                        if y >= h as usize {
+                            break;
                         }
+                        let span = fw.min(w as usize - fl);
+                        if span == 0 {
+                            break;
+                        }
+                        let start = (y * w as usize + fl) * 4;
+                        let end = start + span * 4;
+                        canvas[start..end].fill(0);
                     }
                 }
                 gif::DisposalMethod::Previous => {
@@ -154,13 +161,27 @@ fn stream_one_pass(
             let fh = frame.height as usize;
 
             let line_len = fw * 4;
-            for (i, line) in frame.buffer.chunks_exact(line_len).enumerate() {
-                let y = ft + i;
-                if y < h as usize {
+            // `chunks_exact(0)` panics, and a zero-sized sub-frame can appear
+            // in a malformed GIF.
+            if fw > 0 && fh > 0 {
+                for (i, line) in frame.buffer.chunks_exact(line_len).enumerate() {
+                    let y = ft + i;
+                    if y >= h as usize {
+                        break;
+                    }
+                    let copy_pixels = fw.min(w as usize - fl);
+                    if copy_pixels == 0 || line.len() < copy_pixels * 4 {
+                        break;
+                    }
                     let canvas_start = (y * w as usize + fl) * 4;
-                    for (p, pixel) in line.as_chunks::<4>().0.iter().enumerate() {
+                    for (p, pixel) in line[..copy_pixels * 4]
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .enumerate()
+                    {
                         let dst_idx = canvas_start + p * 4;
-                        if dst_idx + 4 <= canvas.len() && pixel[3] > 0 {
+                        if pixel[3] > 0 {
                             canvas[dst_idx..dst_idx + 4].copy_from_slice(pixel);
                         }
                     }
@@ -173,13 +194,14 @@ fn stream_one_pass(
             if index >= start_index || pass > 0 {
                 let data: Vec<u8> = if is_downsampled {
                     use fast_image_resize as fr;
-                    let src_image =
-                        fr::images::ImageRef::new(w, h, &canvas, fr::PixelType::U8x4)
-                            .map_err(|e| eyre!("Failed to create src image for resize: {e:?}"))?;
+                    let src_image = fr::images::ImageRef::new(w, h, &canvas, fr::PixelType::U8x4)
+                        .map_err(|e| {
+                        StreamError::Decode(eyre!("Failed to create src image for resize: {e:?}"))
+                    })?;
                     let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
                     if let Some(ref mut r) = resizer {
                         r.resize(&src_image, &mut dst_image, None)
-                            .map_err(|e| eyre!("Resize failed: {e:?}"))?;
+                            .map_err(|e| StreamError::Decode(eyre!("Resize failed: {e:?}")))?;
                     }
                     dst_image.into_vec()
                 } else {
@@ -199,12 +221,5 @@ fn stream_one_pass(
         }
 
         Ok(())
-    })();
-
-    match inner {
-        Ok(()) => Ok(()),
-        Err(_) => Err(StreamError {
-            kind: SendErrorKind::Other,
-        }),
-    }
+    })()
 }

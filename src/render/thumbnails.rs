@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{Result, eyre};
 use std::sync::Arc;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, TexelCopyBufferLayout,
@@ -10,6 +10,11 @@ use super::renderer::Renderer;
 use super::types::{STRIP_HEIGHT_PX, THUMB_SLOT_W, ThumbnailEntry, Uniforms};
 
 impl Renderer {
+    /// Upload a decoded thumbnail and evict the entry furthest from the
+    /// viewport once the resident set exceeds [`MAX_THUMBNAILS`].
+    ///
+    /// Eviction (rather than refusing to load) is what keeps memory bounded
+    /// without permanently blanking thumbnails far from the current image.
     pub fn upload_thumbnail(
         &mut self,
         path: std::path::PathBuf,
@@ -18,6 +23,37 @@ impl Renderer {
         height: u32,
         order: usize,
     ) -> Result<()> {
+        if width == 0 || height == 0 {
+            return Err(eyre!("thumbnail has a zero dimension"));
+        }
+        if width > self.max_texture_dim || height > self.max_texture_dim {
+            return Err(eyre!(
+                "thumbnail {width}x{height} exceeds the {}px GPU limit",
+                self.max_texture_dim
+            ));
+        }
+        if rgba.len() < (width as usize) * (height as usize) * 4 {
+            return Err(eyre!("thumbnail buffer too small for {width}x{height}"));
+        }
+
+        // Replace an entry that re-decoded the same file (file changed on disk).
+        if let Some(existing) = self.thumbnails.iter().position(|t| t.path == path) {
+            let victim = self.thumbnails.remove(existing);
+            victim.texture.destroy();
+            victim.uniform_buffer.destroy();
+        } else if self.thumbnails.len() >= crate::app::types::MAX_THUMBNAILS {
+            let evict = self
+                .thumbnails
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, t)| t.order.abs_diff(order))
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let victim = self.thumbnails.remove(evict);
+            victim.texture.destroy();
+            victim.uniform_buffer.destroy();
+        }
+
         let texture = self.device.create_texture(&TextureDescriptor {
             label: Some("Thumbnail Texture"),
             size: Extent3d {

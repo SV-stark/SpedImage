@@ -160,6 +160,8 @@ pub struct RenderParams<'a> {
     pub is_cropping: bool,
     pub crop_rect: [f32; 4],
     pub status_text: Option<&'a str>,
+    /// Window size in physical pixels, used to lay out screen-space overlays.
+    pub window_size: (u32, u32),
     pub show_help: bool,
     pub sidebar_text: Option<&'a str>,
     pub show_thumbnail_strip: bool,

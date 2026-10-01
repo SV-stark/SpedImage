@@ -8,6 +8,149 @@ use wgpu::{
 use super::renderer::Renderer;
 use super::types::{ImageAdjustments, RenderParams, STRIP_HEIGHT_PX, Uniforms};
 
+/// Largest centered crop rect with the requested *pixel* aspect ratio.
+///
+/// `crop_rect` is normalized against the image's own width/height, so a preset
+/// ratio `want` has to be divided by the image aspect to get a rect whose
+/// resulting pixels actually have ratio `want`.
+pub(crate) fn apply_aspect_preset(adjustments: &mut ImageAdjustments, img_aspect: f32, want: f32) {
+    // Require (rect_w * img_w) / (rect_h * img_h) == want, i.e.
+    // rect_w / rect_h == want / img_aspect. Scale that fraction pair so the
+    // larger side is exactly 1, which keeps the crop inside the image.
+    let frac = if img_aspect > 0.0 {
+        want / img_aspect
+    } else {
+        1.0
+    };
+    let (w, h) = if frac <= 1.0 {
+        (frac.clamp(0.01, 1.0), 1.0)
+    } else {
+        (1.0, (1.0 / frac).clamp(0.01, 1.0))
+    };
+
+    let rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
+    adjustments.crop_rect = rect;
+    adjustments.crop_rect_target = rect;
+    adjustments.crop_rect_actual = Some(rect);
+}
+
+/// Screen-space rect of the crop selection, or `None` when there is nothing to
+/// draw (no image yet, or a degenerate window/image size).
+///
+/// Mirrors the letterbox fit and rotation the vertex shader applies, so the
+/// drawn rect lines up with what is actually rendered.
+pub(crate) fn crop_overlay_rect(
+    img_w: u32,
+    img_h: u32,
+    window_size: (u32, u32),
+    crop_rect: [f32; 4],
+    total_rotation: f32,
+) -> Option<egui::Rect> {
+    let (img_w, img_h) = (img_w as f32, img_h as f32);
+    let (win_w, win_h) = (window_size.0 as f32, window_size.1 as f32);
+    if win_w <= 0.0 || win_h <= 0.0 || img_w <= 0.0 || img_h <= 0.0 {
+        return None;
+    }
+
+    let mut disp_w = img_w;
+    let mut disp_h = img_h;
+    let rot_deg = ((total_rotation.to_degrees() % 360.0).round()).abs();
+    if rot_deg == 90.0 || rot_deg == 270.0 {
+        std::mem::swap(&mut disp_w, &mut disp_h);
+    }
+
+    // Letterbox the (possibly rotated) image into the window.
+    let (fit_w, fit_h) = if disp_w / disp_h > win_w / win_h {
+        (win_w, win_w * (disp_h / disp_w))
+    } else {
+        (win_h * (disp_w / disp_h), win_h)
+    };
+    let ox = (win_w - fit_w) * 0.5;
+    let oy = (win_h - fit_h) * 0.5;
+
+    let [cx, cy, cw, ch] = crop_rect;
+    Some(egui::Rect::from_min_max(
+        egui::pos2(ox + cx * fit_w, oy + cy * fit_h),
+        egui::pos2(ox + (cx + cw) * fit_w, oy + (cy + ch) * fit_h),
+    ))
+}
+
+/// Dim everything outside the crop selection and outline the selection itself,
+/// so the user can see exactly what "Crop to View" will keep.
+fn draw_crop_overlay(params: &RenderParams, ui: &egui::Ui) {
+    let Some((_, img_w, img_h, _, _)) = params.current_image_info else {
+        return;
+    };
+    let adj: &ImageAdjustments = params.adjustments;
+    let Some(rect) = crop_overlay_rect(
+        img_w,
+        img_h,
+        params.window_size,
+        adj.crop_rect,
+        adj.rotation + adj.pre_rotation,
+    ) else {
+        return;
+    };
+
+    let screen = egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(params.window_size.0 as f32, params.window_size.1 as f32),
+    );
+    let dim = egui::Color32::from_rgba_unmultiplied(0, 0, 0, 150);
+    let accent = egui::Color32::from_rgb(0, 180, 216);
+
+    // A zero-size area at the origin gives us a painter without consuming
+    // layout space, which is what an overlay needs.
+    let painter = ui.painter().clone();
+    // Dim exactly the four bands around the selection. egui cannot erase, so
+    // the bands are filled individually rather than dimming everything and
+    // punching a hole afterwards.
+    let bands = [
+        egui::Rect::from_min_max(screen.min, egui::pos2(rect.max.x, rect.min.y)),
+        egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y), screen.max),
+        egui::Rect::from_min_max(screen.min, egui::pos2(rect.min.x, rect.min.y)),
+        egui::Rect::from_min_max(egui::pos2(rect.max.x, rect.max.y), screen.max),
+    ];
+    for band in bands {
+        painter.rect_filled(band, 0.0, dim);
+    }
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(1.5_f32, accent),
+        egui::StrokeKind::Outside,
+    );
+
+    let grip = 4.0_f32;
+    for corner in [
+        rect.left_top(),
+        rect.right_top(),
+        rect.left_bottom(),
+        rect.right_bottom(),
+    ] {
+        painter.rect_filled(
+            egui::Rect::from_center_size(corner, egui::vec2(grip, grip)),
+            0.0,
+            accent,
+        );
+    }
+
+    let label = format!(
+        "Crop  {:.0}x{:.0} px   ({:.0}% x {:.0}%)",
+        img_w as f32 * adj.crop_rect[2],
+        img_h as f32 * adj.crop_rect[3],
+        adj.crop_rect[2] * 100.0,
+        adj.crop_rect[3] * 100.0,
+    );
+    painter.text(
+        rect.left_top() + egui::vec2(0.0, -8.0),
+        egui::Align2::LEFT_BOTTOM,
+        label,
+        egui::FontId::monospace(12.0),
+        egui::Color32::WHITE,
+    );
+}
+
 impl Renderer {
     pub(crate) fn render_ui_static(
         params: &mut RenderParams,
@@ -149,6 +292,14 @@ impl Renderer {
                         .color(egui::Color32::from_rgba_unmultiplied(200, 200, 200, 150)),
                 );
             });
+
+        if params.is_cropping {
+            // A zero-size area at the origin: we only want its painter.
+            egui::Area::new(egui::Id::new("crop_overlay_area"))
+                .fixed_pos(egui::Pos2::ZERO)
+                .order(egui::Order::Middle)
+                .show(ctx, |ui| draw_crop_overlay(params, ui));
+        }
 
         if let Some(status) = params.status_text
             && !status.is_empty()
@@ -491,40 +642,39 @@ impl Renderer {
                     ui.separator();
                     ui.label(egui::RichText::new("Aspect Ratio Presets").size(10.0).strong().color(egui::Color32::from_rgb(180, 200, 220)));
                     ui.horizontal(|ui| {
-                        if ui.button("1:1").clicked() {
-                            let (w, h) = (0.8f32, 0.8f32);
-                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
-                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
-                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
-                            changed = true;
-                        }
-                        if ui.button("16:9").clicked() {
-                            let (w, h) = (1.0f32, 9.0 / 16.0);
-                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
-                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
-                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
-                            changed = true;
-                        }
-                        if ui.button("4:3").clicked() {
-                            let (w, h) = (1.0f32, 3.0 / 4.0);
-                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
-                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
-                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
-                            changed = true;
-                        }
-                        if ui.button("3:2").clicked() {
-                            let (w, h) = (1.0f32, 2.0 / 3.0);
-                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
-                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
-                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
-                            changed = true;
-                        }
-                        if ui.button("9:16").clicked() {
-                            let (w, h) = (9.0 / 16.0, 1.0f32);
-                            params.adjustments.crop_rect = [(1.0 - w) * 0.5, (1.0 - h) * 0.5, w, h];
-                            params.adjustments.crop_rect_target = params.adjustments.crop_rect;
-                            params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
-                            changed = true;
+                        // Crop rects are normalized to the *image*, so a preset
+                        // ratio only produces that pixel ratio if it is first
+                        // corrected for the image's own aspect.
+                        let img_aspect = params
+                            .current_image_info
+                            .as_ref()
+                            .map(|(_, w, h, _, _)| {
+                                if *w > 0 && *h > 0 {
+                                    *w as f32 / *h as f32
+                                } else {
+                                    1.0
+                                }
+                            })
+                            .unwrap_or(1.0);
+                        // The old hardcoded `0.8` for "1:1" cropped a square of
+                        // the image and produced a non-square *pixel* result on
+                        // any non-square image.
+                        let presets: [(&str, f32); 5] = [
+                            ("1:1", 1.0),
+                            ("16:9", 16.0 / 9.0),
+                            ("4:3", 4.0 / 3.0),
+                            ("3:2", 3.0 / 2.0),
+                            ("9:16", 9.0 / 16.0),
+                        ];
+                        for (label, want) in presets {
+                            if ui.button(label).clicked() {
+                                apply_aspect_preset(
+                                    params.adjustments,
+                                    img_aspect,
+                                    want,
+                                );
+                                changed = true;
+                            }
                         }
                     });
 
@@ -934,6 +1084,12 @@ impl Renderer {
         Ok(())
     }
 
+    /// Draw the spinner-only frame used while no image has arrived yet.
+    ///
+    /// `render_frame` already covers this case (`has_image == false` renders a
+    /// welcome/loading window), so this remains a public helper for embedding
+    /// the renderer without the full overlay stack.
+    #[allow(dead_code)]
     pub fn render_loading(&mut self, path: Option<&std::path::Path>) -> Result<()> {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
@@ -1207,5 +1363,112 @@ impl Renderer {
                 s.texture.destroy();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::types::ImageAdjustments;
+
+    /// Resulting pixel aspect ratio of a crop rect on a `img_w x img_h` image.
+    fn pixel_aspect(rect: [f32; 4], img_w: u32, img_h: u32) -> f32 {
+        (rect[2] * img_w as f32) / (rect[3] * img_h as f32)
+    }
+
+    #[test]
+    fn aspect_presets_produce_the_requested_pixel_ratio() {
+        // The presets previously hardcoded fractions in *image* space, so
+        // "16:9" on a 3:2 photo produced a 16:9 slice of the normalized rect
+        // rather than a 16:9 pixel result.
+        for &(img_w, img_h) in &[(3000u32, 2000u32), (2000, 3000), (1920, 1080), (1024, 1024)] {
+            let img_aspect = img_w as f32 / img_h as f32;
+            for &(label, want) in &[
+                ("1:1", 1.0f32),
+                ("16:9", 16.0 / 9.0),
+                ("4:3", 4.0 / 3.0),
+                ("3:2", 3.0 / 2.0),
+                ("9:16", 9.0 / 16.0),
+            ] {
+                let mut adj = ImageAdjustments::default();
+                apply_aspect_preset(&mut adj, img_aspect, want);
+
+                let rect = adj.crop_rect;
+                assert!(
+                    (rect[2] - adj.crop_rect_target[2]).abs() < f32::EPSILON
+                        && (rect[3] - adj.crop_rect_target[3]).abs() < f32::EPSILON,
+                    "{label}: rect and target diverged"
+                );
+                assert_eq!(adj.crop_rect_actual, Some(rect), "{label}: not committed");
+
+                // Inside the image.
+                assert!(
+                    rect[0] >= -f32::EPSILON && rect[1] >= -f32::EPSILON,
+                    "{label}"
+                );
+                assert!(
+                    rect[0] + rect[2] <= 1.0 + f32::EPSILON
+                        && rect[1] + rect[3] <= 1.0 + f32::EPSILON,
+                    "{label}: {rect:?} overflows"
+                );
+
+                // Centered.
+                assert!(
+                    (rect[0] - (1.0 - rect[2]) * 0.5).abs() < 1e-6
+                        && (rect[1] - (1.0 - rect[3]) * 0.5).abs() < 1e-6,
+                    "{label}: not centered"
+                );
+
+                let got = pixel_aspect(rect, img_w, img_h);
+                // Ratios taller than the image clamp to the full width; those
+                // are the best the image allows.
+                if want > img_aspect {
+                    assert!(rect[2] >= 0.999, "{label}: should fill width");
+                } else {
+                    assert!(
+                        (got - want).abs() < 0.01,
+                        "{label} on {img_w}x{img_h}: got {got}, want {want} (rect {rect:?})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn crop_overlay_rect_letterboxes_and_maps_the_selection() {
+        // 2:1 image in a square window: it fills the width and is centred
+        // vertically, so a full crop covers the middle band only.
+        let rect =
+            crop_overlay_rect(2000, 1000, (1000, 1000), [0.0, 0.0, 1.0, 1.0], 0.0).expect("rect");
+        assert!((rect.width() - 1000.0).abs() < 1e-3);
+        assert!((rect.height() - 500.0).abs() < 1e-3);
+        assert!((rect.center().y - 500.0).abs() < 1e-3);
+
+        // Half the crop width is half the displayed width.
+        let rect =
+            crop_overlay_rect(2000, 1000, (1000, 1000), [0.0, 0.0, 0.5, 0.5], 0.0).expect("rect");
+        assert!((rect.width() - 500.0).abs() < 1e-3);
+        assert!((rect.height() - 250.0).abs() < 1e-3);
+
+        // A 90 degree rotation swaps the fitted dimensions.
+        let upright =
+            crop_overlay_rect(2000, 1000, (1000, 1000), [0.0, 0.0, 1.0, 1.0], 0.0).expect("rect");
+        let sideways = crop_overlay_rect(
+            2000,
+            1000,
+            (1000, 1000),
+            [0.0, 0.0, 1.0, 1.0],
+            std::f32::consts::FRAC_PI_2,
+        )
+        .expect("rect");
+        assert!(sideways.width() < upright.width());
+        assert!(sideways.height() > upright.height());
+    }
+
+    #[test]
+    fn crop_overlay_rect_rejects_degenerate_input() {
+        assert!(crop_overlay_rect(0, 1000, (1000, 1000), [0.0; 4], 0.0).is_none());
+        assert!(crop_overlay_rect(2000, 1000, (0, 1000), [0.0; 4], 0.0).is_none());
+        assert!(crop_overlay_rect(2000, 1000, (1000, 0), [0.0; 4], 0.0).is_none());
     }
 }

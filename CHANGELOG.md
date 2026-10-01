@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-10-01
+
+### Fixed
+* **Panic on Zero-Dimension Images**: `crop_rgba` called `clamp(1, width - cx)` with `min > max` whenever a decode produced an empty image, aborting the process. `rotate_rgba` and `flip_rgba` are guarded the same way.
+* **GIF Decode Panics & Out-of-Bounds Writes**: A zero-size GIF sub-frame triggered `chunks_exact(0)` (abort), and frame rectangles larger than the logical screen were trusted unchecked. Both the loader and the background streaming decoder now clamp frame geometry and skip empty sub-frames.
+* **Silent Black Window on Oversized Images**: The device was created with `wgpu::Limits::default()`, capping textures at 8192px, so any larger image failed to upload — and the error was discarded with `.ok()`, leaving no explanation. Now uses `adapter.limits()` and reports upload failures in the status bar.
+* **100% CPU Spin When GPU Init Failed**: `dirty` was only cleared inside the `if let Some(renderer)` block, so a failed GPU init left it set forever and the event loop re-requested redraws indefinitely.
+* **Animations Freezing Mid-Transition**: The event loop set `ControlFlow::Wait` while the crop/zoom lerp was still interpolating. It now polls while anything is animating and sleeps only when visually static.
+* **Ragged Buffers Reaching the Encoder**: `apply_adjustments_cpu` passed a non-multiple-of-4 buffer straight through to file encoding and GPU upload.
+* **Mirrored EXIF Orientations Dropped**: Orientation values 2, 4, 5, and 7 were ignored entirely, displaying those photos sideways or mirrored. Mirrors are now always baked into the buffer (the GPU path can only express rotation); pure rotations still defer to the shader.
+* **Aspect Presets Produced Wrong Ratios**: The `1:1` preset hardcoded a normalized fraction of `0.8`, yielding a *non-square* crop on any non-square image, and the other presets ignored the source aspect entirely. Ratios are now corrected against the image's own dimensions.
+* **Stale Selection Indices**: Deleting a file shifted every subsequent multi-select index onto the wrong file, and a directory reload left selections pointing at unrelated files.
+* **Thumbnails Beyond 200 Files Never Loaded**: The thumbnail work queue was truncated to `MAX_THUMBNAILS` *after* being distance-sorted, so in larger folders everything past the cap was permanently blank. Eviction now happens at upload time (furthest from the viewport) instead of dropping work.
+
+### Added
+* **Working Crop Mode**: Crop was advertised in the help text but non-functional — `is_cropping` was never drawn and the click handler had an empty branch. Now supports drag-to-move, corner-handle resize, and a dimmed-outside selection overlay with live pixel dimensions.
+* **GPS Coordinates & Color Space**: `extract_exif_and_orientation` existed but had no callers, so the "Open in Maps" button could never appear and the Adobe RGB correction never engaged. A single EXIF parse now populates orientation, GPS, and color space together.
+* **Scaled JPEG Decode**: libjpeg-turbo's scaled IDCT is used with the largest reduction that still leaves the CPU resize a pure downscale, so output quality is unchanged while the intermediate buffer for a 24 MP photo drops from 96 MB to 1.5 MB.
+* **Decode Benchmarks**: Added `bench_jpeg_*`, `bench_rotate_*`, `bench_flip_*`, and `bench_crop_*` to `benches/image_processing.rs` using a deterministic synthetic corpus, so decode-path performance stays reproducible.
+* **Decode-Path Integration Tests**: New `tests/loader_tests.rs` covers real encode/decode round-trips, decode-budget invariants, and malformed input (truncated JPEGs, hostile GIF geometry, garbage bytes) to confirm errors are returned rather than panics.
+
+### Changed
+* **Allocation-Free Format Detection**: `is_supported` allocated a lowercase `String` and a `Vec` per directory entry; it now matches against a `const` slice with `eq_ignore_ascii_case`.
+* **Indexed Prefetch Eviction**: Cache eviction was `O(cache × files)` with a full file-list clone on every keystroke; now indexed and only clones paths.
+* **Parallel Pixel Transforms**: `rotate_rgba`, `flip_rgba`, and `crop_rgba` were single-threaded; all three now parallelize with rayon.
+* **Single EXIF Pass**: Non-JPEG containers previously opened and parsed the file twice. Metadata is now read once and reused.
+* **Fewer Per-Frame Allocations**: Status text is borrowed instead of `to_string()`-ed each frame, and the surface is only reconfigured on an actual size change.
+
 ## [0.10.0] - 2026-09-06
 
 ### Daily Driver Experience & Shell Integration

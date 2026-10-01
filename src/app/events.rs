@@ -1,5 +1,5 @@
 use crate::app::constants;
-use crate::app::state::SpedImageApp;
+use crate::app::state::{CropDrag, SpedImageApp};
 use crate::app::types::{APP_ICON, AppEvent, WakeUp};
 use crate::render::{RenderParams, Renderer, STRIP_HEIGHT_PX};
 use color_eyre::eyre::Result;
@@ -83,10 +83,12 @@ impl SpedImageApp {
                             }
                             self.renderer = Some(r);
                             // If an image arrived before the GPU, upload it now.
-                            if let Some(ref img) = self.current_image.clone()
-                                && let Some(ref mut rr) = self.renderer
+                            if let Some(img) = self.current_image.clone()
+                                && let Some(rr) = &mut self.renderer
+                                && let Err(e) = rr.load_image(&img)
                             {
-                                let _ = rr.load_image(img);
+                                tracing::warn!("GPU upload failed: {e}");
+                                self.ui_state.set_status(format!("Display error: {e}"));
                             }
                             // The window has been visible since `resumed`; now we
                             // can actually paint into it.
@@ -129,8 +131,13 @@ impl SpedImageApp {
                             file_list_or_selection_changed = true;
                         }
 
-                        if let Some(ref mut renderer) = self.renderer {
-                            renderer.load_image(first).ok();
+                        if let Some(renderer) = &mut self.renderer
+                            // Silently ignoring this left a black window with no
+                            // explanation for oversized/corrupt images.
+                            && let Err(e) = renderer.load_image(first)
+                        {
+                            tracing::warn!("GPU upload failed: {e}");
+                            self.ui_state.set_status(format!("Display error: {e}"));
                         }
                         let path0 = first.path.clone();
                         if first.format == crate::image::ImageFormatType::Gif {
@@ -165,14 +172,26 @@ impl SpedImageApp {
                 }
 
                 AppEvent::DirectoryLoaded(_dir, files) => {
-                    let paths_changed = self.thumbnails.paths.len() != files.len()
+                    // Selected indices are positions in the old listing, so a
+                    // listing that shifted or shrank leaves them pointing at the
+                    // wrong files (or out of bounds).
+                    let listing_changed = self.ui_state.files.len() != files.len()
                         || self
-                            .thumbnails
-                            .paths
+                            .ui_state
+                            .files
                             .iter()
                             .zip(files.iter())
-                            .any(|(a, b)| a != &b.path);
+                            .any(|(a, b)| a.path != b.path);
                     self.ui_state.files = files;
+                    if listing_changed {
+                        self.ui_state.selected_indices = self
+                            .ui_state
+                            .selected_indices
+                            .iter()
+                            .copied()
+                            .filter(|&i| i < self.ui_state.files.len())
+                            .collect();
+                    }
                     if let Some(ref img) = self.current_image {
                         if let Some(idx) =
                             self.ui_state.files.iter().position(|f| f.path == img.path)
@@ -183,7 +202,7 @@ impl SpedImageApp {
                         self.ui_state.current_file_index = Some(0);
                     }
                     file_list_or_selection_changed = true;
-                    if paths_changed {
+                    if self.ui_state.thumbnail_paths_differ() {
                         self.load_thumbnails_for_dir();
                     }
                     self.dirty = true;
@@ -228,8 +247,10 @@ impl SpedImageApp {
                     self.prefetch_cache().insert(path, Arc::new(frames));
                 }
                 AppEvent::ThumbnailLoaded(path, rgba, w, h, order) => {
-                    if let Some(ref mut renderer) = self.renderer {
-                        renderer.upload_thumbnail(path, &rgba, w, h, order).ok();
+                    if let Some(renderer) = &mut self.renderer {
+                        if let Err(e) = renderer.upload_thumbnail(path, &rgba, w, h, order) {
+                            tracing::debug!("thumbnail upload skipped: {e}");
+                        }
                         thumbs_loaded = true;
                     }
                 }
@@ -293,6 +314,23 @@ impl SpedImageApp {
                     });
                     if let Some(pos) = self.ui_state.files.iter().position(|f| f.path == path) {
                         self.ui_state.files.remove(pos);
+                        // Selections are stored as indices, so every index
+                        // after the removed one shifts down by one.
+                        self.ui_state.selected_indices = self
+                            .ui_state
+                            .selected_indices
+                            .iter()
+                            .filter_map(|&i| match i.cmp(&pos) {
+                                std::cmp::Ordering::Less => Some(i),
+                                std::cmp::Ordering::Equal => None,
+                                std::cmp::Ordering::Greater => Some(i - 1),
+                            })
+                            .collect();
+                        // The thumbnail strip is keyed by the old listing, so a
+                        // removal invalidates it; refresh it from the new one.
+                        if self.ui_state.thumbnail_paths_differ() {
+                            self.load_thumbnails_for_dir();
+                        }
                         if self.ui_state.files.is_empty() {
                             self.ui_state.current_file_index = None;
                             self.current_image = None;
@@ -359,8 +397,11 @@ impl SpedImageApp {
                             new_img.histogram = old.histogram;
                             new_img.gps_coords = old.gps_coords;
                         }
-                        if let Some(ref mut r) = self.renderer {
-                            r.load_image(&new_img).ok();
+                        if let Some(r) = &mut self.renderer
+                            && let Err(e) = r.load_image(&new_img)
+                        {
+                            tracing::warn!("GPU upload failed: {e}");
+                            self.ui_state.set_status(format!("Display error: {e}"));
                         }
                         self.current_image = Some(new_img);
                         self.dirty = true;
@@ -427,10 +468,101 @@ impl SpedImageApp {
         }
 
         if self.ui_state.is_cropping {
-            // Handle crop drag start
+            self.begin_crop_drag(pos);
         } else {
             self.mouse_drag_start = Some(pos);
         }
+    }
+
+    /// Decide what a press inside crop mode means: grab the resize handle when
+    /// the cursor is near the bottom-right corner, otherwise move the rect.
+    fn begin_crop_drag(&mut self, pos: winit::dpi::PhysicalPosition<f64>) {
+        let Some(rect) = self.crop_screen_rect() else {
+            return;
+        };
+        // egui works in f32 points and winit reports f64 physical pixels; the
+        // rect is built from physical pixels, so compare in f64.
+        let (px, py) = (pos.x, pos.y);
+        let (rx, ry) = (rect.max.x as f64, rect.max.y as f64);
+        let handle_radius = 12.0f64;
+        let near_handle = (px - rx).abs() <= handle_radius && (py - ry).abs() <= handle_radius;
+        let inside = px >= rect.min.x as f64 && px <= rx && py >= rect.min.y as f64 && py <= ry;
+        // Pressing inside the selection moves it; the handle and the area
+        // outside resize it from the current bottom-right corner.
+        self.crop_drag = Some(if near_handle || !inside {
+            CropDrag::Resize
+        } else {
+            CropDrag::Move
+        });
+        self.mouse_drag_start = Some(pos);
+        // A crop press also resets the double-click timer, otherwise the first
+        // crop drag can be swallowed as a double-click zoom/fullscreen toggle.
+        self.navigation.last_left_click_time = None;
+    }
+
+    /// Screen-space rectangle of the current crop, or `None` when there is no
+    /// image or the window size is unknown.
+    ///
+    /// Shares its geometry with the drawing pass so the rect the user drags
+    /// and the rect that gets shaded cannot drift apart.
+    fn crop_screen_rect(&self) -> Option<egui::Rect> {
+        let img = self.current_image.as_ref()?;
+        let (win_w, win_h) = self.window.as_ref().map(|w| {
+            let s = w.inner_size();
+            (s.width, s.height)
+        })?;
+        crate::render::crop_overlay_rect(
+            img.width,
+            img.height,
+            (win_w, win_h),
+            self.ui_state.adjustments.crop_rect,
+            self.ui_state.adjustments.rotation + self.ui_state.adjustments.pre_rotation,
+        )
+    }
+
+    /// Convert a cursor move into a crop-rect update while a crop drag is live.
+    fn update_crop_drag(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
+        let Some(mode) = self.crop_drag else {
+            return;
+        };
+        let Some(start) = self.mouse_drag_start else {
+            return;
+        };
+        let Some(rect) = self.crop_screen_rect() else {
+            return;
+        };
+        // Texture-space delta: divide the pixel delta by the displayed size of
+        // the whole image, which is what one unit of crop_rect covers.
+        let (disp_w, disp_h) = (rect.width(), rect.height());
+        if disp_w <= 0.0 || disp_h <= 0.0 {
+            return;
+        }
+        let dx = ((position.x - start.x) / disp_w as f64) as f32;
+        let dy = ((position.y - start.y) / disp_h as f64) as f32;
+
+        let adj = &mut self.ui_state.adjustments;
+        const MIN_SIZE: f32 = 0.02;
+        match mode {
+            CropDrag::Resize => {
+                let w = (adj.crop_rect_target[2] + dx).clamp(MIN_SIZE, 1.0);
+                let h = (adj.crop_rect_target[3] + dy).clamp(MIN_SIZE, 1.0);
+                // Keep the rect inside the image as it grows.
+                adj.crop_rect_target[0] = adj.crop_rect_target[0].clamp(0.0, 1.0 - w);
+                adj.crop_rect_target[1] = adj.crop_rect_target[1].clamp(0.0, 1.0 - h);
+                adj.crop_rect_target[2] = w;
+                adj.crop_rect_target[3] = h;
+            }
+            CropDrag::Move => {
+                let (x, y) = (adj.crop_rect_target[0] + dx, adj.crop_rect_target[1] + dy);
+                let (w, h) = (adj.crop_rect_target[2], adj.crop_rect_target[3]);
+                adj.crop_rect_target[0] = x.clamp(0.0, (1.0 - w).max(0.0));
+                adj.crop_rect_target[1] = y.clamp(0.0, (1.0 - h).max(0.0));
+            }
+        }
+        // Commit directly: crop should track the cursor, not lerp behind it.
+        adj.crop_rect = adj.crop_rect_target;
+        self.mouse_drag_start = Some(position);
+        self.dirty = true;
     }
 
     pub(crate) fn handle_thumbnail_click(&mut self, idx: usize) {
@@ -674,8 +806,13 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
             WindowEvent::Resized(size) => {
                 if let Some(ref mut r) = self.renderer {
-                    r.resize(size);
-                    self.dirty = true;
+                    // winit emits this on every move/minimize transition even
+                    // when the size is unchanged; reconfiguring the swapchain
+                    // each time forces a full surface recreate.
+                    if size.width != r.config.width || size.height != r.config.height {
+                        r.resize(size);
+                        self.dirty = true;
+                    }
                 }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
@@ -759,7 +896,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         (name, img.width, img.height, img.file_size_bytes, zoom_pct)
                     });
 
-                    let status_str = self.ui_state.get_status().to_string();
+                    // Borrow just the status field, and skip the per-frame
+                    // `String` allocation the old `to_string()` did.
+                    let status_text = crate::ui::UiState::status_of(&self.ui_state.status_message);
                     let is_cropping = self.ui_state.is_cropping;
                     let crop_rect = self.ui_state.adjustments.crop_rect;
                     let show_help = self.ui_state.show_help;
@@ -775,7 +914,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         if next > now {
                             let remaining = next.duration_since(now).as_secs_f32();
                             let total = self.slideshow.interval.as_secs_f32();
-                            Some(((total - remaining) / total).clamp(0.0, 1.0))
+                            // A zero interval would divide by zero and hand NaN
+                            // to the progress bar.
+                            (total > 0.0).then(|| ((total - remaining) / total).clamp(0.0, 1.0))
                         } else {
                             Some(1.0)
                         }
@@ -788,7 +929,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                             adjustments: &mut self.ui_state.adjustments,
                             is_cropping,
                             crop_rect,
-                            status_text: Some(&status_str),
+                            status_text,
+                            window_size: (r.config.width, r.config.height),
                             show_help,
                             sidebar_text,
                             show_thumbnail_strip,
@@ -839,9 +981,12 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         }
                         self.dirty = true;
                     }
-
-                    self.dirty = false;
                 }
+
+                // Clear outside the `renderer.is_some()` block: when GPU init
+                // failed, `dirty` stayed set forever and `about_to_wait`
+                // re-requested a redraw every loop — a 100% CPU spin.
+                self.dirty = false;
             }
             WindowEvent::ModifiersChanged(m) => {
                 self.modifiers.ctrl = m.state().control_key();
@@ -857,7 +1002,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.last_cursor_pos = position;
-                if let Some(start) = self.mouse_drag_start
+                if self.crop_drag.is_some() {
+                    self.update_crop_drag(position);
+                } else if let Some(start) = self.mouse_drag_start
                     && let Some(ref r) = self.renderer
                 {
                     let dx = (position.x - start.x) as f32 / r.config.width as f32;
@@ -920,6 +1067,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         }
                     } else {
                         self.mouse_drag_start = None;
+                        self.crop_drag = None;
                     }
                 }
                 MouseButton::Right if state == ElementState::Pressed => {
@@ -1107,7 +1255,16 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
         }
 
-        if let Some(wakeup) = next_wakeup {
+        // While any animation is still interpolating we must keep getting
+        // callbacks; `ControlFlow::Wait` would park the loop and freeze the
+        // zoom/transition on its current frame.
+        let animating = self.animation.transition_start.is_some()
+            || self.ui_state.adjustments.crop_rect != self.ui_state.adjustments.crop_rect_target
+            || self.navigation.thumb_velocity.abs() > 0.1;
+
+        if animating {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+        } else if let Some(wakeup) = next_wakeup {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wakeup));
         } else {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
