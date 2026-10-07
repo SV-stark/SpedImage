@@ -39,8 +39,9 @@
 - **Multi-Threaded Parallel ICC Transforms**: Parallelized `qcms` color profile conversions across CPU threads with Rayon.
 - **Instant Zero-Mipmap GPU Uploads**: Streamlined WGPU texture creation eliminating CPU-side mipmap generation loops for < 1ms texture writes.
 - **Memory-Mapped & SIMD Vectorized**: Memory-mapped file I/O (`memmap2`) and target CPU SIMD vectorization (`AVX2`/`AVX-512`/`FMA`) for high-throughput image processing.
-- **Pure Rust Decoders**: Native support for JPEG, PNG, WebP, GIF, QOI (`qoi`), OpenEXR (`exr`), JXL, HEIC/AVIF, and Camera RAW formats.
-- **Bump Allocation Arena**: Microsecond scratch buffer allocations via `bumpalo` for histogram calculations and zero-lock `rustc-hash` index hashing.
+- **Pure Rust Decoders**: Native support for JPEG, PNG, WebP, GIF, QOI (`qoi`), OpenEXR (`exr`), JXL, HEIC/HEIF, and Camera RAW formats.
+- **Zero-Copy Clipboard**: Copy and paste goes straight through Win32 (`CF_DIB`) with no `image` crate in the dependency tree, and `Ctrl+C` also offers the source file so Explorer and Office receive a real file.
+- **Zero-Lock Index Hashing**: `rustc-hash` FxHash for internal map keys — no lock on the lookup path.
 - **OS Single Instance Locking**: Robust single instance named OS mutex (`single-instance`) passing image paths seamlessly to the active window.
 
 ### 🎨 GPU-Accelerated Editing & Modern UI
@@ -74,11 +75,16 @@ All adjustments are processed dynamically in WGSL fragment shaders.
 | OpenEXR (32-bit HDR `.exr`) | Pure Rust (`exr` crate) | All Platforms |
 | RAW (CR2, NEF, ARW, DNG, etc.)* | Pure Rust (`rawloader` crate) | All Platforms |
 | SVG | `resvg` crate | All Platforms |
-| HEIC / AVIF | Pure Rust (`heic` crate with `av1` feature) | All Platforms |
+| HEIC / HEIF | Pure Rust (`heic-rs` crate) | All Platforms |
  
 </div>
  
 *\* Supported RAW formats include Canon (CR2, CRW), Sony (ARW, SRF, SR2), Nikon (NEF, NRW), Fujifilm (RAF), Olympus (ORF), Pentax (PEF), Samsung (SRW), Minolta (MRW), Kodak (KDC, DCR), Panasonic/Leica (RW2), and Adobe DNG.*
+ 
+**AVIF is not supported.** AVIF is an HEIF container holding AV1 rather than
+HEVC, so it needs an AV1 decoder that `heic-rs` deliberately does not ship.
+`.avif` files are filtered out alongside unknown formats. HEVC-in-HEIF, which
+covers the files cameras and phones actually write, is fully supported.
  
 ---
  
@@ -92,13 +98,19 @@ All adjustments are processed dynamically in WGSL fragment shaders.
  
 | Operation | Typical Latency | CPU Usage | Memory Impact | 
 |-----------|-----------------|-----------|---------------|
-| **Cold Process Startup** | ~400ms (to visible window) | Brief spike | Base app size (~10MB) |
+| **Cold Process Startup** | ~400ms (to visible window) | Brief spike | Base app size (budget-checked in CI, see below) |
 | **Decoding (e.g., 24MP JPEG)** | < 30ms (Downsampled) | Multi-core spike | Dependent on display res |
 | **GPU Upload (Zero-Copy)** | < 1ms | Near Zero | Video RAM mapped directly |
 | **Cached Navigation / Transitions** | < 1ms (Cached RAM) | Low background thread | Controlled RAM cache |
 | **HDR Toning (Filmic)** | < 0.1ms (GPU Shader) | GPU-Bound | None |
 | **Smooth Crop/Zoom Animation** | 60 FPS | Nominal (< 2%) | None |
 | **Brightness/Contrast Adjust** | < 0.1ms (GPU Shader) | GPU-Bound | None |
+
+The release binary is asserted against a size budget on every build and
+release (`scripts/check_size.ps1`, ceiling 22 MB), so this row cannot quietly
+stop being true. Trimming the dependency tree took the release binary from
+23.3 MB to 18.3 MB; the ~10 MB this row used to claim was never true for this
+profile and had nothing checking it. Run `just size-check` to verify locally.
  
 </div>
 

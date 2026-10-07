@@ -31,12 +31,19 @@ build-release:
 machete:
     cargo machete
 
+# Build release and assert the binary stays inside the README's size budget
+size-check: build-release
+    pwsh -File scripts/check_size.ps1 -Path target/release/spedimage.exe
+
 # Check conventional commits
 cog-check:
     cog check
 
 # Full check (fmt, lint, test, cog)
 check-all: fmt lint test cog-check
+
+# Everything CI runs, plus the size budget gate
+check-ci: fmt lint test size-check
 
 # Generate changelog
 changelog:

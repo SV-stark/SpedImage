@@ -1,3 +1,4 @@
+use crate::app::clipboard;
 use crate::app::constants;
 use crate::app::state::SpedImageApp;
 use crate::app::types::{AppEvent, send_event};
@@ -1113,88 +1114,31 @@ impl SpedImageApp {
             let path = img.path.clone();
 
             self.thread_pool().spawn(move || {
-                let mut clipboard = match arboard::Clipboard::new() {
-                    Ok(c) => c,
-                    Err(e) => {
-                        if let Some(ref p) = proxy {
-                            send_event(
-                                &tx,
-                                p,
-                                AppEvent::SetStatus(format!("Clipboard error: {e}")),
-                            );
-                        }
-                        return;
-                    }
-                };
-                let image_data = arboard::ImageData {
-                    width: w as usize,
-                    height: h as usize,
-                    bytes: std::borrow::Cow::from(&rgba[..]),
-                };
-                if clipboard.set_image(image_data).is_ok() {
-                    #[cfg(windows)]
-                    if path.exists() {
-                        Self::set_clipboard_hdrop(&path);
-                    }
+                if let Err(e) = clipboard::set_image(&rgba, w, h) {
                     if let Some(ref p) = proxy {
-                        send_event(
-                            &tx,
-                            p,
-                            AppEvent::SetStatus("Copied image to clipboard".to_string()),
-                        );
+                        send_event(&tx, p, AppEvent::SetStatus(e));
                     }
+                    return;
+                }
+
+                // Add the source file so Explorer and Office get a real file to
+                // paste, not just a bitmap. Best-effort: the image is already on
+                // the clipboard and is what `Ctrl+V` reads back.
+                #[cfg(windows)]
+                if path.exists()
+                    && let Err(e) = clipboard::set_file_drop(&[&path])
+                {
+                    tracing::debug!("Could not add the file drop to the clipboard: {e}");
+                }
+
+                if let Some(ref p) = proxy {
+                    send_event(
+                        &tx,
+                        p,
+                        AppEvent::SetStatus("Copied image to clipboard".to_string()),
+                    );
                 }
             });
-        }
-    }
-
-    #[cfg(windows)]
-    fn set_clipboard_hdrop(path: &std::path::Path) {
-        use std::os::windows::ffi::OsStrExt;
-        use windows::Win32::System::DataExchange::{
-            CloseClipboard, OpenClipboard, SetClipboardData,
-        };
-        use windows::Win32::System::Memory::{
-            GLOBAL_ALLOC_FLAGS, GlobalAlloc, GlobalLock, GlobalUnlock,
-        };
-        use windows::Win32::UI::Shell::DROPFILES;
-
-        let abs = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            std::env::current_dir().unwrap_or_default().join(path)
-        };
-        let mut wide: Vec<u16> = abs.as_os_str().encode_wide().collect();
-        wide.push(0);
-        wide.push(0); // Double null-terminate
-
-        let dropfiles_size = std::mem::size_of::<DROPFILES>();
-        let total_bytes = dropfiles_size + wide.len() * 2;
-
-        unsafe {
-            if let Ok(h_global) = GlobalAlloc(
-                GLOBAL_ALLOC_FLAGS(0x0042 /* GMEM_MOVEABLE | GMEM_ZEROINIT */),
-                total_bytes,
-            ) {
-                let ptr = GlobalLock(h_global);
-                if !ptr.is_null() {
-                    let drop_files = ptr as *mut DROPFILES;
-                    (*drop_files).pFiles = dropfiles_size as u32;
-                    (*drop_files).fWide = true.into(); // Unicode
-
-                    let dest = (ptr as usize + dropfiles_size) as *mut u16;
-                    std::ptr::copy_nonoverlapping(wide.as_ptr(), dest, wide.len());
-                    let _ = GlobalUnlock(h_global);
-
-                    if OpenClipboard(None).is_ok() {
-                        let _ = SetClipboardData(
-                            15, /* CF_HDROP */
-                            Some(windows::Win32::Foundation::HANDLE(h_global.0)),
-                        );
-                        let _ = CloseClipboard();
-                    }
-                }
-            }
         }
     }
 
@@ -1203,62 +1147,40 @@ impl SpedImageApp {
         let proxy = self.event_proxy.clone();
 
         self.thread_pool().spawn(move || {
-            let mut clipboard = match arboard::Clipboard::new() {
-                Ok(c) => c,
+            let (rgba_data, width, height) = match clipboard::get_image() {
+                Ok(v) => v,
                 Err(e) => {
                     if let Some(ref p) = proxy {
-                        send_event(
-                            &tx,
-                            p,
-                            AppEvent::ImageError(format!("Failed to open clipboard: {}", e)),
-                        );
+                        send_event(&tx, p, AppEvent::ImageError(e));
                     }
                     return;
                 }
             };
 
-            match clipboard.get_image() {
-                Ok(img) => {
-                    let rgba_data = img.bytes.into_owned();
-                    let width = img.width as u32;
-                    let height = img.height as u32;
+            let image_data = crate::image::ImageData {
+                path: PathBuf::from("Clipboard"),
+                rgba_data: Arc::new(rgba_data),
+                width,
+                height,
+                format: crate::image::ImageFormatType::Png,
+                file_size_bytes: 0,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: true,
+                histogram: None,
+                is_downsampled: false,
+                orientation_deg: 0,
+                gps_coords: None,
+                color_space: None,
+            };
 
-                    use std::sync::Arc;
-                    let image_data = crate::image::ImageData {
-                        path: PathBuf::from("Clipboard"),
-                        rgba_data: Arc::new(rgba_data),
-                        width,
-                        height,
-                        format: crate::image::ImageFormatType::Png,
-                        file_size_bytes: 0,
-                        frame_delay_ms: 0,
-                        exif_info: None,
-                        exif_loaded: true,
-                        histogram: None,
-                        is_downsampled: false,
-                        orientation_deg: 0,
-                        gps_coords: None,
-                        color_space: None,
-                    };
-
-                    if let Some(ref p) = proxy {
-                        send_event(&tx, p, AppEvent::ImageLoaded(vec![image_data]));
-                        send_event(
-                            &tx,
-                            p,
-                            AppEvent::SetStatus("Pasted image from clipboard".to_string()),
-                        );
-                    }
-                }
-                Err(e) => {
-                    if let Some(ref p) = proxy {
-                        send_event(
-                            &tx,
-                            p,
-                            AppEvent::ImageError(format!("No image in clipboard: {}", e)),
-                        );
-                    }
-                }
+            if let Some(ref p) = proxy {
+                send_event(&tx, p, AppEvent::ImageLoaded(vec![image_data]));
+                send_event(
+                    &tx,
+                    p,
+                    AppEvent::SetStatus("Pasted image from clipboard".to_string()),
+                );
             }
         });
     }
@@ -1382,30 +1304,23 @@ impl SpedImageApp {
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
 
-            self.thread_pool().spawn(move || {
-                let mut clipboard = match arboard::Clipboard::new() {
-                    Ok(c) => c,
-                    Err(e) => {
+            self.thread_pool()
+                .spawn(move || match clipboard::set_text(&path_str) {
+                    Ok(()) => {
                         if let Some(ref p) = proxy {
                             send_event(
                                 &tx,
                                 p,
-                                AppEvent::SetStatus(format!("Clipboard error: {e}")),
+                                AppEvent::SetStatus("Copied file path to clipboard".to_string()),
                             );
                         }
-                        return;
                     }
-                };
-                if clipboard.set_text(path_str).is_ok()
-                    && let Some(ref p) = proxy
-                {
-                    send_event(
-                        &tx,
-                        p,
-                        AppEvent::SetStatus("Copied file path to clipboard".to_string()),
-                    );
-                }
-            });
+                    Err(e) => {
+                        if let Some(ref p) = proxy {
+                            send_event(&tx, p, AppEvent::SetStatus(e));
+                        }
+                    }
+                });
         }
     }
 

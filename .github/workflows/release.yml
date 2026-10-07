@@ -27,6 +27,13 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target x86_64-pc-windows-msvc
 
+      # Guards the "~10MB base app size" claim in README.md. A release is the
+      # last point at which a dependency regression can still be caught before
+      # it ships.
+      - name: Check binary size budget
+        shell: pwsh
+        run: ./scripts/check_size.ps1 -Path target/x86_64-pc-windows-msvc/release/spedimage.exe
+
       - name: Set up NSIS
         uses: negrutiu/nsis-install@v1
 

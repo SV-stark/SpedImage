@@ -7,6 +7,13 @@ authors = ["SpedImage Team"]
 license = "MIT"
 rust-version = "1.94.0"
 
+[features]
+default = ["clipboard-image"]
+# Clipboard image support on platforms without a hand-written clipboard
+# implementation. Windows always has it: `src/app/clipboard.rs` writes CF_DIB
+# itself, so the Windows build never needs this and never pulls in `image`.
+clipboard-image = ["arboard/image-data"]
+
 [dependencies]
 # Performance and Features Integrations
 fast_image_resize = "6.0"
@@ -17,11 +24,35 @@ qcms = "0.3"
 # UI and Windowing
 winit = { version = "0.30", features = ["rwh_06"] }
 egui = "0.34"
-egui-winit = { version = "0.34", features = ["links"] }
+# Default features are off on purpose: `clipboard` pulls `arboard/image-data`,
+# i.e. the whole `image` crate (a fourth PNG decoder plus, on macOS, a second
+# TIFF crate) purely so egui can reach the OS clipboard. The app talks to the
+# clipboard itself in `src/app/clipboard.rs`, so egui's copy/paste plumbing is
+# never used.
+egui-winit = { version = "0.34", default-features = false, features = [
+    "links",
+    "bytemuck",
+    "wayland",
+    "x11",
+] }
 egui-wgpu = "0.34"
-zune-image = "=0.5.0"
+# Only the codecs the generic fallback path can reach: every format with a
+# specialised loader (gif/jpeg/svg/jxl/qoi/exr/heic/tiff/raw/webp) is claimed
+# before `Image::read` is called. Default features would add psd, ppm, hdr,
+# farbfeld, qoi (a duplicate of the `qoi` crate), jpeg-xl (a second jxl-oxide)
+# and the `jpeg-encoder` *encoder*.
+#
+# `webp` is NOT enabled: zune-image 0.5.0's WebP codec has an ungated
+# `use jxl_oxide::...` (src/codecs/webp.rs:6), so the feature only compiles
+# alongside `jpeg-xl`. WebP is decoded by `image-webp` directly instead, which
+# is the same crate that codec wraps.
+zune-image = { version = "=0.5.0", default-features = false, features = [
+    "png",
+    "bmp",
+    "simd",
+] }
+image-webp = "0.2"
 zune-core = "=0.5.1"
-zune-imageprocs = "=0.5.1"
 tiff = "0.9"
 gif = "0.13"
 resvg = "0.47"
@@ -34,9 +65,11 @@ rayon = "1.10"
 dirs = "5.0"
 notify-debouncer-full = "0.3"
 rfd = "0.15"
-arboard = "3.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# The lib is named `exif`, which is how `src/image/metadata.rs` reaches it.
+# This must stay an explicit dependency: zune-image's `metadata` feature pulls a
+# second (0.6.x) copy, and that feature is intentionally off above.
 kamadak-exif = "0.5"
 
 # GPU Rendering
@@ -45,10 +78,12 @@ bytemuck = { version = "1.19", features = ["derive"] }
 
 # Concurrency
 crossbeam-channel = "0.5"
-parking_lot = "0.12"
 wallpaper = "3.2"
 moka = { version = "0.12", features = ["sync"] }
-heic = { git = "https://github.com/imazen/heic", rev = "4cd3e5917b1932e3b252d92f3b0c5459ecd22601", features = ["backend-rust", "backend-mediafoundation", "av1"] }
+# Was a git-pinned AGPL-3.0 build (rav1d/ultrahdr-core/archmage/magetypes/whereat).
+# heic-rs is MIT OR Apache-2.0, has no dependencies beyond optional rayon, and
+# is a pinned crates.io release. It decodes HEIC/HEIF only — AVIF needs AV1.
+heic-rs = "0.1.1"
 rawloader = "0.37.1"
 trash = "5.2"
 webbrowser = "1.2"
@@ -58,7 +93,6 @@ qoi = "0.4"
 glam = "0.29"
 rustc-hash = "2.1"
 single-instance = "0.3"
-bumpalo = "3.16"
 
 # Pure Rust Image Formats & Color Science
 exr = "1.7"
@@ -67,8 +101,12 @@ fast-srgb8 = "1.0"
 img-parts = "0.3"
 libjpeg-turbo-rs = "0.8.0"
 
-
-
+[target.'cfg(not(windows))'.dependencies]
+# Windows uses the hand-written CF_DIB / CF_UNICODETEXT / CF_HDROP paths in
+# `src/app/clipboard.rs` instead, so it never links arboard at all. Keeping
+# `default-features = false` here stops `image-data` (and therefore the `image`
+# crate) from coming along on Linux/macOS unless `clipboard-image` asks for it.
+arboard = { version = "3.4", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

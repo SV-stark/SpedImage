@@ -243,12 +243,22 @@ impl ImageLoader {
             Self::load_qoi(path, max_w, max_h)?
         } else if ext == "exr" {
             Self::load_exr(path, max_w, max_h)?
-        } else if ext == "heic" || ext == "heif" || ext == "avif" {
+        } else if ext == "heic" || ext == "heif" {
             Self::load_heic(path, max_w, max_h, format_type)?
+        } else if ext == "webp" {
+            Self::load_webp(path, max_w, max_h)?
         } else if ext == "tiff" || ext == "tif" {
             Self::load_tiff(path, max_w, max_h)?
         } else if format_type == ImageFormatType::Raw {
             Self::load_raw(path)?
+        } else if format_type == ImageFormatType::Avif {
+            // `is_supported` already filters these out of the browser, so this
+            // only fires on an explicit open. Say why rather than letting the
+            // generic path report a confusing "unknown format".
+            return Err(eyre!(
+                "AVIF is not supported: it is an HEIF container holding AV1, \
+                 which needs an AV1 decoder. Convert it to HEIC or PNG first."
+            ));
         } else {
             let file = std::fs::File::open(path)
                 .map_err(|e| eyre!("Failed to open image file {path:?}: {e:?}"))?;
@@ -519,6 +529,89 @@ impl ImageLoader {
         ))
     }
 
+    /// Decode a still WebP frame.
+    ///
+    /// Uses `image-webp` directly rather than zune-image's WebP codec: that
+    /// codec only compiles when zune's `jpeg-xl` feature is also on, because of
+    /// an ungated `jxl_oxide` import in it, and `image-webp` is what it wraps
+    /// anyway.
+    fn load_webp(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        let file = std::fs::File::open(path)?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+
+        // `WebPDecoder` needs a Seek, and an mmap-backed slice cannot seek.
+        let cursor = std::io::Cursor::new(&mmap[..]);
+        let mut decoder = image_webp::WebPDecoder::new(cursor)
+            .map_err(|e| eyre!("Failed to parse WebP header: {e:?}"))?;
+
+        let (src_w, src_h) = decoder.dimensions();
+        if src_w == 0 || src_h == 0 {
+            return Err(eyre!("WebP {path:?} reports a zero dimension"));
+        }
+
+        // The ICC profile is read before the pixel pass, while the decoder is
+        // still positioned at the header.
+        let icc = decoder.icc_profile().ok().flatten();
+
+        // `image-webp` emits RGB (3 bytes/px) when the file has no alpha channel
+        // and RGBA (4 bytes/px) when it does, so the buffer has to be widened
+        // to RGBA before anything downstream sees it.
+        let has_alpha = decoder.has_alpha();
+        let buffer_size = decoder
+            .output_buffer_size()
+            .ok_or_else(|| eyre!("Could not determine the WebP buffer size"))?;
+        let mut decoded = vec![0u8; buffer_size];
+        decoder
+            .read_image(&mut decoded)
+            .map_err(|e| eyre!("WebP decode failed: {e:?}"))?;
+
+        let pixels = src_w as usize * src_h as usize;
+        let rgba = if has_alpha {
+            decoded
+        } else {
+            let mut out = Vec::with_capacity(pixels * 4);
+            for px in decoded.as_chunks::<3>().0 {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        };
+
+        let file_size = std::fs::metadata(path)?.len();
+        let (rgba, width, height, is_downsampled) =
+            downsample_to_fit(rgba, src_w, src_h, decode_box(max_w, max_h))?;
+
+        let mut rgba = rgba;
+        if let Some(icc) = icc
+            && let Err(e) = Self::apply_color_profile(&mut rgba, &icc)
+        {
+            tracing::warn!("Failed to apply WebP color profile: {e:?}");
+        }
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: Arc::new(rgba),
+                width,
+                height,
+                format: ImageFormatType::WebP,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: false,
+                histogram: None,
+                is_downsampled,
+                orientation_deg: 0,
+                gps_coords: None,
+                color_space: None,
+            }],
+            ImageFormatType::WebP,
+        ))
+    }
+
     fn load_svg(
         path: &Path,
         max_w: Option<u32>,
@@ -654,6 +747,11 @@ impl ImageLoader {
         ))
     }
 
+    /// Decode a HEIC/HEIF still image.
+    ///
+    /// AVIF is a HEIF container holding AV1, which `heic-rs` recognises and
+    /// refuses by name rather than mis-decoding. `ImageFormatType::is_supported`
+    /// already excludes AVIF, so this only runs on an explicit open.
     fn load_heic(
         path: &Path,
         max_w: Option<u32>,
@@ -664,21 +762,18 @@ impl ImageLoader {
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
         let data = &mmap[..];
 
-        let info = heic::ImageInfo::from_bytes(data)
-            .map_err(|e| eyre!("Failed to parse HEIC/AVIF header: {:?}", e))?;
+        let options = heic_rs::DecodeOptions::default().with_layout(heic_rs::PixelLayout::Rgba8);
+        let image =
+            heic_rs::decode(data, &options).map_err(|e| eyre!("HEIC/HEIF decode failed: {}", e))?;
 
-        let layout = heic::PixelLayout::Rgba8;
-        let buffer_size = info
-            .output_buffer_size(layout)
-            .ok_or_else(|| eyre!("Could not determine HEIC/AVIF buffer size"))?;
-
-        let mut rgba = vec![0u8; buffer_size];
-
-        let (width, height) = heic::DecoderConfig::new()
-            .decode_request(data)
-            .with_output_layout(layout)
-            .decode_into(&mut rgba)
-            .map_err(|e| eyre!("HEIC/AVIF decode failed: {:?}", e))?;
+        let rgba = image.data;
+        let (width, height) = (image.width, image.height);
+        if rgba.len() != width as usize * height as usize * 4 {
+            return Err(eyre!(
+                "HEIC/HEIF decoder returned {} bytes for {width}x{height}",
+                rgba.len()
+            ));
+        }
 
         let file_size = std::fs::metadata(path)?.len();
         let (rgba, width, height, is_downsampled) =

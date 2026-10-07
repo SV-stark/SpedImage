@@ -49,6 +49,152 @@ impl Drop for Fixture {
     }
 }
 
+// ── WebP ──────────────────────────────────────────────────────────────────
+//
+// WebP is decoded by `image-webp` directly rather than through zune-image's
+// WebP codec. `image-webp` emits 3 bytes/pixel for a file with no alpha
+// channel and 4 with, so the fixtures below pin both paths: getting that
+// wrong yields a plausible-looking picture of the wrong size.
+
+/// A 64x48 gradient, `alpha` as the alpha of every pixel.
+const WEBP_GRADIENT_ALPHA: u8 = 64;
+
+/// The pixel `image-webp` produces for the lossy fixture, sampled at a few
+/// points by PIL. Lossy WebP is not bit-exact across decoders, so these are
+/// the exact values this decoder produced and they are pinned deliberately:
+/// the point of the test is the buffer *shape* and channel order.
+fn expected_lossy_pixel(x: u32, y: u32) -> (u8, u8, u8, u8) {
+    match (x, y) {
+        (0, 0) => (17, 19, 19, 0),
+        (63, 0) => (248, 1, 189, 126),
+        (0, 47) => (0, 229, 140, 0),
+        (63, 47) => (248, 236, 74, 126),
+        (32, 24) => (128, 123, 168, WEBP_GRADIENT_ALPHA),
+        _ => unreachable!("sample point outside the fixture"),
+    }
+}
+
+fn assert_lossy_gradient(img: &spedimage_lib::image::ImageData) {
+    let at = |x: u32, y: u32| {
+        let i = ((y as usize * img.width as usize) + x as usize) * 4;
+        (
+            img.rgba_data[i],
+            img.rgba_data[i + 1],
+            img.rgba_data[i + 2],
+            img.rgba_data[i + 3],
+        )
+    };
+    for (x, y) in [(0, 0), (63, 0), (0, 47), (63, 47), (32, 24)] {
+        assert_eq!(at(x, y), expected_lossy_pixel(x, y), "at ({x}, {y})");
+    }
+}
+
+#[test]
+fn webp_lossy_with_alpha_decodes_to_rgba() {
+    let fx = Fixture::new(
+        "webp_lossy",
+        "webp",
+        include_bytes!("fixtures/alpha_lossy.webp"),
+    );
+    let (frames, format) = ImageLoader::load(&fx.path, None, None).expect("load");
+
+    assert_eq!(format, ImageFormatType::WebP);
+    assert_eq!((frames[0].width, frames[0].height), (64, 48));
+    // 4 bytes/pixel: the fixture has alpha, so no widening was needed.
+    assert_eq!(frames[0].rgba_data.len(), 64 * 48 * 4);
+    assert_lossy_gradient(&frames[0]);
+}
+
+#[test]
+fn webp_lossless_with_alpha_decodes_to_rgba() {
+    let fx = Fixture::new(
+        "webp_lossless",
+        "webp",
+        include_bytes!("fixtures/alpha_lossless.webp"),
+    );
+    let (frames, _) = ImageLoader::load(&fx.path, None, None).expect("load");
+
+    assert_eq!((frames[0].width, frames[0].height), (64, 48));
+    assert_eq!(frames[0].rgba_data.len(), 64 * 48 * 4);
+
+    // Lossless is exact, so the whole buffer is checkable. The fixture is a
+    // gradient of (x*4, y*5, (x+y)*3) with alpha x*2 — except where alpha is
+    // 0, where the encoder zeroes the colour channels too. That is the
+    // fixture's own encoding, not a decode decision, so only the alpha and the
+    // visible pixels are asserted.
+    let rgba = &frames[0].rgba_data;
+    let mut checked = 0;
+    for y in 0..48u32 {
+        for x in 0..64u32 {
+            let i = ((y as usize * 64) + x as usize) * 4;
+            let px = &rgba[i..][..4];
+            let alpha = (x * 2 % 256) as u8;
+            assert_eq!(px[3], alpha, "alpha at ({x}, {y})");
+            if alpha == 0 {
+                continue;
+            }
+            assert_eq!(
+                &px[..3],
+                [
+                    (x * 4 % 256) as u8,
+                    (y * 5 % 256) as u8,
+                    ((x + y) * 3 % 256) as u8,
+                ],
+                "colour at ({x}, {y})"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no opaque pixels to have checked");
+}
+
+#[test]
+fn webp_preview_is_downsampled_to_the_requested_box() {
+    let fx = Fixture::new(
+        "webp_preview",
+        "webp",
+        include_bytes!("fixtures/alpha_lossy.webp"),
+    );
+    let (frames, _) = ImageLoader::load(&fx.path, Some(32), Some(32)).expect("load");
+    let img = &frames[0];
+
+    assert!(img.is_downsampled);
+    assert!(img.width <= 32 && img.height <= 32);
+    assert_eq!(img.rgba_data.len(), (img.width * img.height * 4) as usize);
+}
+
+#[test]
+fn webp_truncated_file_errors_rather_than_panicking() {
+    let full = include_bytes!("fixtures/alpha_lossy.webp");
+    let fx = Fixture::new("webp_trunc", "webp", &full[..full.len() / 2]);
+    assert!(ImageLoader::load(&fx.path, None, None).is_err());
+}
+
+// ── AVIF ──────────────────────────────────────────────────────────────────
+//
+// AVIF is recognised so an explicit open can explain itself, but it is not a
+// supported format: there is no AV1 decoder in the tree.
+
+#[test]
+fn avif_is_known_but_not_supported() {
+    assert_eq!(
+        ImageFormatType::from_extension("avif"),
+        ImageFormatType::Avif
+    );
+    assert!(!ImageFormatType::Avif.is_supported());
+}
+
+#[test]
+fn opening_an_avif_explains_the_missing_av1_decoder() {
+    // Bytes are irrelevant: the extension alone must produce the explanation.
+    let fx = Fixture::new("avif", "avif", b"not really an avif");
+    let err = ImageLoader::load(&fx.path, None, None)
+        .expect_err("AVIF must not decode")
+        .to_string();
+    assert!(err.contains("AVIF"), "unhelpful error: {err}");
+    assert!(err.contains("AV1"), "unhelpful error: {err}");
+}
+
 #[test]
 fn jpeg_full_resolution_load_is_exact() {
     let (bytes, w, h) = make_jpeg(320, 200);

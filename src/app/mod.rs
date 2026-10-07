@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod clipboard;
 pub mod constants;
 pub mod events;
 pub mod services;

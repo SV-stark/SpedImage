@@ -49,6 +49,12 @@ jobs:
           exit 1
         }
 
+    # Guards the "~10MB base app size" claim in README.md, which otherwise
+    # drifts silently whenever a dependency lands.
+    - name: Check Binary Size Budget
+      shell: pwsh
+      run: ./scripts/check_size.ps1 -Path target/release/spedimage.exe
+
     - name: Set up NSIS
       uses: negrutiu/nsis-install@v1
 

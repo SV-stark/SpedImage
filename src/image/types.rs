@@ -42,7 +42,9 @@ impl ImageFormatType {
             "tiff" | "tif" => Self::Tiff,
             "webp" => Self::WebP,
             "heic" | "heif" => Self::Heic,
-            "avif" => Self::Avif,
+            // Recognised so an explicit open reports "unsupported" rather than
+            // "unknown", but see `is_supported`: there is no AV1 decoder here.
+            "avif" | "avis" => Self::Avif,
             "jxl" => Self::Jxl,
             "svg" => Self::Svg,
             "qoi" => Self::Qoi,
@@ -63,12 +65,16 @@ impl ImageFormatType {
             | Self::Tiff
             | Self::WebP
             | Self::Raw
-            | Self::Avif
             | Self::Heic
             | Self::Jxl
             | Self::Svg
             | Self::Qoi
             | Self::Exr => true,
+            // AVIF is HEVC-container HEIF's sibling, not HEIC: it needs an AV1
+            // decoder, which this build does not carry. Listing it as
+            // supported sent users to a decode error instead of the file
+            // browser, so it is filtered out with everything else unsupported.
+            Self::Avif => false,
         }
     }
 }
@@ -310,12 +316,31 @@ mod tests {
         assert!(ImageFormatType::Tiff.is_supported());
         assert!(ImageFormatType::WebP.is_supported());
         assert!(ImageFormatType::Heic.is_supported());
-        assert!(ImageFormatType::Avif.is_supported());
         assert!(ImageFormatType::Jxl.is_supported());
         assert!(ImageFormatType::Svg.is_supported());
         assert!(ImageFormatType::Raw.is_supported());
         assert!(ImageFormatType::Qoi.is_supported());
         assert!(!ImageFormatType::Unknown.is_supported());
+        // AVIF needs an AV1 decoder, which this build does not carry.
+        assert!(!ImageFormatType::Avif.is_supported());
+    }
+
+    #[test]
+    fn test_avif_is_recognised_but_unsupported() {
+        // Still mapped, so an explicit open can explain why rather than
+        // reporting an unknown format.
+        assert_eq!(
+            ImageFormatType::from_extension("avif"),
+            ImageFormatType::Avif
+        );
+        assert_eq!(
+            ImageFormatType::from_extension("AVIF"),
+            ImageFormatType::Avif
+        );
+        assert_eq!(
+            ImageFormatType::from_extension("avis"),
+            ImageFormatType::Avif
+        );
     }
 
     #[test]

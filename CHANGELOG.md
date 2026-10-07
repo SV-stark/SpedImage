@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+* **AVIF Support**: The `heic` git dependency was replaced with `heic-rs`, which decodes HEIC/HEIF only. AVIF is an HEIF container holding AV1 rather than HEVC, so it needs an AV1 decoder. `.avif` files are now filtered out of the file browser alongside unknown formats, and opening one explicitly reports why instead of failing as "unknown format". HEVC-in-HEIF — what cameras and phones actually write — is unaffected.
+* **Unused Dependencies**: `zune-imageprocs`, `parking_lot` and `bumpalo` were declared but never referenced anywhere in the tree. The README advertised a "Bump Allocation Arena" feature that did not exist; that line has been replaced with a description of the clipboard work that actually shipped.
+
+### Fixed
+* **AGPL Decoder in an MIT Application**: HEIC/AVIF was decoded by a git-pinned build of `heic` licensed **AGPL-3.0-only**, linked into an MIT-licensed app and shipped in the installer. That was a licensing liability independent of build size.
+* **README Claimed an Unverifiable Size**: The "~10MB base app size" figure was never checked by CI and was wrong by more than half — the release binary was 23.3 MB.
+
+### Changed
+* **Dependency Tree Trimmed**: The Windows release binary went from 23.3 MB to 18.3 MB (−5.0 MB, −21.5%), measured against a baseline build of the previous commit. The release dependency count dropped from 359 to 305 crates on the Windows target, net −54. The savings came from the AGPL `heic` subtree (`rav1d-safe`, `ultrahdr-core`, `archmage`, `magetypes`, `whereat`, `safe_unaligned_simd`), the duplicate `jxl-oxide` 0.12 that `zune-image`'s default features pulled in beside the 0.11 already in use, and the `image` crate that `arboard`'s default features dragged in.
+* **`arboard` Dropped on Windows**: Clipboard access now goes directly through Win32 `CF_DIB` / `CF_UNICODETEXT` / `CF_HDROP`, extending the `CF_HDROP` code that already existed. This removes the `image` crate — a fourth PNG decoder, and a second TIFF crate on macOS — from the Windows build. It also fixes `Ctrl+C`, which previously opened the clipboard a second time and could drop the file drop if anything else held the clipboard mid-operation. Clipboard images on non-Windows platforms are behind the new `clipboard-image` feature.
+* **`zune-image` Default Features Disabled**: The generic fallback path only ever reaches PNG, BMP and WebP, since every other format has a specialised loader that claims it first. Enabling defaults added PSD, PPM, HDR, farbfeld, QOI (duplicating the `qoi` crate), JPEG XL (a second `jxl-oxide`) and the `jpeg-encoder` *encoder* to a viewer.
+* **WebP Decoded Without `zune-image`**: `zune-image` 0.5.0's WebP codec has an ungated `use jxl_oxide::...` in it, so its `webp` feature only compiles alongside the `jpeg-xl` feature this change removes. WebP is now decoded through `image-webp` directly, which is the crate that codec wraps. Verified byte-identical to the previous path on lossy, lossless, alpha and animated samples.
+* **Binary Size Is Now Gated in CI**: `scripts/check_size.ps1` runs on every build and release with a 22 MB ceiling. That ceiling would have failed the previous release, which is the point. README's size row cites the measured budget instead of the old figure. Run `just size-check` locally.
+
+### Added
+* **Binary Size Gate**: `scripts/check_size.ps1`, wired into both GitHub workflows and exposed as `just size-check` / `just check-ci`.
+* **WebP and AVIF Decode Tests**: Fixtures and regression tests covering the alpha/no-alpha buffer layouts and the AVIF explanation. `image-webp` emits 3 bytes/pixel without an alpha channel and 4 with one, which a naive decoder silently mishandles.
+* **`examples/verify_decode.rs`**: Decodes a file and prints sampled pixels, for checking a decoder against a real file rather than only unit tests.
+
 ## [0.10.1] - 2026-10-01
 
 ### Fixed
