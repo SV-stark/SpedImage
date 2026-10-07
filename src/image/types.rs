@@ -29,6 +29,18 @@ pub enum ImageFormatType {
     Svg,
     Qoi,
     Exr,
+    /// Photoshop. `zune-psd` flattens the layer stack to the composite.
+    Psd,
+    /// Radiance RGBE (`.hdr`), the LDR-container sibling of EXR.
+    Hdr,
+    /// Netpbm family: PBM/PGM/PPM/PAM/PFM.
+    Pnm,
+    /// `farbfeld`, the 16-bit-per-channel RGBA format.
+    Farbfeld,
+    /// Windows icon/cursor. `ImageFormatType::Ico` covers both: the pixel data
+    /// is identical and only the header's type field and the directory hotspot
+    /// differ.
+    Ico,
     Unknown,
 }
 
@@ -49,7 +61,20 @@ impl ImageFormatType {
             "svg" => Self::Svg,
             "qoi" => Self::Qoi,
             "exr" => Self::Exr,
-            "arw" | "cr2" | "nef" | "dng" | "orf" | "raf" | "srw" => Self::Raw,
+            "psd" | "psb" => Self::Psd,
+            "hdr" => Self::Hdr,
+            "ppm" | "pgm" | "pbm" | "pnm" | "pam" | "pfm" => Self::Pnm,
+            "ff" | "farbfeld" => Self::Farbfeld,
+            "ico" | "cur" => Self::Ico,
+            // Every extension `rawloader` can sniff. This list was previously
+            // seven entries while the README advertised eleven camera families,
+            // so `.pef`, `.crw`, `.mrw`, `.rw2` and friends resolved to
+            // `Unknown` and were filtered out of the file browser despite
+            // `rawloader` being able to decode them. `rawloader::decode_file`
+            // identifies the container from its content, so the extension is
+            // only a routing hint here.
+            "arw" | "cr2" | "crw" | "nef" | "nrw" | "dng" | "orf" | "raf" | "sr2" | "srf"
+            | "srw" | "pef" | "mrw" | "kdc" | "dcr" | "rw2" => Self::Raw,
             _ => Self::Unknown,
         }
     }
@@ -57,7 +82,8 @@ impl ImageFormatType {
     pub fn is_supported(&self) -> bool {
         match self {
             Self::Unknown => false,
-            // Core formats + RAW via imagepipe
+            // Core formats + RAW, then the codecs reached through zune-image's
+            // magic-byte sniffing in the generic fallback path.
             Self::Jpeg
             | Self::Png
             | Self::Gif
@@ -69,7 +95,12 @@ impl ImageFormatType {
             | Self::Jxl
             | Self::Svg
             | Self::Qoi
-            | Self::Exr => true,
+            | Self::Exr
+            | Self::Psd
+            | Self::Hdr
+            | Self::Pnm
+            | Self::Farbfeld
+            | Self::Ico => true,
             // AVIF is HEVC-container HEIF's sibling, not HEIC: it needs an AV1
             // decoder, which this build does not carry. Listing it as
             // supported sent users to a decode error instead of the file
@@ -290,6 +321,10 @@ mod tests {
         assert_eq!(ImageFormatType::from_extension("nef"), ImageFormatType::Raw);
         assert_eq!(ImageFormatType::from_extension("dng"), ImageFormatType::Raw);
         assert_eq!(ImageFormatType::from_extension("qoi"), ImageFormatType::Qoi);
+        assert_eq!(ImageFormatType::from_extension("psd"), ImageFormatType::Psd);
+        assert_eq!(ImageFormatType::from_extension("hdr"), ImageFormatType::Hdr);
+        assert_eq!(ImageFormatType::from_extension("ppm"), ImageFormatType::Pnm);
+        assert_eq!(ImageFormatType::from_extension("ico"), ImageFormatType::Ico);
         assert_eq!(
             ImageFormatType::from_extension("txt"),
             ImageFormatType::Unknown
@@ -320,6 +355,10 @@ mod tests {
         assert!(ImageFormatType::Svg.is_supported());
         assert!(ImageFormatType::Raw.is_supported());
         assert!(ImageFormatType::Qoi.is_supported());
+        assert!(ImageFormatType::Psd.is_supported());
+        assert!(ImageFormatType::Hdr.is_supported());
+        assert!(ImageFormatType::Pnm.is_supported());
+        assert!(ImageFormatType::Ico.is_supported());
         assert!(!ImageFormatType::Unknown.is_supported());
         // AVIF needs an AV1 decoder, which this build does not carry.
         assert!(!ImageFormatType::Avif.is_supported());

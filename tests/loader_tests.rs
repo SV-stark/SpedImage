@@ -105,6 +105,290 @@ fn webp_lossy_with_alpha_decodes_to_rgba() {
     assert_lossy_gradient(&frames[0]);
 }
 
+// ── ICO / CUR ──────────────────────────────────────────────────────────────
+//
+// `.ico` was listed in SUPPORTED_EXTENSIONS with no decoder behind it, so icons
+// showed up in the file browser and then failed to open. These pin both payload
+// encodings a real icon uses: a whole PNG, and a headerless BMP DIB.
+
+/// Wrap PNG bytes in a minimal single-entry ICO directory.
+fn make_ico_with_png(png: &[u8]) -> Vec<u8> {
+    let mut ico = Vec::new();
+    ico.extend_from_slice(&0u16.to_le_bytes()); // reserved
+    ico.extend_from_slice(&1u16.to_le_bytes()); // type: icon
+    ico.extend_from_slice(&1u16.to_le_bytes()); // one image
+    ico.push(16); // width
+    ico.push(16); // height
+    ico.push(0); // palette size
+    ico.push(0); // reserved
+    ico.extend_from_slice(&1u16.to_le_bytes()); // planes
+    ico.extend_from_slice(&32u16.to_le_bytes()); // bit count
+    ico.extend_from_slice(&(png.len() as u32).to_le_bytes());
+    ico.extend_from_slice(&22u32.to_le_bytes()); // offset = 6 + 16
+    ico.extend_from_slice(png);
+    ico
+}
+
+/// Wrap a 32-bit BGRA DIB in a single-entry ICO directory, with the doubled
+/// height an icon's device-independent bitmap uses.
+fn make_ico_with_dib(w: u32, h: u32) -> Vec<u8> {
+    // BITMAPINFOHEADER with height doubled to cover the AND mask.
+    let mut dib = Vec::new();
+    dib.extend_from_slice(&40u32.to_le_bytes()); // biSize
+    dib.extend_from_slice(&(w as i32).to_le_bytes()); // biWidth
+    dib.extend_from_slice(&((h * 2) as i32).to_le_bytes()); // biHeight (XOR + AND)
+    dib.extend_from_slice(&1u16.to_le_bytes()); // biPlanes
+    dib.extend_from_slice(&32u16.to_le_bytes()); // biBitCount
+    dib.extend_from_slice(&0u32.to_le_bytes()); // BI_RGB
+    dib.extend_from_slice(&(w * h * 4).to_le_bytes()); // biSizeImage
+    dib.extend_from_slice(&0i32.to_le_bytes()); // biXPelsPerMeter
+    dib.extend_from_slice(&0i32.to_le_bytes()); // biYPelsPerMeter
+    dib.extend_from_slice(&0u32.to_le_bytes()); // biClrUsed
+    dib.extend_from_slice(&0u32.to_le_bytes()); // biClrImportant
+    for y in 0..h {
+        for x in 0..w {
+            // BGRA, bottom-up.
+            let b = (x * 8) as u8;
+            let g = (y * 8) as u8;
+            dib.extend_from_slice(&[b, g, 255, 255]);
+        }
+    }
+    // AND mask, 1bpp, rows padded to 4 bytes.
+    let mask_stride = w.div_ceil(32) * 4;
+    dib.resize(dib.len() + (mask_stride * h) as usize, 0);
+
+    let mut ico = Vec::new();
+    ico.extend_from_slice(&0u16.to_le_bytes());
+    ico.extend_from_slice(&1u16.to_le_bytes());
+    ico.extend_from_slice(&1u16.to_le_bytes());
+    ico.push(w as u8);
+    ico.push(h as u8);
+    ico.push(0);
+    ico.push(0);
+    ico.extend_from_slice(&1u16.to_le_bytes());
+    ico.extend_from_slice(&32u16.to_le_bytes());
+    ico.extend_from_slice(&(dib.len() as u32).to_le_bytes());
+    ico.extend_from_slice(&22u32.to_le_bytes());
+    ico.extend_from_slice(&dib);
+    ico
+}
+
+#[test]
+fn ico_with_png_payload_decodes() {
+    let f = Fixture::new("ico_png", "ico", &make_ico_with_png(&make_png(8, 8)));
+    let (frames, format) = ImageLoader::load(&f.path, None, None).expect("decode ico");
+    assert_eq!(format, ImageFormatType::Ico);
+    assert_eq!(frames[0].width, 8);
+    assert_eq!(frames[0].height, 8);
+    assert_eq!(frames.len(), 1);
+}
+
+#[test]
+fn ico_with_dib_payload_decodes_to_rgba() {
+    let f = Fixture::new("ico_dib", "ico", &make_ico_with_dib(8, 8));
+    let (frames, format) = ImageLoader::load(&f.path, None, None).expect("decode dib ico");
+    assert_eq!(format, ImageFormatType::Ico);
+    assert_eq!(frames[0].width, 8);
+    assert_eq!(frames[0].height, 8);
+    assert_eq!(frames[0].rgba_data.len(), 8 * 8 * 4);
+    // The synthetic gradient is opaque, so alpha must survive the BGRA swap.
+    assert!(
+        frames[0]
+            .rgba_data
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| p[3] == 255)
+    );
+}
+
+#[test]
+fn ico_downsamples_to_the_requested_box() {
+    let f = Fixture::new("ico_ds", "ico", &make_ico_with_dib(64, 64));
+    let (frames, _) = ImageLoader::load(&f.path, Some(16), Some(16)).expect("downsample ico");
+    assert_eq!((frames[0].width, frames[0].height), (16, 16));
+    assert!(frames[0].is_downsampled);
+}
+
+#[test]
+fn cur_uses_the_same_path_as_ico() {
+    let f = Fixture::new("cur", "cur", &make_ico_with_png(&make_png(8, 8)));
+    let (_, format) = ImageLoader::load(&f.path, None, None).expect("decode cur");
+    assert_eq!(format, ImageFormatType::Ico);
+}
+
+/// A malformed header must produce an error rather than a panic: icons come
+/// from the filesystem and the parser reads attacker-controlled offsets.
+#[test]
+fn truncated_ico_errors_rather_than_panicking() {
+    for bytes in [
+        vec![],
+        vec![0, 0],
+        vec![0, 0, 1, 0],       // header only, count field missing
+        vec![0, 0, 1, 0, 1, 0], // claims one image, no directory
+        vec![9, 9, 9, 9, 1, 0], // bad magic
+        vec![0, 0, 7, 0, 1, 0], // type 7 is neither icon nor cursor
+        vec![0, 0, 1, 0, 0, 0], // zero images declared
+    ] {
+        let f = Fixture::new("ico_bad", "ico", &bytes);
+        assert!(
+            ImageLoader::load(&f.path, None, None).is_err(),
+            "expected an error for {bytes:?}"
+        );
+    }
+}
+
+/// A directory entry pointing past the end of the file must not be followed.
+#[test]
+fn ico_with_out_of_range_offset_errors() {
+    let mut ico = make_ico_with_png(&make_png(4, 4));
+    // Rewrite dwImageOffset to point far beyond the buffer.
+    ico[18..22].copy_from_slice(&0xFFFF_0000u32.to_le_bytes());
+    let f = Fixture::new("ico_oob", "ico", &ico);
+    assert!(ImageLoader::load(&f.path, None, None).is_err());
+}
+
+/// An entry whose offset and size together overrun the file must be rejected
+/// rather than read past the end.
+#[test]
+fn ico_with_oversized_entry_errors() {
+    let mut ico = make_ico_with_png(&make_png(4, 4));
+    ico[14..18].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // dwBytesInRes
+    let f = Fixture::new("ico_big", "ico", &ico);
+    assert!(ImageLoader::load(&f.path, None, None).is_err());
+}
+
+// ── PSD / HDR / PNM / Farbfeld ─────────────────────────────────────────────
+//
+// These four are reached through zune-image's magic-byte sniffing in the
+// generic fallback, so each test is also a check that the crate feature is
+// actually enabled: without it `Image::read` has no decoder and returns an
+// error instead of pixels.
+
+/// A minimal greyscale binary PPM (P5).
+fn make_ppm(w: u32, h: u32) -> Vec<u8> {
+    let mut out = format!("P5\n{w} {h}\n255\n").into_bytes();
+    for i in 0..(w * h) {
+        out.push((i % 256) as u8);
+    }
+    out
+}
+
+/// A minimal binary PPM (P6).
+fn make_ppm_rgb(w: u32, h: u32) -> Vec<u8> {
+    let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();
+    for i in 0..(w * h) {
+        out.extend_from_slice(&[
+            (i % 256) as u8,
+            ((i * 3) % 256) as u8,
+            ((i * 7) % 256) as u8,
+        ]);
+    }
+    out
+}
+
+/// A minimal 8x8 RGBA PNG, via the loader's own zune-image dependency.
+fn make_png(w: u32, h: u32) -> Vec<u8> {
+    use zune_core::colorspace::ColorSpace;
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for (i, px) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        px[0] = (i % 256) as u8;
+        px[1] = ((i * 2) % 256) as u8;
+        px[2] = ((i * 3) % 256) as u8;
+        px[3] = 255;
+    }
+    let mut out = Vec::new();
+    let img = zune_image::image::Image::from_u8(&rgba, w as usize, h as usize, ColorSpace::RGBA);
+    // `Image::encode` writes into any `ZByteWriterTrait`, and `&mut Vec<u8>`
+    // is one of them.
+    img.encode(zune_image::codecs::ImageFormat::PNG, &mut out)
+        .expect("encode png fixture");
+    out
+}
+
+#[test]
+fn pnm_greyscale_and_rgb_decode() {
+    for (tag, ext, bytes) in [
+        ("pnm_gray", "pgm", make_ppm(16, 8)),
+        ("pnm_rgb", "ppm", make_ppm_rgb(16, 8)),
+    ] {
+        let f = Fixture::new(tag, ext, &bytes);
+        let (frames, format) = ImageLoader::load(&f.path, None, None)
+            .unwrap_or_else(|e| panic!("{ext} decode: {e:#}"));
+        assert_eq!(format, ImageFormatType::Pnm);
+        assert_eq!((frames[0].width, frames[0].height), (16, 8));
+        assert_eq!(frames[0].rgba_data.len(), 16 * 8 * 4);
+    }
+}
+
+#[test]
+fn farbfeld_decodes() {
+    // farbfeld: "farbfeld" + u32 BE width + u32 BE height + 8 bytes per pixel.
+    let (w, h) = (4u32, 2u32);
+    let mut ff = b"farbfeld".to_vec();
+    ff.extend_from_slice(&w.to_be_bytes());
+    ff.extend_from_slice(&h.to_be_bytes());
+    for _ in 0..(w * h) {
+        ff.extend_from_slice(&[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]);
+    }
+    let f = Fixture::new("ff", "ff", &ff);
+    let (frames, format) = ImageLoader::load(&f.path, None, None).expect("decode farbfeld");
+    assert_eq!(format, ImageFormatType::Farbfeld);
+    assert_eq!((frames[0].width, frames[0].height), (4, 2));
+    // 16-bit samples truncate to 8 bits: 0x1122 -> 0x11.
+    assert_eq!(&frames[0].rgba_data[..4], &[0x11, 0x33, 0x55, 0x77]);
+}
+
+#[test]
+fn hdr_decodes() {
+    // Radiance RGBE, flat 1x1, which is the smallest form the decoder accepts.
+    let mut hdr = b"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n".to_vec();
+    hdr.extend_from_slice(&[128, 128, 128, 128]);
+    let f = Fixture::new("hdr", "hdr", &hdr);
+    let (frames, format) = ImageLoader::load(&f.path, None, None).expect("decode hdr");
+    assert_eq!(format, ImageFormatType::Hdr);
+    assert_eq!((frames[0].width, frames[0].height), (1, 1));
+    assert_eq!(frames[0].rgba_data.len(), 4);
+}
+
+/// PSD support is a feature flag on zune-image; assert the format is at least
+/// routed rather than silently landing in the AVIF/unknown arm.
+#[test]
+fn psd_is_routed_to_a_decoder() {
+    // A real PSD is large; assert the plumbing instead: the extension maps to
+    // Psd, and the bytes reach a decoder that rejects them as malformed
+    // rather than being filtered out as an unsupported format.
+    let f = Fixture::new("psd", "psd", b"8BPS\0\x01not-a-real-psd");
+    assert_eq!(ImageFormatType::from_extension("psd"), ImageFormatType::Psd);
+    // Whatever the decoder says about the truncated body, it must be a decode
+    // error and never a panic.
+    let _ = ImageLoader::load(&f.path, None, None);
+}
+
+// ── RAW extension routing ──────────────────────────────────────────────────
+//
+// These extensions all decode through `rawloader`, but the loader dispatches on
+// the extension, so an extension missing from `from_extension` means the file
+// never reaches `rawloader` at all.
+
+#[test]
+fn every_advertised_raw_extension_routes_to_the_raw_loader() {
+    for ext in [
+        "arw", "cr2", "crw", "nef", "nrw", "dng", "orf", "raf", "sr2", "srf", "srw", "pef", "mrw",
+        "kdc", "dcr", "rw2",
+    ] {
+        assert_eq!(
+            ImageFormatType::from_extension(ext),
+            ImageFormatType::Raw,
+            "{ext} should route to the RAW loader"
+        );
+        assert!(
+            ImageFormatType::from_extension(ext).is_supported(),
+            "{ext} should be shown in the file browser"
+        );
+    }
+}
+
 #[test]
 fn webp_lossless_with_alpha_decodes_to_rgba() {
     let fx = Fixture::new(

@@ -1,6 +1,6 @@
 [package]
 name = "spedimage"
-version = "0.10.1"
+version = "0.11.0"
 edition = "2024"
 description = "Ultra-Lightweight GPU-Accelerated Image Viewer"
 authors = ["SpedImage Team"]
@@ -37,10 +37,22 @@ egui-winit = { version = "0.34", default-features = false, features = [
 ] }
 egui-wgpu = "0.34"
 # Only the codecs the generic fallback path can reach: every format with a
-# specialised loader (gif/jpeg/svg/jxl/qoi/exr/heic/tiff/raw/webp) is claimed
-# before `Image::read` is called. Default features would add psd, ppm, hdr,
-# farbfeld, qoi (a duplicate of the `qoi` crate), jpeg-xl (a second jxl-oxide)
-# and the `jpeg-encoder` *encoder*.
+# specialised loader (gif/jpeg/svg/jxl/qoi/exr/heic/tiff/raw/webp/ico) is claimed
+# before `Image::read` is called.
+#
+# psd/ppm/hdr are cheap here because each is a self-contained pure-Rust
+# `zune-*` crate with no transitive weight (11-15 KB of source each) and
+# `guess_format` sniffs all three by magic bytes (codecs.rs:740-763), so the
+# generic path in `loader.rs` decodes them with no new dispatch code.
+#
+# Still deliberately OFF, because each one costs a duplicate, a C dependency, or
+# is outright broken:
+#   qoi       — a second decoder for the `qoi` crate we already depend on
+#   farbfeld  — zune-farbfeld 0.5.2's `decode()` cannot succeed for any file
+#               (see `load_farbfeld`); the format is decoded by hand instead
+#   jpeg-xl   — a second jxl-oxide (0.12) alongside the one we decode with
+#   jpeg      — pulls the `jpeg-encoder` *encoder* plus a zune-jpeg copy
+#   webp      — see below
 #
 # `webp` is NOT enabled: zune-image 0.5.0's WebP codec has an ungated
 # `use jxl_oxide::...` (src/codecs/webp.rs:6), so the feature only compiles
@@ -49,6 +61,9 @@ egui-wgpu = "0.34"
 zune-image = { version = "=0.5.0", default-features = false, features = [
     "png",
     "bmp",
+    "psd",
+    "ppm",
+    "hdr",
     "simd",
 ] }
 image-webp = "0.2"
@@ -124,6 +139,15 @@ crossbeam-channel = "0.5"
 divan = "0.1"
 gif = "0.13"
 libjpeg-turbo-rs = "0.8.0"
+# `make_png` in tests/loader_tests.rs synthesises a fixture through zune-image's
+# own encoder. This is the same crate the lib already depends on, so the test
+# target does not gain a new codec, but it must be named explicitly to be
+# reachable from an integration test.
+zune-image = { version = "=0.5.0", default-features = false, features = [
+    "png",
+    "simd",
+] }
+zune-core = "=0.5.1"
 
 [lib]
 name = "spedimage_lib"

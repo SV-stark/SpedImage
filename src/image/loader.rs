@@ -241,6 +241,8 @@ impl ImageLoader {
             Self::load_jxl(path, max_w, max_h)?
         } else if ext == "qoi" {
             Self::load_qoi(path, max_w, max_h)?
+        } else if ext == "ff" || ext == "farbfeld" {
+            Self::load_farbfeld(path, max_w, max_h)?
         } else if ext == "exr" {
             Self::load_exr(path, max_w, max_h)?
         } else if ext == "heic" || ext == "heif" {
@@ -249,6 +251,8 @@ impl ImageLoader {
             Self::load_webp(path, max_w, max_h)?
         } else if ext == "tiff" || ext == "tif" {
             Self::load_tiff(path, max_w, max_h)?
+        } else if ext == "ico" || ext == "cur" {
+            Self::load_ico(path, max_w, max_h)?
         } else if format_type == ImageFormatType::Raw {
             Self::load_raw(path)?
         } else if format_type == ImageFormatType::Avif {
@@ -960,6 +964,251 @@ impl ImageLoader {
         }
 
         Ok((image_frames, ImageFormatType::Gif))
+    }
+
+    /// Decode a Windows icon (`.ico`) or cursor (`.cur`).
+    ///
+    /// Hand-rolled rather than pulled from a crate: an ICO is a 6-byte header,
+    /// a directory of 16-byte entries, and then per-entry payloads that are
+    /// *either* a whole PNG *or* a BMP DIB with no file header. That is small
+    /// enough to do directly, and it keeps a dependency out of a binary with a
+    /// 22 MB budget.
+    ///
+    /// Both payload kinds are handed to the generic zune-image path: PNG bytes
+    /// are already a PNG, and a DIB becomes a real BMP by having a 14-byte
+    /// `BITMAPFILEHEADER` prepended. `.cur` differs from `.ico` only in the
+    /// header type and the directory's hotspot fields, neither of which affects
+    /// the pixels, so both share this path.
+    ///
+    /// The largest entry wins, since that is the one a viewer wants; icons are
+    /// most useful at their full declared size anyway.
+    fn load_ico(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        const HEADER_LEN: usize = 6;
+        const DIR_ENTRY_LEN: usize = 16;
+
+        let file = std::fs::File::open(path)
+            .map_err(|e| eyre!("Failed to open icon file {path:?}: {e:?}"))?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        let data = &mmap[..];
+
+        if data.len() < HEADER_LEN {
+            return Err(eyre!("Icon file {path:?} is too short to hold a header"));
+        }
+        let reserved = u16::from_le_bytes([data[0], data[1]]);
+        let kind = u16::from_le_bytes([data[2], data[3]]);
+        let count = u16::from_le_bytes([data[4], data[5]]) as usize;
+
+        if reserved != 0 || (kind != 1 && kind != 2) {
+            return Err(eyre!(
+                "Not an icon or cursor: reserved={reserved} type={kind}"
+            ));
+        }
+        if count == 0 {
+            return Err(eyre!("Icon file {path:?} declares zero images"));
+        }
+
+        // Largest declared area wins. A 0 dimension means 256 per the spec.
+        let dim = |v: u8| if v == 0 { 256u32 } else { v as u32 };
+        let mut best: Option<(u32, usize, usize)> = None;
+        for i in 0..count {
+            let start = HEADER_LEN + i * DIR_ENTRY_LEN;
+            let Some(entry) = data.get(start..start + DIR_ENTRY_LEN) else {
+                // Truncated directory: keep whatever entries were intact.
+                break;
+            };
+            let size = u32::from_le_bytes([entry[8], entry[9], entry[10], entry[11]]) as usize;
+            let offset = u32::from_le_bytes([entry[12], entry[13], entry[14], entry[15]]) as usize;
+            let area = dim(entry[0]) * dim(entry[1]);
+            let better = best.is_none_or(|(best_area, _, _)| area > best_area);
+            if better {
+                best = Some((area, offset, size));
+            }
+        }
+
+        let (_, offset, size) =
+            best.ok_or_else(|| eyre!("Icon file {path:?} has no readable directory entry"))?;
+        let payload = data
+            .get(offset..offset.saturating_add(size))
+            .ok_or_else(|| {
+                eyre!("Icon directory points outside the file: offset={offset} size={size}")
+            })?;
+        if payload.is_empty() {
+            return Err(eyre!("Icon entry at {offset} is empty"));
+        }
+
+        // A DIB payload has no `BM` magic and no file header; adding one turns
+        // it into a BMP zune-image already knows how to read.
+        //
+        // Two adjustments are needed for zune-bmp to accept it:
+        //   * `bfOffBits` must point past the whole info header. zune-bmp
+        //     compares it against `14 + biSize` (decoder.rs:303), so a literal
+        //     14 is rejected as "Invalid header size".
+        //   * An icon's DIB stores *twice* the height, the upper half being the
+        //     1bpp AND mask. Left doubled, the mask decodes as a second image
+        //     and the icon comes out 2x too tall, so the real height is written
+        //     back over it.
+        let is_png = payload.starts_with(&[0x89, b'P', b'N', b'G']);
+        let mut bmp: Vec<u8>;
+        let bytes: &[u8] = if is_png {
+            payload
+        } else {
+            let ihsize = payload
+                .get(0..4)
+                .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .ok_or_else(|| eyre!("Icon DIB at {offset} is too short for a header"))?;
+            let height_at = match ihsize {
+                // BITMAPCOREHEADER: dimensions are u16 and height sits at +6.
+                12 => Some(6usize),
+                // BITMAPINFOHEADER and its extensions: height is i32 at +8.
+                40 | 52 | 56 | 64 | 108 | 124 => Some(8),
+                _ => None,
+            }
+            .ok_or_else(|| eyre!("Icon DIB uses unsupported header size {ihsize}"))?;
+
+            let declared = payload
+                .get(height_at..height_at + 4)
+                .map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .unwrap_or(0);
+            let real_height = (declared / 2).max(0);
+
+            bmp = Vec::with_capacity(payload.len() + 14);
+            let off_bits = 14u32.saturating_add(ihsize);
+            bmp.extend_from_slice(b"BM");
+            bmp.extend_from_slice(&((payload.len() + 14) as u32).to_le_bytes()); // bfSize
+            bmp.extend_from_slice(&0u16.to_le_bytes()); // bfReserved1
+            bmp.extend_from_slice(&0u16.to_le_bytes()); // bfReserved2
+            bmp.extend_from_slice(&off_bits.to_le_bytes()); // bfOffBits
+            bmp.extend_from_slice(payload);
+            bmp[14 + height_at..14 + height_at + 4].copy_from_slice(&real_height.to_le_bytes());
+            &bmp
+        };
+
+        let cursor = std::io::Cursor::new(bytes);
+        let mut img = Image::read(cursor, zune_core::options::DecoderOptions::default())
+            .map_err(|e| eyre!("Failed to decode icon payload in {path:?}: {e:?}"))?;
+        img.convert_color(zune_core::colorspace::ColorSpace::RGBA)?;
+
+        let (src_w, src_h) = (img.dimensions().0 as u32, img.dimensions().1 as u32);
+        if src_w == 0 || src_h == 0 {
+            return Err(eyre!("Icon {path:?} reports a zero dimension"));
+        }
+        let mut rgba = img.flatten_to_u8().swap_remove(0);
+
+        // A 32bpp icon DIB may carry an all-zero alpha channel, which is
+        // technically undefined rather than "fully transparent". Decoding it
+        // literally yields a completely invisible icon, so an entirely empty
+        // alpha plane is treated as opaque. Any real transparency has at least
+        // one non-zero byte and is left alone.
+        if rgba.len() >= 4 && rgba.as_chunks::<4>().0.iter().all(|p| p[3] == 0) {
+            for px in rgba.as_chunks_mut::<4>().0.iter_mut() {
+                px[3] = 255;
+            }
+        }
+
+        let file_size = mmap.len() as u64;
+        let (rgba, width, height, is_downsampled) =
+            downsample_to_fit(rgba, src_w, src_h, decode_box(max_w, max_h))?;
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: Arc::new(rgba),
+                width,
+                height,
+                format: ImageFormatType::Ico,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: true,
+                histogram: None,
+                is_downsampled,
+                orientation_deg: 0,
+                gps_coords: None,
+                color_space: None,
+            }],
+            ImageFormatType::Ico,
+        ))
+    }
+
+    /// Decode a farbfeld image: an 8-byte magic, two big-endian `u32` dimensions,
+    /// then 8 bytes per pixel as four big-endian `u16` samples.
+    ///
+    /// Hand-rolled rather than going through `zune-farbfeld`, whose `decode()`
+    /// cannot succeed: it allocates `4 * w * h` `u16` values and hands them to
+    /// `decode_into`, which compares that element count against
+    /// `output_buffer_size()` — a **byte** count that multiplies by 2 for the
+    /// 16-bit depth (zune-farbfeld-0.5.2/src/decoder.rs:123-131, 92-102). The
+    /// check therefore fails for every file and returns "Too small output
+    /// buffer size". Since the format is eight lines of parsing, doing it here
+    /// is cheaper than patching a dependency, and it keeps the broken codec out
+    /// of the tree entirely.
+    fn load_farbfeld(
+        path: &Path,
+        max_w: Option<u32>,
+        max_h: Option<u32>,
+    ) -> Result<(Vec<ImageData>, ImageFormatType)> {
+        const MAGIC: &[u8; 8] = b"farbfeld";
+
+        let file = std::fs::File::open(path)
+            .map_err(|e| eyre!("Failed to open farbfeld file {path:?}: {e:?}"))?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        let data = &mmap[..];
+
+        let data = data
+            .strip_prefix(MAGIC)
+            .ok_or_else(|| eyre!("Not a farbfeld file: {path:?}"))?;
+        let dims = data
+            .get(0..8)
+            .ok_or_else(|| eyre!("Farbfeld file {path:?} is truncated in its header"))?;
+        let width = u32::from_be_bytes([dims[0], dims[1], dims[2], dims[3]]);
+        let height = u32::from_be_bytes([dims[4], dims[5], dims[6], dims[7]]);
+        if width == 0 || height == 0 {
+            return Err(eyre!("Farbfeld file {path:?} reports a zero dimension"));
+        }
+
+        // Reject a count that cannot be trusted before allocating from it, so a
+        // hostile header cannot ask for a huge buffer.
+        let pixels = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|n| n.checked_mul(8))
+            .ok_or_else(|| eyre!("Farbfeld dimensions {width}x{height} overflow"))?;
+        let body = data
+            .get(8..8 + pixels)
+            .ok_or_else(|| eyre!("Farbfeld file {path:?} is truncated in its pixel data"))?;
+
+        // 16-bit samples are truncated to 8 bits, keeping the high byte.
+        let mut rgba = Vec::with_capacity(pixels / 2);
+        for px in body.as_chunks::<8>().0 {
+            rgba.extend_from_slice(&[px[0], px[2], px[4], px[6]]);
+        }
+
+        let file_size = mmap.len() as u64;
+        let (rgba, width, height, is_downsampled) =
+            downsample_to_fit(rgba, width, height, decode_box(max_w, max_h))?;
+
+        Ok((
+            vec![ImageData {
+                path: path.to_path_buf(),
+                rgba_data: Arc::new(rgba),
+                width,
+                height,
+                format: ImageFormatType::Farbfeld,
+                file_size_bytes: file_size,
+                frame_delay_ms: 0,
+                exif_info: None,
+                exif_loaded: true,
+                histogram: None,
+                is_downsampled,
+                orientation_deg: 0,
+                gps_coords: None,
+                color_space: None,
+            }],
+            ImageFormatType::Farbfeld,
+        ))
     }
 
     fn load_raw(path: &Path) -> Result<(Vec<ImageData>, ImageFormatType)> {

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Version-0.10.1-blue" alt="Version: 0.10.1"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-0.11.0-blue" alt="Version: 0.11.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-1.94+-orange" alt="Rust: 1.94+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
@@ -70,8 +70,18 @@ All adjustments are processed dynamically in WGSL fragment shaders.
 | Format | Decoding Engine | OS Support |
 |--------|-----------------|------------|
 | JPEG | Pure Rust SIMD (`libjpeg-turbo-rs`) | All Platforms |
-| PNG, GIF, BMP, TIFF, WebP, JXL | Pure Rust (`zune-image` / `jxl-oxide`) | All Platforms |
-| QOI (Quite OK Image) | Pure Rust (`qoi` crate) | All Platforms |
+| PNG | Pure Rust (`zune-image`) | All Platforms |
+| GIF | Pure Rust (`gif`) | All Platforms |
+| BMP | Pure Rust (`zune-image`) | All Platforms |
+| TIFF | Pure Rust (`tiff`) | All Platforms |
+| WebP | Pure Rust (`image-webp`) | All Platforms |
+| JXL (JPEG XL) | Pure Rust (`jxl-oxide`) | All Platforms |
+| QOI (Quite OK Image) | Pure Rust (`qoi`) | All Platforms |
+| PSD / PSB (Photoshop composite) | Pure Rust (`zune-psd`) | All Platforms |
+| Netpbm: PBM, PGM, PPM, PAM, PFM | Pure Rust (`zune-ppm`) | All Platforms |
+| Radiance RGBE (`.hdr`) | Pure Rust (`zune-hdr`) | All Platforms |
+| Farbfeld (`.ff`) | Hand-rolled, ~30 lines | All Platforms |
+| ICO / CUR (Windows icons) | Hand-rolled, ~150 lines | All Platforms |
 | OpenEXR (32-bit HDR `.exr`) | Pure Rust (`exr` crate) | All Platforms |
 | RAW (CR2, NEF, ARW, DNG, etc.)* | Pure Rust (`rawloader` crate) | All Platforms |
 | SVG | `resvg` crate | All Platforms |
@@ -85,6 +95,31 @@ All adjustments are processed dynamically in WGSL fragment shaders.
 HEVC, so it needs an AV1 decoder that `heic-rs` deliberately does not ship.
 `.avif` files are filtered out alongside unknown formats. HEVC-in-HEIF, which
 covers the files cameras and phones actually write, is fully supported.
+ 
+**Targa (`.tga`) is not supported.** There is no Targa decoder in the tree. It
+used to be listed in the file browser anyway, which meant Targa files showed up
+and then failed to open, so it has been dropped from the accepted extensions.
+ 
+### Codec weight
+
+Every decoder above is pure Rust, and the additions are deliberately small:
+
+- **PSD, Netpbm and Radiance** come from the `zune-*` codecs: 11-15 KB of source
+  each, no transitive dependencies, and `guess_format` recognises all three by
+  magic bytes, so they reuse the existing generic decode path with no new
+  dispatch code.
+- **Farbfeld** is decoded by hand instead of via `zune-farbfeld`, whose `decode()`
+  cannot succeed for any input: it allocates `4 * w * h` `u16` values and
+  compares that element count against `output_buffer_size()`, which is a *byte*
+  count doubled for the 16-bit depth
+  (`zune-farbfeld-0.5.2/src/decoder.rs:92-131`). That crate is therefore not in
+  the dependency tree at all.
+- **ICO/CUR** is parsed directly, because an icon is a 6-byte header, a
+  directory of 16-byte entries, and then per-entry payloads that are either a
+  whole PNG or a headerless BMP DIB.
+
+Run `just size-check` to confirm the release binary stays inside its 22 MB
+budget; that gate runs on every build.
  
 ---
  
@@ -216,7 +251,7 @@ spedimage /path/to/image.jpg
 | **Language** | Rust 2024 | Eliminates buffer overflows and data races. |
 | **Windowing** | winit | Cross-platform, reliable event loop. |
 | **GPU Rendering** | WGPU | Safe access to Vulkan/Metal/DX12/OpenGL. |
-| **Image Decoding**| `libjpeg-turbo-rs` / `zune-image` / `jxl-oxide` / `rawloader` / `heic` / `resvg` | High-performance pure Rust & hardware-accelerated decoders. |
+| **Image Decoding**| `libjpeg-turbo-rs` / `gif` / `tiff` / `image-webp` / `jxl-oxide` / `rawloader` / `heic-rs` / `exr` / `qoi` / `zune-psd` / `zune-ppm` / `zune-hdr` / `resvg` | High-performance pure Rust & hardware-accelerated decoders. |
 | **Shaders** | WGSL | Highly optimized GPU processing blocks. |
 
 </div>

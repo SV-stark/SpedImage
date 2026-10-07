@@ -86,9 +86,23 @@ impl ImageProcessor {
     }
 
     /// Extensions the viewer accepts, without any per-call allocation.
+    ///
+    /// This is the list the file browser filters on, so it has to match what
+    /// `ImageFormatType::is_supported` says the loaders can decode. `.avif` is
+    /// absent on purpose: AVIF needs an AV1 decoder and there is none here, so
+    /// listing it would show files that can only fail. `.tga` is absent for the
+    /// same reason and no longer accepted here: there is still no Targa
+    /// decoder, and listing it only produced files that were visible in the
+    /// browser and then failed to open.
     pub const SUPPORTED_EXTENSIONS: &'static [&'static str] = &[
-        "jpg", "jpeg", "png", "gif", "bmp", "tga", "tiff", "tif", "webp", "ico", "heic", "heif",
-        "avif", "jxl", "svg", "qoi", "exr", "arw", "cr2", "nef", "dng", "orf", "raf", "srw",
+        // Still images with a dedicated loader.
+        "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "ico", "cur", "heic", "heif",
+        "jxl", "svg", "qoi", "exr",
+        // Reached through zune-image's magic-byte sniffing.
+        "psd", "psb", "hdr", "ppm", "pgm", "pbm", "pnm", "pam", "pfm", "ff", "farbfeld",
+        // RAW: one entry per family `rawloader` can sniff.
+        "arw", "cr2", "crw", "nef", "nrw", "dng", "orf", "raf", "sr2", "srf", "srw", "pef", "mrw",
+        "kdc", "dcr", "rw2",
     ];
 
     /// Get list of supported file extensions
@@ -365,6 +379,7 @@ impl ImageProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image::ImageFormatType;
     use std::path::PathBuf;
 
     #[test]
@@ -380,21 +395,81 @@ mod tests {
         assert!(exts.contains(&"webp"));
         assert!(exts.contains(&"heic"));
         assert!(exts.contains(&"heif"));
-        assert!(exts.contains(&"avif"));
         assert!(exts.contains(&"jxl"));
         assert!(exts.contains(&"svg"));
+    }
+
+    /// The browser filters on `SUPPORTED_EXTENSIONS`, not on
+    /// `ImageFormatType::is_supported`, so an extension in the list that
+    /// `is_supported` rejects is shown to the user and then fails to open.
+    /// AVIF hit exactly that, and so did `tga` and `ico`, which sat in the list
+    /// with no decoder behind them until they were either implemented or
+    /// removed. The list is now fully consistent, so there is no exemption.
+    #[test]
+    fn test_supported_extensions_agree_with_is_supported() {
+        for ext in ImageProcessor::supported_extensions() {
+            let format = ImageFormatType::from_extension(ext);
+            assert!(
+                format.is_supported(),
+                "{ext} is in SUPPORTED_EXTENSIONS but is_supported() says no, \
+                 so it would be listed in the browser and fail to open"
+            );
+        }
+    }
+
+    /// The reverse direction: a format the loaders can decode must also be
+    /// reachable from the file browser, or it exists but users never see it.
+    #[test]
+    fn test_every_supported_extension_maps_back_into_the_list() {
+        let listed = ImageProcessor::supported_extensions();
+        // Everything `from_extension` calls supported has to appear in the
+        // browser's list, extension for extension, or the two drift apart
+        // again in the direction that hides working formats.
+        for ext in [
+            "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "ico", "cur", "heic",
+            "heif", "jxl", "svg", "qoi", "exr", "psd", "psb", "hdr", "ppm", "pgm", "pbm", "pnm",
+            "pam", "pfm", "ff", "farbfeld", "arw", "cr2", "crw", "nef", "nrw", "dng", "orf", "raf",
+            "sr2", "srf", "srw", "pef", "mrw", "kdc", "dcr", "rw2",
+        ] {
+            assert!(
+                listed.contains(&ext),
+                "{ext} decodes but is missing from SUPPORTED_EXTENSIONS, so the \
+                 file browser would hide it"
+            );
+        }
+    }
+
+    /// `tga` used to be listed without a decoder behind it.
+    #[test]
+    fn test_tga_is_not_listed_in_the_browser() {
+        assert!(!ImageProcessor::supported_extensions().contains(&"tga"));
+    }
+
+    #[test]
+    fn test_avif_is_not_listed_in_the_browser() {
+        assert!(!ImageProcessor::supported_extensions().contains(&"avif"));
+        assert!(!ImageProcessor::supported_extensions().contains(&"avis"));
+        // ...but still recognised, so an explicit open can explain itself.
+        assert_eq!(
+            ImageFormatType::from_extension("avif"),
+            ImageFormatType::Avif
+        );
     }
 
     #[test]
     fn test_supported_extensions_includes_raw_formats() {
         let exts = ImageProcessor::supported_extensions();
-        assert!(exts.contains(&"arw"));
-        assert!(exts.contains(&"cr2"));
-        assert!(exts.contains(&"nef"));
-        assert!(exts.contains(&"dng"));
-        assert!(exts.contains(&"orf"));
-        assert!(exts.contains(&"raf"));
-        assert!(exts.contains(&"srw"));
+        // One entry per camera family `rawloader` can sniff. `.pef`, `.crw`,
+        // `.mrw`, `.kdc`, `.dcr`, `.rw2`, `.nrw`, `.srf` and `.sr2` were all
+        // missing while the README advertised their formats, so those files
+        // were invisible in the browser.
+        for ext in [
+            "arw", "cr2", "crw", "nef", "nrw", "dng", "orf", "raf", "sr2", "srf", "srw", "pef",
+            "mrw", "kdc", "dcr", "rw2",
+        ] {
+            assert!(exts.contains(&ext), "RAW extension {ext} is not listed");
+            assert_eq!(ImageFormatType::from_extension(ext), ImageFormatType::Raw);
+        }
     }
 
     #[test]
