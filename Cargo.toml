@@ -69,7 +69,11 @@ zune-image = { version = "=0.5.0", default-features = false, features = [
 image-webp = "0.2"
 zune-core = "=0.5.1"
 tiff = "0.9"
-gif = "0.13"
+# 0.14, not 0.13: resvg already pulls gif 0.14.2, so pinning the older line
+# compiled two copies of the same decoder (2.1 MB + 3.3 MB of debug rlib).
+# The API we use — DecodeOptions::set_color_output, ColorOutput::RGBA,
+# DisposalMethod, Encoder, Frame::from_rgba_speed — is unchanged in 0.14.
+gif = "0.14"
 resvg = "0.47"
 pollster = "0.3"
 color-eyre = "0.6"
@@ -137,7 +141,7 @@ windows = { version = "0.62", features = [
 [dev-dependencies]
 crossbeam-channel = "0.5"
 divan = "0.1"
-gif = "0.13"
+gif = "0.14"
 libjpeg-turbo-rs = "0.8.0"
 # `make_png` in tests/loader_tests.rs synthesises a fixture through zune-image's
 # own encoder. This is the same crate the lib already depends on, so the test
