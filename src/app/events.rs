@@ -82,6 +82,7 @@ impl SpedImageApp {
                                 r.update_scale_factor(scale);
                             }
                             self.renderer = Some(r);
+                            self.refresh_display_profile();
                             // If an image arrived before the GPU, upload it now.
                             if let Some(img) = self.current_image.clone()
                                 && let Some(rr) = &mut self.renderer
@@ -254,11 +255,18 @@ impl SpedImageApp {
                         thumbs_loaded = true;
                     }
                 }
-                AppEvent::SaveComplete(path) => {
-                    self.ui_state.set_status(format!(
-                        "Saved: {}",
-                        path.file_name().unwrap_or_default().to_string_lossy()
-                    ));
+                AppEvent::SaveComplete(outcome) => {
+                    let name = outcome
+                        .path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned();
+                    self.ui_state.set_status(if outcome.lossless {
+                        format!("Saved losslessly: {name}")
+                    } else {
+                        format!("Saved: {name}")
+                    });
                     self.dirty = true;
                 }
                 AppEvent::SaveError(err) => {
@@ -407,6 +415,16 @@ impl SpedImageApp {
                         self.dirty = true;
                     }
                 }
+                AppEvent::HighResFailed(path) => {
+                    if self
+                        .current_image
+                        .as_ref()
+                        .is_some_and(|img| img.path == path)
+                    {
+                        self.highres_in_flight = false;
+                        self.dirty = true;
+                    }
+                }
                 AppEvent::HistogramComputed(path, histogram) => {
                     if let Some(ref mut img) = self.current_image
                         && img.path == path
@@ -420,6 +438,18 @@ impl SpedImageApp {
                 }
                 AppEvent::TriggerOpenFileDialog => {
                     self.open_file_dialog();
+                }
+                AppEvent::SortChanged => {
+                    if let Some(dir) = self.ui_state.current_dir.clone() {
+                        if self.config.sort_key() == crate::config::SortKey::Taken {
+                            self.ui_state.set_status("Reading capture dates...");
+                        }
+                        self.load_directory_async(dir);
+                    }
+                    self.dirty = true;
+                }
+                AppEvent::DisplayProfileToggled => {
+                    self.refresh_display_profile();
                 }
             }
             count += 1;
@@ -581,7 +611,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             return;
         }
 
-        let config = &self.config;
+        // A copy, so `self` stays free for the early decode below.
+        let config = self.config.clone();
 
         // Fast path: title already contains the file name so the OS window
         // is discoverable (and benchmarkable) the instant it is created.
@@ -596,28 +627,78 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         };
         let title_for_log = title.clone();
 
-        let window = Arc::new(
-            event_loop
-                .create_window(
-                    WindowAttributes::default()
-                        .with_title(title)
-                        .with_visible(true)
-                        .with_maximized(config.window_maximized)
-                        .with_inner_size(winit::dpi::LogicalSize::new(
-                            if config.window_width > 0 {
-                                config.window_width as f64
-                            } else {
-                                1200.0
-                            },
-                            if config.window_height > 0 {
-                                config.window_height as f64
-                            } else {
-                                800.0
-                            },
-                        )),
-                )
-                .unwrap(),
+        let (logical_w, logical_h) = (
+            if config.window_width > 0 {
+                config.window_width as f64
+            } else {
+                1200.0
+            },
+            if config.window_height > 0 {
+                config.window_height as f64
+            } else {
+                800.0
+            },
         );
+        let mut attributes = WindowAttributes::default()
+            .with_title(title)
+            .with_visible(true)
+            .with_maximized(config.window_maximized)
+            .with_inner_size(winit::dpi::LogicalSize::new(logical_w, logical_h));
+        let monitors: Vec<_> = event_loop.available_monitors().collect();
+        let restored = config.window_x.and_then(|_| {
+            let rects: Vec<_> = monitors.iter().map(|m| (m.position(), m.size())).collect();
+            crate::app::view::restore_position(
+                (config.window_x, config.window_y),
+                winit::dpi::PhysicalSize::new(logical_w as u32, logical_h as u32),
+                &rects,
+            )
+        });
+        if let Some(pos) = restored {
+            attributes = attributes.with_position(pos);
+        }
+
+        // Start decoding before creating the window: creation takes ~55 ms on
+        // Windows and the decode, not the GPU, is the critical path to the
+        // first picture. The decode box is predicted from the saved size on
+        // the monitor the window will open on; it only needs to be close,
+        // since the decoder never upscales and zooming refines anyway.
+        let early_fit = self.initial_path.as_ref().and_then(|_| {
+            let monitor = restored
+                .and_then(|pos| {
+                    monitors.iter().find(|m| {
+                        let (mp, ms) = (m.position(), m.size());
+                        pos.x >= mp.x
+                            && pos.y >= mp.y
+                            && (pos.x as i64) < mp.x as i64 + ms.width as i64
+                            && (pos.y as i64) < mp.y as i64 + ms.height as i64
+                    })
+                })
+                .cloned()
+                .or_else(|| event_loop.primary_monitor())?;
+            let screen = monitor.size();
+            let scale = monitor.scale_factor();
+            Some(if config.window_maximized {
+                (screen.width, screen.height)
+            } else {
+                (
+                    ((logical_w * scale) as u32).min(screen.width).max(1),
+                    ((logical_h * scale) as u32).min(screen.height).max(1),
+                )
+            })
+        });
+        if let (Some(path), Some(fit)) = (self.initial_path.take(), early_fit) {
+            crate::startup::log("early decode kicked off");
+            self.load_image_sized(&path, Some(fit));
+        }
+
+        let window = match event_loop.create_window(attributes) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                tracing::error!("Failed to create the window: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
         self.window = Some(window.clone());
         crate::startup::log(&format!("after window creation title={:?}", title_for_log));
 
@@ -682,17 +763,20 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             });
         }
         // Diagnostic visibility poll — only when startup tracing is enabled.
+        #[cfg(windows)]
         if std::env::var_os("SPEDIMAGE_STARTUP_LOG").is_some() {
-            let w2 = window.clone();
+            use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            // Read the handle here: winit refuses it on other threads. An
+            // HWND is a plain integer and safe to poll from anywhere.
+            let hwnd_raw = match window.window_handle().map(|h| h.as_raw()) {
+                Ok(RawWindowHandle::Win32(h)) => Some(h.hwnd.get()),
+                _ => None,
+            };
             std::thread::spawn(move || {
-                use winit::raw_window_handle::HasWindowHandle;
-                use winit::raw_window_handle::RawWindowHandle;
-                let hwnd = match w2.window_handle().map(|h| h.as_raw()) {
-                    Ok(RawWindowHandle::Win32(h)) => {
-                        windows::Win32::Foundation::HWND(h.hwnd.get() as *mut _)
-                    }
-                    _ => return,
+                let Some(raw) = hwnd_raw else {
+                    return;
                 };
+                let hwnd = windows::Win32::Foundation::HWND(raw as *mut _);
                 let start = std::time::Instant::now();
                 loop {
                     let vis = unsafe {
@@ -762,8 +846,11 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             let w = window.clone();
             let tx = self.event_tx.clone();
             let proxy = self.event_proxy.clone();
+            // The surface needs the window handle, which winit only hands out
+            // on this thread; everything slow happens in the background.
+            let gpu_surface = Renderer::create_surface(window.clone());
             std::thread::spawn(move || {
-                let res = pollster::block_on(Renderer::new(w));
+                let res = gpu_surface.and_then(|gpu| pollster::block_on(Renderer::new(w, gpu)));
                 let evt = match res {
                     Ok(r) => AppEvent::RendererReady(Ok(Box::new(r))),
                     Err(e) => AppEvent::RendererReady(Err(e.to_string())),
@@ -820,6 +907,12 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     r.update_scale_factor(scale_factor);
                     self.dirty = true;
                 }
+                self.refresh_display_profile_if_monitor_changed();
+            }
+            WindowEvent::Moved(_) => {
+                // Monitors can carry different profiles (a P3 laptop panel
+                // next to an sRGB external screen).
+                self.refresh_display_profile_if_monitor_changed();
             }
             WindowEvent::DroppedFile(path) => {
                 self.load_image(&path);
@@ -898,6 +991,19 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
 
                     // Borrow just the status field, and skip the per-frame
                     // `String` allocation the old `to_string()` did.
+                    let file_label = |p: &std::path::Path| {
+                        p.file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default()
+                    };
+                    let compare_labels = match (&self.compare_pinned, &self.current_image) {
+                        (Some(pinned), Some(img)) => {
+                            Some((file_label(pinned), file_label(&img.path)))
+                        }
+                        _ => None,
+                    };
+                    let is_refining = self.highres_in_flight && !self.loading;
+
                     let status_text = crate::ui::UiState::status_of(&self.ui_state.status_message);
                     let is_cropping = self.ui_state.is_cropping;
                     let crop_rect = self.ui_state.adjustments.crop_rect;
@@ -955,12 +1061,20 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                             gps_coords,
                             current_image_info,
                             show_osd,
+                            is_refining,
+                            compare_labels,
+                            notice: &mut self.ui_state.notice,
                         })
                     {
                         tracing::warn!("render frame error: {e}");
                         if let Some(ref win) = self.window {
                             r.resize(win.inner_size());
                         }
+                    } else if has_image {
+                        // The number users actually feel: the picture is on
+                        // screen, not just a titled window.
+                        static FIRST_IMAGE: std::sync::Once = std::sync::Once::new();
+                        FIRST_IMAGE.call_once(|| crate::startup::log("first frame with image"));
                     }
 
                     if self.slideshow.active != old_slideshow_active {
@@ -981,6 +1095,13 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         }
                         self.dirty = true;
                     }
+                } else if let (Some(w), Some(img)) = (&self.window, &self.current_image)
+                    && crate::render::cpu_preview::paint(w, img)
+                {
+                    // GPU still initialising: show the picture via GDI now
+                    // rather than an empty window for another second or two.
+                    static FIRST_CPU: std::sync::Once = std::sync::Once::new();
+                    FIRST_CPU.call_once(|| crate::startup::log("first frame with image (CPU)"));
                 }
 
                 // Clear outside the `renderer.is_some()` block: when GPU init
@@ -1005,10 +1126,13 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 if self.crop_drag.is_some() {
                     self.update_crop_drag(position);
                 } else if let Some(start) = self.mouse_drag_start
-                    && let Some(ref r) = self.renderer
+                    && self.renderer.is_some()
                 {
-                    let dx = (position.x - start.x) as f32 / r.config.width as f32;
-                    let dy = (position.y - start.y) as f32 / r.config.height as f32;
+                    // Normalise by the image's view, which is half the window
+                    // in compare mode; the full width made panning half speed.
+                    let (view_w, view_h) = self.image_view_size();
+                    let dx = (position.x - start.x) as f32 / view_w;
+                    let dy = (position.y - start.y) as f32 / view_h;
 
                     // Rotate delta by total rotation and flipping so panning tracks cursor intuitively
                     let rot =

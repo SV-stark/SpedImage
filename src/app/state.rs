@@ -89,18 +89,28 @@ pub struct SpedImageApp {
     pub(crate) thumbnail_pool: OnceLock<Arc<ThreadPool>>,
     pub(crate) file_watcher: Option<Debouncer<notify::RecommendedWatcher, FileIdMap>>,
     pub(crate) config: crate::config::AppConfig,
+    /// File pinned to the left half of the side-by-side compare view.
+    pub(crate) compare_pinned: Option<PathBuf>,
+    /// Name of the monitor the display profile was last read for, so moving
+    /// the window to another screen re-reads it.
+    pub(crate) profile_monitor: Option<String>,
 }
 
 impl SpedImageApp {
     pub fn new(proxy: EventLoopProxy<WakeUp>) -> Self {
         crate::startup::log("App::new enter");
         let (event_tx, event_rx) = crossbeam_channel::unbounded();
+        let (config, config_warning) = crate::config::AppConfig::load_reporting();
+        let ui_state = UiState {
+            notice: config_warning,
+            ..UiState::default()
+        };
 
         let app = Self {
             window: None,
             renderer: None,
             current_image: None,
-            ui_state: UiState::default(),
+            ui_state,
             navigation: NavigationState {
                 held_key: None,
                 last_advance_time: None,
@@ -143,7 +153,9 @@ impl SpedImageApp {
             prefetch_pool: OnceLock::new(),
             thumbnail_pool: OnceLock::new(),
             file_watcher: None,
-            config: crate::config::AppConfig::load(),
+            config,
+            compare_pinned: None,
+            profile_monitor: None,
         };
         crate::startup::log("App::new done");
         app

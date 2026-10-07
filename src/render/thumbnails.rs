@@ -181,7 +181,8 @@ impl Renderer {
                     -((win_h as f32 - strip_h as f32 / 2.0) / win_h as f32 * 2.0 - 1.0),
                 ];
 
-                let mut uniforms = Uniforms::identity();
+                let mut uniforms =
+                    Uniforms::identity().with_display_matrix(self.display_matrix.as_ref());
                 uniforms.pos_scale = pos_scale;
                 uniforms.pos_offset = pos_offset;
 

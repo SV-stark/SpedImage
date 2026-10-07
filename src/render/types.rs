@@ -41,9 +41,40 @@ pub struct Uniforms {
     pub color_matrix_col0: [f32; 4],
     pub color_matrix_col1: [f32; 4],
     pub color_matrix_col2: [f32; 4],
+    /// Linear sRGB -> linear display RGB, applied last. `display_col0[3]` is
+    /// the enable flag (1.0 = on), which keeps the struct 16-byte aligned
+    /// without a separate padded scalar.
+    pub display_col0: [f32; 4],
+    pub display_col1: [f32; 4],
+    pub display_col2: [f32; 4],
+}
+
+/// Shader columns for a display matrix, or the disabled identity.
+pub fn display_matrix_columns(m: Option<&crate::render::color::Mat3>) -> [[f32; 4]; 3] {
+    match m {
+        Some(m) => [
+            [m[0][0] as f32, m[1][0] as f32, m[2][0] as f32, 1.0],
+            [m[0][1] as f32, m[1][1] as f32, m[2][1] as f32, 0.0],
+            [m[0][2] as f32, m[1][2] as f32, m[2][2] as f32, 0.0],
+        ],
+        None => [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ],
+    }
 }
 
 impl Uniforms {
+    /// Install the display matrix (or disable it).
+    pub fn with_display_matrix(mut self, m: Option<&crate::render::color::Mat3>) -> Self {
+        let [c0, c1, c2] = display_matrix_columns(m);
+        self.display_col0 = c0;
+        self.display_col1 = c1;
+        self.display_col2 = c2;
+        self
+    }
+
     pub fn identity() -> Self {
         Self {
             rotation: 0.0,
@@ -75,6 +106,9 @@ impl Uniforms {
             color_matrix_col0: [1.0, 0.0, 0.0, 0.0],
             color_matrix_col1: [0.0, 1.0, 0.0, 0.0],
             color_matrix_col2: [0.0, 0.0, 1.0, 0.0],
+            display_col0: [1.0, 0.0, 0.0, 0.0],
+            display_col1: [0.0, 1.0, 0.0, 0.0],
+            display_col2: [0.0, 0.0, 1.0, 0.0],
         }
     }
 }
@@ -186,4 +220,11 @@ pub struct RenderParams<'a> {
     pub gps_coords: Option<(f64, f64)>,
     pub current_image_info: Option<(String, u32, u32, u64, f32)>,
     pub show_osd: bool,
+    /// A full-resolution re-decode is running for the zoomed-in image.
+    pub is_refining: bool,
+    /// File names of the pinned (left) and current (right) image while the
+    /// side-by-side compare view is open.
+    pub compare_labels: Option<(String, String)>,
+    /// Persistent message with an OK button; cleared when dismissed.
+    pub notice: &'a mut Option<String>,
 }

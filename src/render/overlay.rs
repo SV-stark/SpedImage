@@ -159,6 +159,23 @@ impl Renderer {
         win_w: u32,
         win_h: u32,
     ) {
+        // Persistent notice (e.g. a damaged settings file). Drawn before the
+        // early return below so it also shows on the welcome screen.
+        if let Some(text) = params.notice.clone() {
+            egui::Window::new("⚠ Notice")
+                .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 40.0))
+                .collapsible(false)
+                .resizable(false)
+                .default_width(420.0)
+                .show(ctx, |ui| {
+                    ui.label(text);
+                    ui.add_space(6.0);
+                    if ui.button("OK").clicked() {
+                        *params.notice = None;
+                    }
+                });
+        }
+
         // Overlay UI rendering
         if !params.has_image {
             if params.is_loading {
@@ -266,6 +283,59 @@ impl Renderer {
                         );
                     });
                 });
+        } else if params.is_refining {
+            // Zoomed past the preview's resolution: say why it is soft for a
+            // moment, rather than letting it look like the image is blurry.
+            egui::Area::new(egui::Id::new("refining_hint"))
+                .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-10.0, -10.0))
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Spinner::new().size(16.0));
+                        ui.label(
+                            egui::RichText::new("Loading full resolution…")
+                                .size(13.0)
+                                .color(egui::Color32::LIGHT_GRAY),
+                        );
+                    });
+                });
+        }
+
+        if let Some((pinned, current)) = &params.compare_labels {
+            let ppp = ctx.pixels_per_point();
+            let half = win_w as f32 / 2.0 / ppp;
+            ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Background,
+                egui::Id::new("compare_divider"),
+            ))
+            .line_segment(
+                [egui::pos2(half, 0.0), egui::pos2(half, win_h as f32 / ppp)],
+                egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(0, 180, 216)),
+            );
+            for (id, text, dx) in [
+                ("compare_left", format!("📌 {pinned}"), -half / 2.0),
+                ("compare_right", current.clone(), half / 2.0),
+            ] {
+                // Below the OSD pill and status line, which sit top-left.
+                egui::Area::new(egui::Id::new(id))
+                    .anchor(egui::Align2::CENTER_TOP, egui::vec2(dx, 84.0))
+                    .order(egui::Order::Foreground)
+                    .show(ctx, |ui| {
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgba_unmultiplied(12, 14, 23, 200))
+                            .corner_radius(6.0)
+                            .inner_margin(egui::Margin::symmetric(8, 4))
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(text)
+                                            .size(12.0)
+                                            .color(egui::Color32::WHITE),
+                                    )
+                                    .extend(),
+                                );
+                            });
+                    });
+            }
         }
         let nav_y = if params.show_thumbnail_strip && has_thumbnails {
             (win_h as f32 - STRIP_HEIGHT_PX as f32) / 2.0
@@ -444,7 +514,8 @@ impl Renderer {
                     ui.label("Delete: Move to Recycle Bin");
                     ui.label("F: Toggle Sidebar");
                     ui.label("T: Toggle Thumbnails");
-                    ui.label("Esc: Quit");
+                    ui.label("K: Pin & Compare Side by Side");
+                    ui.label("Esc: Close Compare / Quit");
                 });
         }
 
@@ -521,6 +592,43 @@ impl Renderer {
                             .strong()
                             .color(egui::Color32::from_rgb(0, 180, 216)),
                     ); // cyan accent
+                    ui.add_space(6.0);
+
+                    let mut sort_changed = false;
+                    ui.horizontal(|ui| {
+                        let mut key = params.config.sort_key();
+                        egui::ComboBox::from_id_salt("sort_key")
+                            .selected_text(format!("Sort: {}", key.label()))
+                            .show_ui(ui, |ui| {
+                                for k in crate::config::SortKey::ALL {
+                                    if ui.selectable_value(&mut key, k, k.label()).changed() {
+                                        sort_changed = true;
+                                    }
+                                }
+                            });
+                        if sort_changed {
+                            params.config.sort_key = Some(key);
+                        }
+                        let descending = params.config.sort_descending();
+                        let (arrow, hint) = if descending {
+                            ("⬇", "Descending (click for ascending)")
+                        } else {
+                            ("⬆", "Ascending (click for descending)")
+                        };
+                        if ui.button(arrow).on_hover_text(hint).clicked() {
+                            params.config.sort_descending = Some(!descending);
+                            sort_changed = true;
+                        }
+                    });
+                    if sort_changed {
+                        params.config.save();
+                        crate::app::types::send_event(
+                            params.event_tx,
+                            params.event_proxy,
+                            crate::app::types::AppEvent::SortChanged,
+                        );
+                    }
+
                     ui.add_space(6.0);
                     ui.separator();
                     ui.add_space(6.0);
@@ -794,6 +902,21 @@ impl Renderer {
                         if ui.checkbox(&mut checkerboard, "Transparency Checkerboard").changed() {
                             params.config.transparency_checkerboard = Some(checkerboard);
                             pref_changed = true;
+                        }
+
+                        let mut match_display = params.config.display_profile_enabled();
+                        if ui
+                            .checkbox(&mut match_display, "Match monitor colour profile")
+                            .on_hover_text("Convert colours to the ICC profile Windows has assigned to this monitor. Matters on wide-gamut screens; does nothing on sRGB ones.")
+                            .changed()
+                        {
+                            params.config.match_display_profile = Some(match_display);
+                            pref_changed = true;
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::DisplayProfileToggled,
+                            );
                         }
 
                         ui.separator();

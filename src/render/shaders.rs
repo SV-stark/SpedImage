@@ -35,9 +35,28 @@ struct Uniforms {
     color_matrix_col0: vec4<f32>,
     color_matrix_col1: vec4<f32>,
     color_matrix_col2: vec4<f32>,
+    // Linear sRGB -> linear display RGB; display_col0.w is the enable flag.
+    display_col0: vec4<f32>,
+    display_col1: vec4<f32>,
+    display_col2: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+// Final colour-management step: map sRGB primaries onto the monitor's. The
+// sampled texture is Rgba8UnormSrgb and the surface is sRGB, so `rgb` is
+// linear here and the surface re-encodes it.
+fn to_display(c: vec4<f32>) -> vec4<f32> {
+    if (uniforms.display_col0.w < 0.5) {
+        return c;
+    }
+    let m = mat3x3<f32>(
+        uniforms.display_col0.xyz,
+        uniforms.display_col1.xyz,
+        uniforms.display_col2.xyz
+    );
+    return vec4<f32>(clamp(m * c.rgb, vec3<f32>(0.0), vec3<f32>(1.0)), c.a);
+}
 @group(0) @binding(1) var s: sampler;
 @group(0) @binding(2) var t: texture_2d<f32>;
 @group(0) @binding(3) var t_prev: texture_2d<f32>;
@@ -116,7 +135,7 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
             return vec4<f32>(0.0, 0.706, 0.847, 1.0); // Cyan divider line
         }
         if (diff < 0.0) {
-            return base_color; // Left side: original untouched image
+            return to_display(base_color); // Left side: original untouched image
         }
     }
     
@@ -194,8 +213,11 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
         x = x / (1.0 + x);
         color = vec4<f32>(x * x * (3.0 - 2.0 * x), color.a);
     }
-    
-    // 8. Transparency Handling with Subtle Checkerboard Canvas
+
+    // 8. Monitor colour profile
+    color = to_display(color);
+
+    // 9. Transparency Handling with Subtle Checkerboard Canvas
     if (color.a < 0.999) {
         let checker_size = 16.0;
         let check_val = (floor(in.position.x / checker_size) + floor(in.position.y / checker_size)) % 2.0;

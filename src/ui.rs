@@ -9,6 +9,12 @@ pub struct FileEntry {
     pub path: PathBuf,
     pub name: String,
     pub is_image: bool,
+    /// Seconds since the Unix epoch, from the file system.
+    pub modified: Option<i64>,
+    pub size: u64,
+    /// EXIF capture time (see `read_date_taken`). Only read when the listing
+    /// is sorted by date taken, since it means opening every file.
+    pub taken: Option<i64>,
 }
 
 impl FileEntry {
@@ -21,7 +27,37 @@ impl FileEntry {
             path,
             name,
             is_image: true,
+            modified: None,
+            size: 0,
+            taken: None,
         }
+    }
+
+    /// Build an entry with size and modification time from a directory scan.
+    pub fn with_metadata(path: PathBuf, meta: Option<&std::fs::Metadata>) -> Self {
+        let mut entry = Self::new(path);
+        if let Some(meta) = meta {
+            entry.size = meta.len();
+            entry.modified = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64);
+        }
+        entry
+    }
+
+    /// Capture time, or modification time for files without EXIF dates.
+    pub fn taken_or_modified(&self) -> Option<i64> {
+        self.taken.or(self.modified)
+    }
+
+    /// Lower-case extension, for sorting by type.
+    pub fn extension_lower(&self) -> String {
+        self.path
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default()
     }
 }
 
@@ -46,6 +82,9 @@ pub struct UiState {
     pub sidebar_text: Option<String>,
     pub show_search: bool,
     pub search_query: String,
+    /// A message that stays on screen until dismissed (unlike the 3-second
+    /// status line), e.g. "your settings file was damaged".
+    pub notice: Option<String>,
 }
 
 impl Default for UiState {
@@ -68,6 +107,7 @@ impl Default for UiState {
             sidebar_text: None,
             show_search: false,
             search_query: String::new(),
+            notice: None,
         }
     }
 }
@@ -149,11 +189,7 @@ mod tests {
     use super::*;
 
     fn make_entry(name: &str) -> FileEntry {
-        FileEntry {
-            path: PathBuf::from(name),
-            name: name.to_string(),
-            is_image: true,
-        }
+        FileEntry::new(PathBuf::from(name))
     }
 
     #[test]
@@ -167,9 +203,8 @@ mod tests {
     #[test]
     fn test_file_entry_unknown_name() {
         let entry = FileEntry {
-            path: PathBuf::from(""),
             name: String::new(),
-            is_image: true,
+            ..FileEntry::new(PathBuf::from(""))
         };
         assert_eq!(entry.name, "");
     }

@@ -49,7 +49,7 @@ jobs:
           exit 1
         }
 
-    # Guards the "~10MB base app size" claim in README.md, which otherwise
+    # Guards the binary size budget cited in README.md, which otherwise
     # drifts silently whenever a dependency lands.
     - name: Check Binary Size Budget
       shell: pwsh

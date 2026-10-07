@@ -127,6 +127,55 @@ pub fn read_exif_meta(path: &std::path::Path) -> ExifMeta {
         .unwrap_or_default()
 }
 
+/// When the photo was taken, as seconds since the Unix epoch.
+///
+/// EXIF stores `DateTimeOriginal` as local wall-clock time with no zone, so
+/// the value is interpreted as if it were UTC. That keeps photos from one
+/// camera in the right order, which is all sorting needs; it is not a true
+/// instant. Falls back to `DateTime` (last modified by the camera/editor).
+pub fn read_date_taken(path: &std::path::Path) -> Option<i64> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = std::io::BufReader::new(file);
+    let exif_data = exif::Reader::new().read_from_container(&mut reader).ok()?;
+    [exif::Tag::DateTimeOriginal, exif::Tag::DateTime]
+        .into_iter()
+        .find_map(|tag| {
+            let field = exif_data.get_field(tag, exif::In::PRIMARY)?;
+            match &field.value {
+                exif::Value::Ascii(parts) => parts.first().and_then(|b| parse_exif_datetime(b)),
+                _ => None,
+            }
+        })
+}
+
+/// Parse `"YYYY:MM:DD HH:MM:SS"` into seconds since the epoch (as UTC).
+pub fn parse_exif_datetime(raw: &[u8]) -> Option<i64> {
+    let s = std::str::from_utf8(raw).ok()?.trim_end_matches('\0').trim();
+    let num = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
+    if s.len() < 19 {
+        return None;
+    }
+    let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
+    let (h, mi, sec) = (num(11..13)?, num(14..16)?, num(17..19)?);
+    // All-zero dates ("0000:00:00 00:00:00") are the spec's "unknown".
+    if y == 0 || !(1..=12).contains(&mo) || !(1..=31).contains(&d) {
+        return None;
+    }
+    Some(days_from_civil(y, mo, d) * 86_400 + h * 3600 + mi * 60 + sec)
+}
+
+/// Days since 1970-01-01 for a proleptic Gregorian date (Howard Hinnant's
+/// `days_from_civil`).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
 pub fn extract_exif_lazy(path: &std::path::Path) -> Option<String> {
     read_exif_meta(path).exif_info
 }

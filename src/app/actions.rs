@@ -24,6 +24,8 @@ impl SpedImageApp {
                 } else if self.ui_state.show_help {
                     self.ui_state.show_help = false;
                     self.dirty = true;
+                } else if self.is_comparing() {
+                    self.toggle_compare();
                 } else {
                     self.save_config_on_exit();
                     event_loop.exit();
@@ -153,6 +155,7 @@ impl SpedImageApp {
                     self.dirty = true;
                 }
                 "t" | "T" => self.toggle_thumbnail_strip(),
+                "k" | "K" => self.toggle_compare(),
                 "1" => self.reset_adjustments(),
                 "z" | "Z" => {
                     self.ui_state.adjustments.pixel_perfect =
@@ -299,6 +302,13 @@ impl SpedImageApp {
     }
 
     pub(crate) fn load_image(&mut self, path: &std::path::Path) {
+        self.load_image_sized(path, None);
+    }
+
+    /// Like [`Self::load_image`], decoding to fit `fit` (physical pixels)
+    /// instead of the current window. Used at startup to begin decoding
+    /// before the window exists.
+    pub(crate) fn load_image_sized(&mut self, path: &std::path::Path, fit: Option<(u32, u32)>) {
         // Evict far-away cache entries based on current navigation index.
         // Only the paths are cloned (not the whole `FileEntry` list): this runs
         // on the UI thread for every keystroke during fast browsing.
@@ -370,12 +380,13 @@ impl SpedImageApp {
             }
         }
 
-        let (max_w, max_h) = match &self.window {
-            Some(w) => {
+        let (max_w, max_h) = match (fit, &self.window) {
+            (Some(size), _) => size,
+            (None, Some(w)) => {
                 let size = w.inner_size();
                 (size.width, size.height)
             }
-            None => (constants::DEFAULT_MAX_WIDTH, constants::DEFAULT_MAX_HEIGHT),
+            (None, None) => (constants::DEFAULT_MAX_WIDTH, constants::DEFAULT_MAX_HEIGHT),
         };
 
         let pool = self.thread_pool().clone();
@@ -529,149 +540,92 @@ impl SpedImageApp {
         }
     }
 
+    /// Run [`crate::image::save_edited`] on the worker pool and report back.
+    fn spawn_save(
+        &mut self,
+        source: PathBuf,
+        output: PathBuf,
+        displayed: Option<crate::image::ImageData>,
+    ) {
+        self.ui_state.set_status("Saving...");
+        self.dirty = true;
+        let adjustments = self.ui_state.adjustments;
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+        self.thread_pool().spawn(move || {
+            let event =
+                match crate::image::save_edited(&source, &output, &adjustments, displayed.as_ref())
+                {
+                    Ok(outcome) => AppEvent::SaveComplete(outcome),
+                    Err(e) => AppEvent::SaveError(e.to_string()),
+                };
+            if let Some(ref p) = proxy {
+                send_event(&tx, p, event);
+            }
+        });
+    }
+
     pub(crate) fn save_image_as(&mut self) {
-        if let Some(ref image_data) = self.current_image {
-            let path = image_data.path.clone();
-            let stem = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "image".to_string());
-            let default_name = format!("{stem}_edited.png");
-            let tx = self.event_tx.clone();
-            let proxy = self.event_proxy.clone();
+        let Some(ref image_data) = self.current_image else {
+            return;
+        };
+        let source = image_data.path.clone();
+        let displayed = image_data.clone();
+        let default_path = crate::image::edited_output_path(&source);
+        let default_name = default_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "image_edited.png".to_string());
+        let start_dir = source.parent().filter(|d| d.is_dir()).map(PathBuf::from);
+        // List the format the default name uses first: on Windows the first
+        // filter is the one preselected in the dialog.
+        let default_format = crate::image::SaveFormat::from_path(&default_path)
+            .unwrap_or(crate::image::SaveFormat::Png);
+        let mut formats = crate::image::SaveFormat::ALL.to_vec();
+        formats.sort_by_key(|f| *f != default_format);
 
-            let rgba_data = image_data.rgba_data.clone();
-            let (width, height) = (image_data.width, image_data.height);
-            let is_downsampled = image_data.is_downsampled;
-            let path_clone = path.clone();
-            let adjustments = self.ui_state.adjustments;
-
-            self.thread_pool().spawn(move || {
-                let picked = rfd::FileDialog::new()
-                    .set_title("Save Image As...")
-                    .set_file_name(&default_name)
-                    .add_filter("PNG Image", &["png"])
-                    .add_filter("JPEG Image", &["jpg", "jpeg"])
-                    .add_filter("WebP Image", &["webp"])
-                    .save_file();
-
-                if let Some(save_path) = picked {
-                    let result = (|| -> color_eyre::eyre::Result<()> {
-                        let full_res =
-                            if is_downsampled {
-                                let (frames, _) =
-                                    crate::image::ImageLoader::load(&path_clone, None, None)
-                                        .map_err(|e| {
-                                            color_eyre::eyre::eyre!(
-                                                "Failed to open full-resolution image: {e:?}"
-                                            )
-                                        })?;
-                                Some(frames.into_iter().next().ok_or_else(|| {
-                                    color_eyre::eyre::eyre!("No image frames loaded")
-                                })?)
-                            } else {
-                                None
-                            };
-                        let source: Arc<Vec<u8>> = match &full_res {
-                            Some(f) => Arc::clone(&f.rgba_data),
-                            None => Arc::clone(&rgba_data),
-                        };
-                        let (orig_w, orig_h) = match &full_res {
-                            Some(f) => (f.width, f.height),
-                            None => (width, height),
-                        };
-
-                        let (final_rgba, final_w, final_h) = ImageBackend::apply_adjustments_cpu(
-                            &source,
-                            orig_w,
-                            orig_h,
-                            &adjustments,
-                        );
-
-                        ImageBackend::save(&save_path, &final_rgba, final_w, final_h)?;
-                        Ok(())
-                    })();
-
-                    let event = match result {
-                        Ok(()) => AppEvent::SaveComplete(save_path),
-                        Err(e) => AppEvent::SaveError(e.to_string()),
-                    };
-                    if let Some(ref p) = proxy {
-                        send_event(&tx, p, event);
-                    }
-                }
-            });
-        }
+        let adjustments = self.ui_state.adjustments;
+        let tx = self.event_tx.clone();
+        let proxy = self.event_proxy.clone();
+        // The dialog blocks, so it runs on the pool rather than the UI thread.
+        self.thread_pool().spawn(move || {
+            let mut dialog = rfd::FileDialog::new()
+                .set_title("Save Image As...")
+                .set_file_name(&default_name);
+            if let Some(dir) = start_dir {
+                dialog = dialog.set_directory(dir);
+            }
+            for f in formats {
+                dialog = dialog.add_filter(f.label(), f.extensions());
+            }
+            let Some(output) = dialog.save_file() else {
+                return;
+            };
+            let event =
+                match crate::image::save_edited(&source, &output, &adjustments, Some(&displayed)) {
+                    Ok(outcome) => AppEvent::SaveComplete(outcome),
+                    Err(e) => AppEvent::SaveError(e.to_string()),
+                };
+            if let Some(ref p) = proxy {
+                send_event(&tx, p, event);
+            }
+        });
     }
 
     pub(crate) fn save_image(&mut self) {
-        if let Some(ref image_data) = self.current_image {
-            let path = image_data.path.clone();
-            let mut save_path = path.clone();
-
-            if let Some(stem) = path.file_stem() {
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
-                let stem_lossy = stem.to_string_lossy();
-                save_path.set_file_name(format!("{stem_lossy}_edited.{ext}"));
-            }
-            self.ui_state.set_status("Saving...");
-            self.dirty = true;
-
-            let path_clone = path.clone();
-            let save_path_clone = save_path.clone();
-            let adjustments = self.ui_state.adjustments;
-            let tx = self.event_tx.clone();
-            let proxy = self.event_proxy.clone();
-
-            let rgba_data = image_data.rgba_data.clone();
-            let (width, height) = (image_data.width, image_data.height);
-            let is_downsampled = image_data.is_downsampled;
-
-            self.thread_pool().spawn(move || {
-                let result = (|| -> color_eyre::eyre::Result<()> {
-                    // Only re-decode when the displayed buffer was downsampled;
-                    // otherwise borrow the existing buffer without copying it.
-                    let full_res = if is_downsampled {
-                        let (frames, _) = crate::image::ImageLoader::load(&path_clone, None, None)
-                            .map_err(|e| {
-                                color_eyre::eyre::eyre!(
-                                    "Failed to open full-resolution image: {e:?}"
-                                )
-                            })?;
-                        Some(
-                            frames
-                                .into_iter()
-                                .next()
-                                .ok_or_else(|| color_eyre::eyre::eyre!("No image frames loaded"))?,
-                        )
-                    } else {
-                        None
-                    };
-                    let source: Arc<Vec<u8>> = match &full_res {
-                        Some(f) => Arc::clone(&f.rgba_data),
-                        None => Arc::clone(&rgba_data),
-                    };
-                    let (orig_w, orig_h) = match &full_res {
-                        Some(f) => (f.width, f.height),
-                        None => (width, height),
-                    };
-
-                    let (final_rgba, final_w, final_h) =
-                        ImageBackend::apply_adjustments_cpu(&source, orig_w, orig_h, &adjustments);
-
-                    ImageBackend::save(&save_path_clone, &final_rgba, final_w, final_h)?;
-                    Ok(())
-                })();
-
-                let event = match result {
-                    Ok(()) => AppEvent::SaveComplete(save_path_clone),
-                    Err(e) => AppEvent::SaveError(e.to_string()),
-                };
-                if let Some(ref proxy) = proxy {
-                    send_event(&tx, proxy, event);
-                }
-            });
+        let Some(ref image_data) = self.current_image else {
+            return;
+        };
+        // A pasted clipboard image has no file next to which `_edited` could
+        // be written, so ask where it should go instead.
+        if !image_data.path.is_file() {
+            self.save_image_as();
+            return;
         }
+        let source = image_data.path.clone();
+        let output = crate::image::edited_output_path(&source);
+        let displayed = image_data.clone();
+        self.spawn_save(source, output, Some(displayed));
     }
 
     pub(crate) fn batch_save_selected(&mut self) {
@@ -696,63 +650,39 @@ impl SpedImageApp {
 
         self.thread_pool().spawn(move || {
             let mut saved_count = 0;
+            let mut lossless_count = 0;
             let mut failed_paths = Vec::new();
             for path in &selected {
-                match (|| -> color_eyre::eyre::Result<()> {
-                    let (frames, _) = crate::image::ImageLoader::load(path, None, None)
-                        .map_err(|e| color_eyre::eyre::eyre!("Failed to open image: {e:?}"))?;
-                    let first = frames
-                        .into_iter()
-                        .next()
-                        .ok_or_else(|| color_eyre::eyre::eyre!("No image frames loaded"))?;
-
-                    if let Some(stem) = path.file_stem() {
-                        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png");
-                        let mut save_path = path.clone();
-                        save_path.set_file_name(format!(
-                            "{}_edited.{}",
-                            stem.to_string_lossy(),
-                            ext
-                        ));
-
-                        let (final_rgba, final_w, final_h) = ImageBackend::apply_adjustments_cpu(
-                            &first.rgba_data,
-                            first.width,
-                            first.height,
-                            &adjustments,
-                        );
-
-                        ImageBackend::save(&save_path, &final_rgba, final_w, final_h)?;
+                let output = crate::image::edited_output_path(path);
+                match crate::image::save_edited(path, &output, &adjustments, None) {
+                    Ok(outcome) => {
                         saved_count += 1;
+                        if outcome.lossless {
+                            lossless_count += 1;
+                        }
                     }
-                    Ok(())
-                })() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        failed_paths.push(format!("{}: {}", path.display(), e));
-                    }
+                    Err(e) => failed_paths.push(format!("{}: {}", path.display(), e)),
                 }
             }
 
             if let Some(ref proxy) = proxy {
-                if failed_paths.is_empty() {
-                    send_event(
-                        &tx,
-                        proxy,
-                        AppEvent::SetStatus(format!("Batch save complete: {} images", saved_count)),
-                    );
+                let lossless_note = if lossless_count > 0 {
+                    format!(" ({lossless_count} lossless)")
                 } else {
-                    send_event(
-                        &tx,
-                        proxy,
-                        AppEvent::SetStatus(format!(
-                            "Saved {} of {}. Failures:\n{}",
-                            saved_count,
-                            selected.len(),
-                            failed_paths.join("\n")
-                        )),
-                    );
-                }
+                    String::new()
+                };
+                let msg = if failed_paths.is_empty() {
+                    format!("Batch save complete: {saved_count} images{lossless_note}")
+                } else {
+                    format!(
+                        "Saved {} of {}{}. Failures:\n{}",
+                        saved_count,
+                        selected.len(),
+                        lossless_note,
+                        failed_paths.join("\n")
+                    )
+                };
+                send_event(&tx, proxy, AppEvent::SetStatus(msg));
             }
         });
     }
@@ -834,6 +764,14 @@ impl SpedImageApp {
     }
 
     pub(crate) fn toggle_crop(&mut self) {
+        if !self.ui_state.is_cropping && self.is_comparing() {
+            // The crop overlay maps the whole window onto the image; with two
+            // images on screen that mapping would be wrong.
+            self.ui_state
+                .set_status("Close the compare view (K) before cropping");
+            self.dirty = true;
+            return;
+        }
         if !self.ui_state.is_cropping {
             // Crop coordinates are texture-space: bake EXIF rotation first so
             // the on-screen rect maps 1:1 onto stored pixels.
@@ -1213,12 +1151,9 @@ impl SpedImageApp {
         new_h: f32,
         cursor: Option<PhysicalPosition<f64>>,
     ) {
-        let (win_w, win_h) = if let Some(ref w) = self.window {
-            let size = w.inner_size();
-            (size.width as f32, size.height as f32)
-        } else {
-            (1.0, 1.0)
-        };
+        // The current image's own view: the right half while comparing.
+        let (win_w, win_h) = self.image_view_size();
+        let cursor = cursor.map(|p| self.to_image_view(p));
 
         let img_aspect = self
             .current_image
@@ -1367,13 +1302,10 @@ impl SpedImageApp {
         ) {
             return;
         }
-        let Some(ref win) = self.window else {
-            return;
-        };
-        let win_w = win.inner_size().width as f32;
-        if win_w <= 0.0 {
+        if self.window.is_none() {
             return;
         }
+        let (win_w, _) = self.image_view_size();
         let shown_frac = self.ui_state.adjustments.crop_rect_target[2];
         let screen_px_per_tex_px = shown_frac * win_w / img.width as f32;
         if screen_px_per_tex_px < constants::HIGHRES_TRIGGER_SCALE {
@@ -1393,11 +1325,16 @@ impl SpedImageApp {
                     .next()
                     .ok_or_else(|| color_eyre::eyre::eyre!("No image frames loaded"))
             })();
-            if let Ok(frame) = result
-                && (frame.rgba_data.len() as u64) <= constants::HIGHRES_MAX_BYTES
-                && let Some(ref p) = proxy
-            {
-                send_event(&tx, p, AppEvent::HighResReady(path, Box::new(frame)));
+            let Some(ref p) = proxy else {
+                return;
+            };
+            match result {
+                Ok(frame) if (frame.rgba_data.len() as u64) <= constants::HIGHRES_MAX_BYTES => {
+                    send_event(&tx, p, AppEvent::HighResReady(path, Box::new(frame)));
+                }
+                // Without this the in-flight flag stayed set forever, which
+                // blocked any later refinement and left the hint spinning.
+                _ => send_event(&tx, p, AppEvent::HighResFailed(path)),
             }
         });
     }
@@ -1412,12 +1349,7 @@ impl SpedImageApp {
 
     pub(crate) fn zoom_100(&mut self, cursor: Option<winit::dpi::PhysicalPosition<f64>>) {
         if let Some(ref img) = self.current_image {
-            let (win_w, win_h) = if let Some(ref w) = self.window {
-                let size = w.inner_size();
-                (size.width as f32, size.height as f32)
-            } else {
-                (1.0, 1.0)
-            };
+            let (win_w, win_h) = self.image_view_size();
 
             // Sideways EXIF orientation swaps the displayed dimensions.
             let swapped = matches!(img.orientation_deg, 90 | 270);
@@ -1436,7 +1368,11 @@ impl SpedImageApp {
     }
 
     pub(crate) fn save_config_on_exit(&self) {
-        let mut config = crate::config::AppConfig::load();
+        // Start from the in-memory settings: every preference change already
+        // lands there, and re-reading the file would re-trigger the damaged-
+        // file recovery (and its backup) on exit.
+        let mut config = self.config.clone();
+        self.store_window_position(&mut config);
         if let Some(ref w) = self.window {
             let size = w.inner_size();
             let scale_factor = w.scale_factor();

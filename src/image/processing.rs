@@ -271,6 +271,9 @@ impl ImageProcessor {
         );
 
         // 4. Color / exposure adjustments per pixel (parallelized with rayon)
+        if !Self::has_tonal_edits(adjustments) {
+            return (data, w, h);
+        }
         let has_wb = adjustments.temperature.abs() > 0.001 || adjustments.tint.abs() > 0.001;
         let has_shadows_highlights =
             adjustments.shadows.abs() > 0.001 || adjustments.highlights.abs() > 0.001;
@@ -362,17 +365,23 @@ impl ImageProcessor {
         (data, w, h)
     }
 
+    /// True when `adjustments` change pixel values, as opposed to only
+    /// geometry (rotation, flips, crop) or display-only state (zoom, split view).
+    pub fn has_tonal_edits(adjustments: &crate::render::ImageAdjustments) -> bool {
+        adjustments.temperature.abs() > 0.001
+            || adjustments.tint.abs() > 0.001
+            || adjustments.shadows.abs() > 0.001
+            || adjustments.highlights.abs() > 0.001
+            || adjustments.clarity.abs() > 0.001
+            || (adjustments.brightness - 1.0).abs() > 0.001
+            || (adjustments.contrast - 1.0).abs() > 0.001
+            || (adjustments.saturation - 1.0).abs() > 0.001
+            || adjustments.hdr_toning
+    }
+
+    /// Encode in the format named by `path`'s extension (PNG, JPEG or WebP).
     pub fn save(path: &Path, rgba_data: &[u8], w: u32, h: u32) -> Result<()> {
-        use zune_image::image::Image;
-        let img = Image::from_u8(
-            rgba_data,
-            w as usize,
-            h as usize,
-            zune_core::colorspace::ColorSpace::RGBA,
-        );
-        img.save(path)
-            .map_err(|e| eyre!("Failed to save image: {e:?}"))?;
-        Ok(())
+        super::save::save(path, rgba_data, w, h)
     }
 }
 

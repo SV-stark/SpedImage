@@ -43,6 +43,25 @@ pub struct Renderer {
     /// Largest square 2D texture the device accepts; oversized images are
     /// rejected with a clear error rather than a driver-side failure.
     pub(crate) max_texture_dim: u32,
+    /// sRGB -> monitor matrix (see `render::color`); `None` = no conversion.
+    pub(crate) display_matrix: Option<super::color::Mat3>,
+
+    /// Side-by-side compare: the pinned image drawn in the left half.
+    pub(crate) compare: Option<CompareSlot>,
+    /// Uniforms for the compare draw. A second buffer, because both halves
+    /// are drawn in one pass and a buffer write cannot change between draws.
+    pub(crate) compare_uniform_buffer: wgpu::Buffer,
+}
+
+/// GPU state for the pinned image in compare mode.
+pub(crate) struct CompareSlot {
+    pub texture: Texture,
+    pub bind_group: Arc<BindGroup>,
+    pub bind_group_nearest: Arc<BindGroup>,
+    pub width: u32,
+    pub height: u32,
+    /// Deferred EXIF rotation of the pinned buffer, in radians.
+    pub pre_rotation: f32,
 }
 
 /// VRAM budget for recycled image textures.
@@ -53,11 +72,41 @@ fn texture_bytes(t: &Texture) -> u64 {
     s.width as u64 * s.height as u64 * 4
 }
 
+/// A WGPU instance and the window's surface, created on the event-loop thread.
+pub struct GpuSurface {
+    instance: wgpu::Instance,
+    surface: wgpu::Surface<'static>,
+}
+
 impl Renderer {
-    pub async fn new(window: Arc<Window>) -> Result<Self> {
+    /// Create the surface for `window`. **Must run on the event-loop thread**:
+    /// winit (0.30.13+) refuses to hand out a window handle on any other
+    /// thread on Windows, so creating the surface inside the background GPU
+    /// init failed every time and no image was ever drawn. Creating a surface
+    /// is cheap; the slow adapter/device setup still runs in the background
+    /// via [`Self::new`].
+    pub fn create_surface(window: Arc<Window>) -> Result<GpuSurface> {
+        // Fastest cold start on Windows: DX12 only (no Vulkan ICD enumeration,
+        // no GL driver probing). Matches Photos' D3D path and is ~100-300 ms
+        // faster than Vulkan|DX12 on Intel iGPUs.
+        #[cfg(windows)]
+        let backends = wgpu::Backends::DX12;
+        #[cfg(not(windows))]
+        let backends = wgpu::Backends::PRIMARY;
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends,
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        });
+        let surface = instance
+            .create_surface(window)
+            .context("Failed to create WGPU surface")?;
+        Ok(GpuSurface { instance, surface })
+    }
+
+    pub async fn new(window: Arc<Window>, gpu: GpuSurface) -> Result<Self> {
         crate::startup::log("Renderer::new enter");
-        let (device, queue, surface, adapter, max_texture_dim) =
-            Self::create_device_and_surface(window.clone()).await?;
+        let (device, queue, surface, adapter, max_texture_dim) = Self::create_device(gpu).await?;
         crate::startup::log("Renderer::new after device/surface");
 
         let capabilities = surface.get_capabilities(&adapter);
@@ -131,6 +180,12 @@ impl Renderer {
             egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
 
         let mip_pipeline = Self::create_mip_pipeline(&device);
+        let compare_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Compare Uniform Buffer"),
+            size: std::mem::size_of::<Uniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         crate::startup::log("Renderer::new done");
 
         Ok(Self {
@@ -163,6 +218,9 @@ impl Renderer {
             thumbnails: Vec::new(),
             last_thumb_state: None,
             max_texture_dim,
+            display_matrix: None,
+            compare: None,
+            compare_uniform_buffer,
         })
     }
 }
@@ -192,12 +250,16 @@ impl Drop for Renderer {
                 s.texture.destroy();
             }
         }
+
+        if let Some(c) = self.compare.take() {
+            c.texture.destroy();
+        }
     }
 }
 
 impl Renderer {
-    async fn create_device_and_surface(
-        window: Arc<Window>,
+    async fn create_device(
+        gpu: GpuSurface,
     ) -> Result<(
         wgpu::Device,
         wgpu::Queue,
@@ -205,21 +267,7 @@ impl Renderer {
         wgpu::Adapter,
         u32,
     )> {
-        // Fastest cold start on Windows: DX12 only (no Vulkan ICD enumeration,
-        // no GL driver probing). Matches Photos' D3D path and is ~100-300 ms
-        // faster than Vulkan|DX12 on Intel iGPUs.
-        #[cfg(windows)]
-        let backends = wgpu::Backends::DX12;
-        #[cfg(not(windows))]
-        let backends = wgpu::Backends::PRIMARY;
-
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends,
-            ..wgpu::InstanceDescriptor::new_without_display_handle()
-        });
-        let surface = instance
-            .create_surface(window.clone())
-            .context("Failed to create WGPU surface")?;
+        let GpuSurface { instance, surface } = gpu;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -607,6 +655,15 @@ impl Renderer {
         view: &wgpu::TextureView,
         view_prev: &wgpu::TextureView,
     ) -> (Arc<BindGroup>, Arc<BindGroup>) {
+        self.create_image_bind_groups_with(&self.uniform_buffer, view, view_prev)
+    }
+
+    fn create_image_bind_groups_with(
+        &self,
+        uniform_buffer: &wgpu::Buffer,
+        view: &wgpu::TextureView,
+        view_prev: &wgpu::TextureView,
+    ) -> (Arc<BindGroup>, Arc<BindGroup>) {
         let layout = self.pipeline.get_bind_group_layout(0);
         let linear = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Image Bind Group"),
@@ -615,7 +672,7 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::Buffer(
-                        self.uniform_buffer.as_entire_buffer_binding(),
+                        uniform_buffer.as_entire_buffer_binding(),
                     ),
                 },
                 wgpu::BindGroupEntry {
@@ -639,7 +696,7 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::Buffer(
-                        self.uniform_buffer.as_entire_buffer_binding(),
+                        uniform_buffer.as_entire_buffer_binding(),
                     ),
                 },
                 wgpu::BindGroupEntry {
@@ -812,26 +869,106 @@ impl Renderer {
         Ok(())
     }
 
-    pub(crate) fn encode_image(
+    /// Install (or clear) the sRGB -> monitor matrix used by every draw.
+    pub fn set_display_matrix(&mut self, m: Option<super::color::Mat3>) {
+        self.display_matrix = m;
+        // Thumbnail uniforms are cached until the strip moves; force a rewrite.
+        self.last_thumb_state = None;
+    }
+
+    pub fn display_matrix_active(&self) -> bool {
+        self.display_matrix.is_some()
+    }
+
+    /// Pin `image` into the left half of a side-by-side compare, or leave
+    /// compare mode with `None`.
+    pub fn set_compare_image(&mut self, image: Option<&ImageData>) -> Result<()> {
+        if let Some(old) = self.compare.take() {
+            old.texture.destroy();
+        }
+        let Some(img) = image else {
+            return Ok(());
+        };
+        let (width, height) = (img.width, img.height);
+        if width == 0 || height == 0 {
+            return Err(color_eyre::eyre::eyre!("Image has a zero dimension"));
+        }
+        if width > self.max_texture_dim || height > self.max_texture_dim {
+            return Err(color_eyre::eyre::eyre!(
+                "Image is {width}x{height}, larger than the {}px GPU texture limit",
+                self.max_texture_dim
+            ));
+        }
+        if img.rgba_data.len() < (width as usize) * (height as usize) * 4 {
+            return Err(color_eyre::eyre::eyre!(
+                "Pixel buffer too small for {width}x{height}"
+            ));
+        }
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Compare Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            img.as_rgba(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // No cross-fade for the pinned side: `t_prev` is the same texture.
+        let (bind_group, bind_group_nearest) =
+            self.create_image_bind_groups_with(&self.compare_uniform_buffer, &view, &view);
+        self.compare = Some(CompareSlot {
+            texture,
+            bind_group,
+            bind_group_nearest,
+            width,
+            height,
+            pre_rotation: (img.orientation_deg as f32).to_radians(),
+        });
+        Ok(())
+    }
+
+    pub fn is_comparing(&self) -> bool {
+        self.compare.is_some()
+    }
+
+    /// Uniforms for drawing an image of `image_size` with `adjustments` into a
+    /// viewport of `viewport_aspect` (width / height).
+    fn image_uniforms(
         &self,
         adjustments: &ImageAdjustments,
         transition_factor: f32,
-        view: &wgpu::TextureView,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
-        let window_aspect_ratio = if self.config.height > 0 {
-            self.config.width as f32 / self.config.height as f32
-        } else {
-            1.0
-        };
-
+        image_size: Option<(u32, u32)>,
+        viewport_aspect: f32,
+    ) -> Uniforms {
         let total_rotation = adjustments.rotation + adjustments.pre_rotation;
         let rot_deg = (total_rotation.to_degrees() % 360.0).round().abs();
         let is_sideways = (rot_deg - 90.0).abs() < 1.0 || (rot_deg - 270.0).abs() < 1.0;
-        let raw_aspect = self
-            .image_size
-            .map(|(w, h)| w as f32 / h as f32)
-            .unwrap_or(1.0);
+        let raw_aspect = image_size.map(|(w, h)| w as f32 / h as f32).unwrap_or(1.0);
         let aspect_ratio = if is_sideways {
             1.0 / raw_aspect
         } else {
@@ -854,10 +991,10 @@ impl Renderer {
             )
         };
 
-        let uniforms = Uniforms {
+        Uniforms {
             rotation: total_rotation,
             aspect_ratio,
-            window_aspect_ratio,
+            window_aspect_ratio: viewport_aspect,
             crop_x: adjustments.crop_rect[0],
             crop_y: adjustments.crop_rect[1],
             crop_w: adjustments.crop_rect[2],
@@ -888,10 +1025,52 @@ impl Renderer {
             color_matrix_col0: col0,
             color_matrix_col1: col1,
             color_matrix_col2: col2,
-        };
+            ..Uniforms::identity()
+        }
+        .with_display_matrix(self.display_matrix.as_ref())
+    }
 
+    pub(crate) fn encode_image(
+        &self,
+        adjustments: &ImageAdjustments,
+        transition_factor: f32,
+        view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let (win_w, win_h) = (self.config.width.max(1), self.config.height.max(1));
+        let use_nearest = adjustments.pixel_perfect || adjustments.crop_rect[2] < 0.2;
+
+        // In compare mode each image gets half the window.
+        let left_w = if self.compare.is_some() { win_w / 2 } else { 0 };
+        let right_w = win_w - left_w;
+
+        let uniforms = self.image_uniforms(
+            adjustments,
+            transition_factor,
+            self.image_size,
+            right_w as f32 / win_h as f32,
+        );
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+
+        if let Some(c) = &self.compare {
+            // The pinned side shares zoom/pan so both show the same region,
+            // but none of the edits: it is the reference.
+            let pinned = ImageAdjustments {
+                crop_rect: adjustments.crop_rect,
+                pixel_perfect: adjustments.pixel_perfect,
+                pre_rotation: c.pre_rotation,
+                ..ImageAdjustments::default()
+            };
+            let u = self.image_uniforms(
+                &pinned,
+                1.0,
+                Some((c.width, c.height)),
+                left_w.max(1) as f32 / win_h as f32,
+            );
+            self.queue
+                .write_buffer(&self.compare_uniform_buffer, 0, bytemuck::bytes_of(&u));
+        }
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -909,12 +1088,25 @@ impl Renderer {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+
+        if let Some(c) = &self.compare
+            && left_w > 0
+        {
+            render_pass.set_viewport(0.0, 0.0, left_w as f32, win_h as f32, 0.0, 1.0);
+            let bg = if use_nearest {
+                &c.bind_group_nearest
+            } else {
+                &c.bind_group
+            };
+            render_pass.set_bind_group(0, bg.as_ref(), &[]);
+            render_pass.draw(0..6, 0..1);
+        }
 
         if let Some(bind_group) = &self.image_bind_group {
-            render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-
-            if adjustments.pixel_perfect || adjustments.crop_rect[2] < 0.2 {
+            render_pass.set_viewport(left_w as f32, 0.0, right_w as f32, win_h as f32, 0.0, 1.0);
+            if use_nearest {
                 if let Some(bg) = &self.image_bind_group_nearest {
                     render_pass.set_bind_group(0, bg.as_ref(), &[]);
                 }

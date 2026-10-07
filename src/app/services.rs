@@ -1,5 +1,6 @@
 use crate::app::state::SpedImageApp;
 use crate::app::types::{AppEvent, MAX_THUMB_THREADS, THUMB_LOAD_SIZE, send_event};
+use crate::config::SortKey;
 use crate::image::ImageBackend;
 use std::path::{Path, PathBuf};
 
@@ -49,11 +50,33 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
+/// Order a folder listing by `key`.
+///
+/// Ties (equal dates or sizes, or `Name` itself) break on natural name order,
+/// so the listing is always total and stable. `descending` reverses the whole
+/// order, ties included, which is what a reversed column in Explorer does.
+pub fn sort_entries(files: &mut [crate::ui::FileEntry], key: SortKey, descending: bool) {
+    use std::cmp::Ordering;
+    files.sort_by(|a, b| {
+        let primary = match key {
+            SortKey::Name => Ordering::Equal,
+            SortKey::Modified => a.modified.cmp(&b.modified),
+            SortKey::Taken => a.taken_or_modified().cmp(&b.taken_or_modified()),
+            SortKey::Size => a.size.cmp(&b.size),
+            SortKey::Type => a.extension_lower().cmp(&b.extension_lower()),
+        };
+        let ord = primary.then_with(|| natural_cmp(&a.name, &b.name));
+        if descending { ord.reverse() } else { ord }
+    });
+}
+
 impl SpedImageApp {
     pub(crate) fn load_directory_async(&self, dir: PathBuf) {
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         let pool = self.thread_pool().clone();
+        let sort_key = self.config.sort_key();
+        let descending = self.config.sort_descending();
 
         pool.spawn(move || {
             let Some(entries) = std::fs::read_dir(&dir).ok() else {
@@ -70,10 +93,21 @@ impl SpedImageApp {
             for entry in entries.filter_map(|e| e.ok()) {
                 let path = entry.path();
                 if ImageBackend::is_supported(&path) {
-                    files.push(crate::ui::FileEntry::new(path));
+                    // `DirEntry::metadata` comes from the directory scan itself
+                    // on Windows, so size and mtime cost no extra syscalls.
+                    let meta = entry.metadata().ok();
+                    files.push(crate::ui::FileEntry::with_metadata(path, meta.as_ref()));
                 }
             }
-            files.sort_by(|a, b| natural_cmp(&a.name, &b.name));
+            if sort_key == SortKey::Taken {
+                // Opening every file for its EXIF block is the expensive part
+                // of this sort, so it only happens when asked for, in parallel.
+                use rayon::prelude::*;
+                files.par_iter_mut().for_each(|f| {
+                    f.taken = crate::image::read_date_taken(&f.path);
+                });
+            }
+            sort_entries(&mut files, sort_key, descending);
 
             if let Some(p) = proxy.as_ref() {
                 send_event(&tx, p, AppEvent::DirectoryLoaded(dir, files));
@@ -238,5 +272,79 @@ mod tests {
         assert_eq!(natural_cmp("Photo.png", "photo.png"), Ordering::Equal);
         assert_eq!(natural_cmp("a10b", "a2b"), Ordering::Greater);
         assert_eq!(natural_cmp("100", "20"), Ordering::Greater);
+    }
+
+    fn entry(name: &str, modified: Option<i64>, size: u64, taken: Option<i64>) -> FileEntry {
+        FileEntry {
+            modified,
+            size,
+            taken,
+            ..FileEntry::new(PathBuf::from(name))
+        }
+    }
+
+    fn names(files: &[FileEntry]) -> Vec<&str> {
+        files.iter().map(|f| f.name.as_str()).collect()
+    }
+
+    use crate::ui::FileEntry;
+
+    fn sample() -> Vec<FileEntry> {
+        vec![
+            entry("img10.jpg", Some(300), 50, Some(1000)),
+            entry("img2.png", Some(100), 500, None),
+            entry("img1.jpg", Some(200), 5, Some(10)),
+            entry("b.webp", Some(200), 5000, Some(20)),
+        ]
+    }
+
+    #[test]
+    fn sort_by_name_is_natural_in_both_directions() {
+        let mut f = sample();
+        sort_entries(&mut f, SortKey::Name, false);
+        assert_eq!(names(&f), ["b.webp", "img1.jpg", "img2.png", "img10.jpg"]);
+        sort_entries(&mut f, SortKey::Name, true);
+        assert_eq!(names(&f), ["img10.jpg", "img2.png", "img1.jpg", "b.webp"]);
+    }
+
+    #[test]
+    fn sort_by_modified_breaks_ties_by_name() {
+        let mut f = sample();
+        sort_entries(&mut f, SortKey::Modified, false);
+        // b.webp and img1.jpg share mtime 200.
+        assert_eq!(names(&f), ["img2.png", "b.webp", "img1.jpg", "img10.jpg"]);
+    }
+
+    #[test]
+    fn sort_by_taken_falls_back_to_modified() {
+        let mut f = sample();
+        sort_entries(&mut f, SortKey::Taken, false);
+        // img2.png has no EXIF date, so its mtime (100) is used.
+        assert_eq!(names(&f), ["img1.jpg", "b.webp", "img2.png", "img10.jpg"]);
+    }
+
+    #[test]
+    fn sort_by_size_and_type() {
+        let mut f = sample();
+        sort_entries(&mut f, SortKey::Size, true);
+        assert_eq!(names(&f), ["b.webp", "img2.png", "img10.jpg", "img1.jpg"]);
+        sort_entries(&mut f, SortKey::Type, false);
+        assert_eq!(names(&f), ["img1.jpg", "img10.jpg", "img2.png", "b.webp"]);
+    }
+
+    #[test]
+    fn exif_datetimes_parse_to_epoch_seconds() {
+        use crate::image::parse_exif_datetime;
+        assert_eq!(parse_exif_datetime(b"1970:01:01 00:00:00"), Some(0));
+        assert_eq!(
+            parse_exif_datetime(b"2000:03:01 00:00:01"),
+            Some(951_868_801)
+        );
+        assert_eq!(
+            parse_exif_datetime(b"2024:02:29 12:30:00\0"),
+            Some(1_709_209_800)
+        );
+        assert_eq!(parse_exif_datetime(b"0000:00:00 00:00:00"), None);
+        assert_eq!(parse_exif_datetime(b"garbage"), None);
     }
 }

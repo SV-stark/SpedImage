@@ -5,42 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] - 2026-10-07
 
 ### Added
-* **PSD, Netpbm and Radiance HDR**: Three new decoders, each a self-contained pure-Rust `zune-*` crate of 11-15 KB with no transitive dependencies, reached through zune-image's existing magic-byte sniffing so no new dispatch code was needed. PSD decodes to the flattened composite. `zune-farbfeld` is deliberately *not* enabled — see below.
+
+**Decoders**
+* **PSD, Netpbm and Radiance HDR**: Three new decoders, each a self-contained pure-Rust `zune-*` crate of 11-15 KB with no transitive dependencies, reached through zune-image's existing magic-byte sniffing so no new dispatch code was needed. PSD decodes to the flattened composite.
 * **Farbfeld**: Decoded by a ~30-line hand-rolled parser rather than `zune-farbfeld`, whose `decode()` cannot succeed for any input. It allocates `4 * w * h` `u16` values and hands them to `decode_into`, which compares that element count against `output_buffer_size()` — a *byte* count that doubles for the 16-bit depth (`zune-farbfeld-0.5.2/src/decoder.rs:92-131`). The check fails for every file with "Too small output buffer size", so the crate is not in the dependency tree at all.
 * **ICO and CUR**: Windows icons were listed in the file browser with no decoder behind them, so they appeared and then failed to open. Both are now parsed directly (~150 lines, no dependency): a 6-byte header, a directory of 16-byte entries, and per-entry payloads that are either a whole PNG or a headerless BMP DIB. Handles both `BITMAPCOREHEADER` and `BITMAPINFOHEADER`, the doubled height an icon DIB uses to cover the AND mask, and an all-zero alpha plane on 32bpp entries that would otherwise decode fully invisible.
 * **Nine RAW Extensions the README Already Advertised**: `from_extension` matched only 7 RAW extensions while the README listed 11 camera families, so `.pef`, `.crw`, `.mrw`, `.rw2`, `.kdc`, `.dcr`, `.nrw`, `.srf` and `.sr2` files resolved to `Unknown` and were filtered out of the file browser even though `rawloader` can decode them. `rawloader::decode_file` identifies the container from its content, so the extension was only ever a routing hint. Now routed and listed.
 * **File Associations for the New Formats**: `installer.nsi` registers and unregisters `.ico`/`.cur`, `.psd`, `.psb`, `.hdr`, the Netpbm extensions, `.ff` and the RAW extensions. Register and unregister lists are asserted to match by test.
 * **Decode Tests for Every New Format**: ICO with both PNG and DIB payloads, CUR routing, ICO downsampling, Netpbm greyscale and colour, farbfeld, Radiance HDR, plus malformed-header, out-of-range-offset and oversized-entry cases asserting errors rather than panics.
 
-### Fixed
-* **`tga` and `ico` Were Listed With No Decoder**: `SUPPORTED_EXTENSIONS` gated the file browser while `ImageFormatType::is_supported` gated the loaders, and the two had drifted: `.tga` and `.ico` sat in the browser's list with nothing able to open them. A test had been carrying an explicit exemption for both instead of fixing them. `ico` now decodes; `tga` has no decoder anywhere in the tree and has been removed from the list, matching how `.avif` is handled.
-* **Stale `imagepipe` Comment**: `is_supported` was annotated "Core formats + RAW via imagepipe", but `imagepipe` is not a dependency of this crate. The comment now describes what actually happens.
-* **README Credited the Wrong Crates**: The format table credited PNG, GIF, BMP, TIFF, WebP and JXL to `zune-image`, but `gif`, `tiff`, `image-webp` and `jxl-oxide` each have their own dependency and dedicated loader. Each row now names the crate that actually decodes it.
+**Editing and saving**
+* **Lossless JPEG Rotation and Flips**: JPEG-to-JPEG saves whose only edits are 90° rotations and flips use libjpeg-turbo's DCT-domain transform (what `jpegtran` does). No pixel is re-encoded, EXIF and ICC data are kept, and the orientation tag is reset to 1 so viewers don't rotate twice. The source's EXIF orientation is folded into the same transform. Images with partial edge MCUs fall back to a re-encode. All 8 orientations × 12 edits are tested against the pixel pipeline.
+* **Saving in Every Format the App Offers**: PNG via zune-image, JPEG via `libjpeg-turbo-rs` (quality 92, alpha composited onto white) and WebP via `image-webp`'s lossless VP8L encoder. Saves are written to a temporary file and renamed into place, so a failed encode cannot leave a truncated file. `tests/save_tests.rs` round-trips every format.
 
-### Removed
-* **AVIF Support**: The `heic` git dependency was replaced with `heic-rs`, which decodes HEIC/HEIF only. AVIF is an HEIF container holding AV1 rather than HEVC, so it needs an AV1 decoder. `.avif` files are now filtered out of the file browser, are no longer registered as a file association by the installer, and opening one explicitly reports why. HEVC-in-HEIF — what cameras and phones actually write — is unaffected.
-* **Unused Dependencies**: `zune-imageprocs`, `parking_lot` and `bumpalo` were declared but never referenced anywhere in the tree. The README advertised a "Bump Allocation Arena" feature that did not exist; that line has been replaced with a description of the clipboard work that actually shipped.
+**Browsing and viewing**
+* **Sort Options**: the file browser sorts by name (natural), date modified, date taken (EXIF `DateTimeOriginal`, falling back to the modification time), size or type, ascending or descending. The choice is saved. Capture dates are only read, in parallel, when sorting by them.
+* **Side-by-Side Compare (`K`)**: pins the current image to the left half; browsing shows the next image on the right with shared zoom and pan. `K` or `Esc` closes it.
+* **Window Position Is Remembered**, and only restored when the title bar would land on a connected monitor — a window last used on an unplugged screen would otherwise reopen where it cannot be grabbed.
+* **"Loading full resolution…" Hint** while a zoomed-in image is being refined.
 
-### Fixed
-* **AGPL Decoder in an MIT Application**: HEIC/AVIF was decoded by a git-pinned build of `heic` licensed **AGPL-3.0-only**, linked into an MIT-licensed app and shipped in the installer. That was a licensing liability independent of build size.
-* **README Claimed an Unverifiable Size**: The "~10MB base app size" figure was never checked by CI and was wrong by more than half — the release binary was 23.3 MB.
-* **`.avif` Files Were Listed in the Browser Anyway**: `is_supported()` maps an extension to a format, but the browser filters on a separate `SUPPORTED_EXTENSIONS` list. Marking `Avif` unsupported changed only the former, so `.avif` files kept appearing next to the images that do work, and opened into an error. The extension is now absent from the list, and a test asserts the two stay in agreement.
+**Colour**
+* **Monitor Colour Profile Matching**: on Windows, the ICC profile assigned to the window's monitor is read (`GetICMProfileW`). For matrix/TRC profiles, an sRGB→display matrix is applied as the last shader step. It is re-read when the window moves to another monitor, can be toggled in Preferences, and costs nothing on sRGB monitors. CPU buffers stay sRGB, so saving and the clipboard are unaffected.
+
+**Startup**
+* **Instant First Frame**: until the GPU is ready (0.6–2.5 s for DX12 device creation on integrated GPUs), the decoded image is painted with GDI. Decoding also starts before the window is created, sized from the saved window. The picture now appears ~170–220 ms after launch instead of after GPU init. The startup log gains `first frame with image` markers.
+
+**Tooling**
+* **Binary Size Gate**: `scripts/check_size.ps1`, wired into both GitHub workflows and exposed as `just size-check` / `just check-ci`.
+* **`examples/verify_decode.rs`**: Decodes a file and prints sampled pixels, for checking a decoder against a real file rather than only unit tests.
+* **WebP and AVIF Decode Tests**: Fixtures and regression tests covering the alpha/no-alpha buffer layouts and the AVIF explanation. `image-webp` emits 3 bytes/pixel without an alpha channel and 4 with one, which a naive decoder silently mishandles.
+* **Extension/Decoder Consistency Test**: Asserts every extension in `SUPPORTED_EXTENSIONS` is one `is_supported()` accepts, so the two lists cannot drift apart again.
 
 ### Changed
+
 * **Dependency Tree Trimmed**: The Windows release binary went from 23.3 MB to 18.3 MB (−5.0 MB, −21.5%), measured against a baseline build of the previous commit. The release dependency count dropped from 359 to 305 crates on the Windows target, net −54. The savings came from the AGPL `heic` subtree (`rav1d-safe`, `ultrahdr-core`, `archmage`, `magetypes`, `whereat`, `safe_unaligned_simd`), the duplicate `jxl-oxide` 0.12 that `zune-image`'s default features pulled in beside the 0.11 already in use, and the `image` crate that `arboard`'s default features dragged in.
 * **`arboard` Dropped on Windows**: Clipboard access now goes directly through Win32 `CF_DIB` / `CF_UNICODETEXT` / `CF_HDROP`, extending the `CF_HDROP` code that already existed. This removes the `image` crate — a fourth PNG decoder, and a second TIFF crate on macOS — from the Windows build. It also fixes `Ctrl+C`, which previously opened the clipboard a second time and could drop the file drop if anything else held the clipboard mid-operation. Clipboard images on non-Windows platforms are behind the new `clipboard-image` feature.
 * **`zune-image` Default Features Disabled**: The generic fallback path only ever reached PNG, BMP and WebP, since every other format had a specialised loader that claimed it first. Enabling defaults added PSD, PPM, HDR, farbfeld, QOI (duplicating the `qoi` crate), JPEG XL (a second `jxl-oxide`) and the `jpeg-encoder` *encoder* to a viewer. `psd`, `ppm` and `hdr` are now enabled individually because they turned out to be worth their 11-15 KB each; `farbfeld`, `qoi` and `jpeg-xl` remain off.
 * **WebP Decoded Without `zune-image`**: `zune-image` 0.5.0's WebP codec has an ungated `use jxl_oxide::...` in it, so its `webp` feature only compiles alongside the `jpeg-xl` feature this change removes. WebP is now decoded through `image-webp` directly, which is the crate that codec wraps. Verified byte-identical to the previous path on lossy, lossless, alpha and animated samples.
-* **Binary Size Is Now Gated in CI**: `scripts/check_size.ps1` runs on every build and release with a 22 MB ceiling. That ceiling would have failed the previous release, which is the point. README's size row cites the measured budget instead of the old figure. Run `just size-check` locally.
+* **Release Binary Is Now 18.9 MB**, up from 18.3 MB for the JPEG/WebP encoders and the lossless transform, still within the 22 MB budget enforced in CI.
+* **README and CI Comments Now Cite What Is Measured**: The benchmark section explains that its headline number times a titled window appearing, not the image — about 320 ms of it is Windows creating the process before any app code runs — and points at the startup log's `first frame with image` marker instead. The stale "~10MB base app size" comment in the release workflow was replaced with the budget that is actually enforced.
 
-### Added
-* **Binary Size Gate**: `scripts/check_size.ps1`, wired into both GitHub workflows and exposed as `just size-check` / `just check-ci`.
-* **WebP and AVIF Decode Tests**: Fixtures and regression tests covering the alpha/no-alpha buffer layouts and the AVIF explanation. `image-webp` emits 3 bytes/pixel without an alpha channel and 4 with one, which a naive decoder silently mishandles.
-* **`examples/verify_decode.rs`**: Decodes a file and prints sampled pixels, for checking a decoder against a real file rather than only unit tests.
-* **Extension/Decoder Consistency Test**: Asserts every extension in `SUPPORTED_EXTENSIONS` is one `is_supported()` accepts, so the two lists cannot drift apart again.
+### Fixed
+
+* **GPU Renderer Never Initialised (Nothing Was Ever Drawn)**: `Renderer::new` ran on a background thread and created the WGPU surface there. winit 0.30.13 refuses to hand out a window handle off the event-loop thread on Windows, so surface creation failed on every launch and the window stayed empty with "GPU Init Error" in a status line nobody saw. The README benchmark only waited for the window *title*, so it never noticed. The surface is now created on the event-loop thread (cheap); adapter/device setup still runs in the background. The startup-log visibility probe had the same bug.
+* **Saving JPEG and WebP Always Failed**: `ImageBackend::save` relied on zune-image picking an encoder by extension, but only its `png` encoder is compiled in. Ctrl+S on a `.jpg`, batch save of JPEGs, and the JPEG/WebP choices in Save As all errored. The only save test wrote a PNG, so CI never caught it.
+* **Edited Copies of Unwritable Formats**: Ctrl+S and batch save kept the source extension, asking for a HEIC/RAW/SVG/TIFF encoder that does not exist. They now write `name_edited.png`, and an unsupported extension in Save As gives a clear message naming the formats that work.
+* **Full-Resolution Saves Could Be Sideways**: when the on-screen buffer was already full resolution, saving reused it without applying the EXIF rotation the preview defers to the GPU.
+* **Stuck Progressive-Refinement Flag**: a failed or oversized full-resolution re-decode never cleared `highres_in_flight`, so refinement never ran again for that image.
+* **Damaged Settings Reset Everything**: one malformed field in `config.json` made the whole parse fail and silently reset every preference. Each field is now read on its own, missing fields take defaults, the damaged file is copied to `config.invalid.json`, and a dismissible notice says what was reset.
+* **AVIF Support Removed**: The `heic` git dependency was replaced with `heic-rs`, which decodes HEIC/HEIF only. AVIF is an HEIF container holding AV1 rather than HEVC, so it needs an AV1 decoder. `.avif` files are now filtered out of the file browser, are no longer registered as a file association by the installer, and opening one explicitly reports why. HEVC-in-HEIF — what cameras and phones actually write — is unaffected.
+* **Unused Dependencies Removed**: `zune-imageprocs`, `parking_lot` and `bumpalo` were declared but never referenced anywhere in the tree. The README advertised a "Bump Allocation Arena" feature that did not exist; that line has been replaced with a description of the clipboard work that actually shipped.
+* **AGPL Decoder in an MIT Application**: HEIC/AVIF was decoded by a git-pinned build of `heic` licensed **AGPL-3.0-only**, linked into an MIT-licensed app and shipped in the installer. That was a licensing liability independent of build size.
+* **`tga` and `ico` Were Listed With No Decoder**: `SUPPORTED_EXTENSIONS` gated the file browser while `ImageFormatType::is_supported` gated the loaders, and the two had drifted: `.tga` and `.ico` sat in the browser's list with nothing able to open them. A test had been carrying an explicit exemption for both instead of fixing them. `ico` now decodes; `tga` has no decoder anywhere in the tree and has been removed from the list, matching how `.avif` is handled.
+* **README Claimed an Unverifiable Size**: The "~10MB base app size" figure was never checked by CI and was wrong by more than half — the release binary was 23.3 MB.
+* **README Credited the Wrong Crates**: The format table credited PNG, GIF, BMP, TIFF, WebP and JXL to `zune-image`, but `gif`, `tiff`, `image-webp` and `jxl-oxide` each have their own dependency and dedicated loader. Each row now names the crate that actually decodes it.
+* **`.avif` Files Were Listed in the Browser Anyway**: `is_supported()` maps an extension to a format, but the browser filters on a separate `SUPPORTED_EXTENSIONS` list. Marking `Avif` unsupported changed only the former, so `.avif` files kept appearing next to the images that do work, and opened into an error.
+* **Stale `imagepipe` Comment**: `is_supported` was annotated "Core formats + RAW via imagepipe", but `imagepipe` is not a dependency of this crate. The comment now describes what actually happens.
 
 ## [0.10.1] - 2026-10-01
 

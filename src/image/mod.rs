@@ -2,14 +2,20 @@ mod gif_stream;
 mod loader;
 mod metadata;
 mod processing;
+mod save;
 mod types;
 
 pub use gif_stream::{GifFrameMsg, GifStreamMsg, stream_gif};
 pub use loader::{FrameLimit, ImageLoader, LoadOptions};
 pub use metadata::{
-    ExifMeta, extract_exif_and_orientation, extract_orientation, parse_exif_block, read_exif_meta,
+    ExifMeta, extract_exif_and_orientation, extract_orientation, parse_exif_block,
+    parse_exif_datetime, read_date_taken, read_exif_meta,
 };
 pub use processing::ImageProcessor;
+pub use save::{
+    JPEG_QUALITY, SaveFormat, SaveOutcome, edited_output_path, encode, reset_exif_orientation,
+    save_edited,
+};
 pub use types::{ImageData, ImageError, ImageFormatType};
 
 use color_eyre::eyre::Result;
@@ -62,7 +68,7 @@ impl ImageBackend {
         ImageProcessor::apply_adjustments_cpu(rgba_data, w, h, adjustments)
     }
 
-    /// Save an image to disk
+    /// Save an image to disk as PNG, JPEG or WebP, chosen by `path`'s extension.
     pub fn save(path: &std::path::Path, rgba_data: &[u8], w: u32, h: u32) -> Result<()> {
         ImageProcessor::save(path, rgba_data, w, h)
     }

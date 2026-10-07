@@ -30,12 +30,14 @@ pub enum AppEvent {
     ImageError(String),
     OpenPath(PathBuf),
     Prefetched(PathBuf, Vec<ImageData>), // prefetch for adjacent images
-    SaveComplete(PathBuf),
+    SaveComplete(crate::image::SaveOutcome),
     SaveError(String),
     /// A thumbnail has finished loading: (path, rgba_bytes, width, height, order)
     ThumbnailLoaded(PathBuf, Arc<Vec<u8>>, u32, u32, usize),
     /// Full-resolution re-decode for progressive refinement of the current image.
     HighResReady(PathBuf, Box<ImageData>),
+    /// The full-resolution re-decode failed or was too large to keep.
+    HighResFailed(PathBuf),
     /// Async GPU renderer initialized (or failed). Boxed to keep enum small.
     RendererReady(Result<Box<crate::render::Renderer>, String>),
     SetStatus(String),
@@ -47,6 +49,10 @@ pub enum AppEvent {
     HistogramComputed(PathBuf, Box<([u32; 256], [u32; 256], [u32; 256])>),
     DirectoryChanged(PathBuf),
     TriggerOpenFileDialog,
+    /// The sort key or direction in `AppConfig` changed; re-list the folder.
+    SortChanged,
+    /// The "match monitor colour profile" preference was toggled.
+    DisplayProfileToggled,
 }
 
 /// Helper: send an AppEvent through the data channel, then wake the event loop.

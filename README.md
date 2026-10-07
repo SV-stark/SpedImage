@@ -47,6 +47,9 @@
 ### 🎨 GPU-Accelerated Editing & Modern UI
 All adjustments are processed dynamically in WGSL fragment shaders.
 - **Instant Adjustments**: Brightness, Contrast, and Saturation applied directly in real-time.
+- **Saving**: PNG, JPEG and lossless WebP. Rotating/flipping a JPEG and saving it as JPEG is lossless (DCT-domain, like `jpegtran`) and keeps EXIF and ICC data.
+- **Monitor Colour Matching** (Windows): converts sRGB to the monitor's ICC profile on wide-gamut screens.
+- **Side-by-Side Compare** (`K`) and **sorting** by name, date modified, date taken, size or type.
 - **Perceptual Oklab Color Science**: Integrated `palette` and `fast-srgb8` for sub-nanosecond gamma transformations and perceptual Oklab color calculations.
 - **Image Flipping**: Horizontal and vertical flipping (mirroring) processed directly in the vertex shader.
 - **Gamut Correction**: Automatic detection of Adobe RGB color profile tags, executing high-quality color space conversion matrices directly on the GPU.
@@ -181,6 +184,14 @@ Median of 5 launches vs the OS default viewer:**
 
 **Methodology & caveats**
 
+- **Table B measures a titled window appearing, not the image.** About 320 ms
+  of it passes before `Process.Start` even returns in PowerShell (OS process
+  creation; `Start-Process cmd` alone takes ~230 ms on the same machine), while
+  Photos is a prelaunched system app. Inside SpedImage, the window exists ~80 ms
+  after `main` and the image is on screen ~170–220 ms after `main` (GDI first
+  frame, before the DX12 device is ready). Measure that with
+  `SPEDIMAGE_STARTUP_LOG=1` and look for `first frame with image`.
+
 - SpedImage's end-to-end startup time is optimized with immediate window presentation and title setting, DX12-only/LowPower GPU initialization, deferred icon decoding, and asynchronous parallel image decoding.
 - Subsequent images in the same folder open near-instantly via the predictive prefetch cache (`< 1 ms` on hit).
 - HEIC sample: `libheif` `example.heic` (1280×854 photo). Corpus images are
@@ -291,11 +302,12 @@ spedimage /path/to/image.jpg
 | `Enter` | Toggle Zoom 100% (Actual pixels) / Zoom to fit |
 | `F` | Toggle sidebar |
 | `T` | Toggle thumbnail strip |
+| `K` | Pin image & compare side by side |
 | `1` | Reset adjustments |
 | `+` / `=` | Zoom in |
 | `-` | Zoom out |
 | `0` | Zoom to fit |
-| `Esc` | Cancel crop / Dismiss search / Quit |
+| `Esc` | Cancel crop / Dismiss search / Close compare / Quit |
 | `F1` / `?` | Toggle help overlay |
 
 </div>
