@@ -764,3 +764,52 @@ mod gif_robustness {
         spedimage_lib::image::stream_gif(fx.path.clone(), 0, 4, 4, 1, generation, tx);
     }
 }
+
+#[test]
+fn jpeg_downsamples_when_scale_denom_is_one() {
+    // Image ratio is 500/400 = 1.25 (< 2), so libjpeg DCT scale denom is 1.
+    // It must still be downsampled via CPU downsample_to_fit to the target box.
+    let (bytes, w, h) = make_jpeg(500, 500);
+    let fx = Fixture::new("scale_denom_one", "jpg", &bytes);
+
+    let (frames, _) = ImageLoader::load(&fx.path, Some(400), Some(400)).expect("load");
+    let img = &frames[0];
+
+    assert_eq!((img.width, img.height), (400, 400));
+    assert!(img.is_downsampled, "is_downsampled must be true when resized");
+    assert_eq!(img.rgba_data.len(), 400 * 400 * 4);
+    assert!(img.width < w && img.height < h);
+}
+
+#[test]
+fn svg_downsampling_correctly_sets_downsampled_flag() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+        <rect width="400" height="400" fill="red"/>
+    </svg>"#;
+    let fx = Fixture::new("svg_downsample", "svg", svg.as_bytes());
+
+    // Full size load: not downsampled
+    let (frames_full, _) = ImageLoader::load(&fx.path, None, None).expect("load full");
+    assert_eq!((frames_full[0].width, frames_full[0].height), (400, 400));
+    assert!(!frames_full[0].is_downsampled);
+
+    // Constrained load: downsampled
+    let (frames_small, _) = ImageLoader::load(&fx.path, Some(200), Some(200)).expect("load small");
+    assert_eq!((frames_small[0].width, frames_small[0].height), (200, 200));
+    assert!(frames_small[0].is_downsampled);
+}
+
+#[test]
+fn webp_downsample_box_and_flag() {
+    let fx = Fixture::new(
+        "webp_downsample",
+        "webp",
+        include_bytes!("fixtures/alpha_lossy.webp"),
+    );
+    let (frames, _) = ImageLoader::load(&fx.path, Some(32), Some(24)).expect("load");
+    let img = &frames[0];
+    assert!(img.width <= 32 && img.height <= 24);
+    assert!(img.is_downsampled);
+}
+
+

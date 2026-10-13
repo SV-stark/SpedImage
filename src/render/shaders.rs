@@ -31,7 +31,7 @@ struct Uniforms {
     split_compare: f32,
     split_position: f32,
     has_color_matrix: f32,
-    _pad: f32,
+    checkerboard: f32,
     color_matrix_col0: vec4<f32>,
     color_matrix_col1: vec4<f32>,
     color_matrix_col2: vec4<f32>,
@@ -219,10 +219,15 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // 9. Transparency Handling with Subtle Checkerboard Canvas
     if (color.a < 0.999) {
-        let checker_size = 16.0;
-        let check_val = (floor(in.position.x / checker_size) + floor(in.position.y / checker_size)) % 2.0;
-        let check_bg = select(vec3<f32>(0.14, 0.15, 0.19), vec3<f32>(0.20, 0.22, 0.27), check_val > 0.5);
-        color = vec4<f32>(mix(check_bg, color.rgb, color.a), 1.0);
+        if (uniforms.checkerboard > 0.5) {
+            let checker_size = 16.0;
+            let check_val = (floor(in.position.x / checker_size) + floor(in.position.y / checker_size)) % 2.0;
+            let check_bg = select(vec3<f32>(0.14, 0.15, 0.19), vec3<f32>(0.20, 0.22, 0.27), check_val > 0.5);
+            color = vec4<f32>(mix(check_bg, color.rgb, color.a), 1.0);
+        } else {
+            let dark_bg = vec3<f32>(0.12, 0.12, 0.12);
+            color = vec4<f32>(mix(dark_bg, color.rgb, color.a), 1.0);
+        }
     }
     
     return color;

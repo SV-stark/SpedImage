@@ -962,6 +962,7 @@ impl Renderer {
         &self,
         adjustments: &ImageAdjustments,
         transition_factor: f32,
+        checkerboard: bool,
         image_size: Option<(u32, u32)>,
         viewport_aspect: f32,
     ) -> Uniforms {
@@ -1021,7 +1022,7 @@ impl Renderer {
             split_compare: if adjustments.split_compare { 1.0 } else { 0.0 },
             split_position: adjustments.split_position,
             has_color_matrix: has_cm,
-            _pad: 0.0,
+            checkerboard: if checkerboard { 1.0 } else { 0.0 },
             color_matrix_col0: col0,
             color_matrix_col1: col1,
             color_matrix_col2: col2,
@@ -1034,6 +1035,7 @@ impl Renderer {
         &self,
         adjustments: &ImageAdjustments,
         transition_factor: f32,
+        checkerboard: bool,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -1047,6 +1049,7 @@ impl Renderer {
         let uniforms = self.image_uniforms(
             adjustments,
             transition_factor,
+            checkerboard,
             self.image_size,
             right_w as f32 / win_h as f32,
         );
@@ -1065,6 +1068,7 @@ impl Renderer {
             let u = self.image_uniforms(
                 &pinned,
                 1.0,
+                checkerboard,
                 Some((c.width, c.height)),
                 left_w.max(1) as f32 / win_h as f32,
             );

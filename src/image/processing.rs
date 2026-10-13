@@ -30,7 +30,7 @@ impl ImageProcessor {
         let mut processed = Vec::with_capacity(frames.len());
 
         use fast_image_resize as fr;
-        let mut resizer = Self::create_simd_resizer();
+        let mut resizer: Option<fast_image_resize::Resizer> = None;
 
         for frame in frames {
             let mut img = frame;
@@ -56,6 +56,7 @@ impl ImageProcessor {
                 let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
 
                 resizer
+                    .get_or_insert_with(Self::create_simd_resizer)
                     .resize(&src_image, &mut dst_image, None)
                     .map_err(|e| eyre!("Resize failed: {e:?}"))?;
 

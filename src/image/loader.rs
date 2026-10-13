@@ -246,11 +246,11 @@ impl ImageLoader {
         } else if ext == "exr" {
             Self::load_exr(path, max_w, max_h)?
         } else if ext == "heic" || ext == "heif" {
-            Self::load_heic(path, max_w, max_h, format_type)?
+            Self::load_heic(path, max_w, max_h, format_type, &exif, opts)?
         } else if ext == "webp" {
-            Self::load_webp(path, max_w, max_h)?
+            Self::load_webp(path, max_w, max_h, &exif, opts)?
         } else if ext == "tiff" || ext == "tif" {
-            Self::load_tiff(path, max_w, max_h)?
+            Self::load_tiff(path, max_w, max_h, &exif, opts)?
         } else if ext == "ico" || ext == "cur" {
             Self::load_ico(path, max_w, max_h)?
         } else if format_type == ImageFormatType::Raw {
@@ -387,15 +387,14 @@ impl ImageLoader {
 
         let mut rgba = buf;
         let (mut final_w, mut final_h) = (dec_w, dec_h);
-        let is_downsampled = scale.denom > 1;
+        let mut is_downsampled = scale.denom > 1;
 
-        if let Some(box_wh) = target_box
-            && (dec_w, dec_h) != (src_w, src_h)
-        {
-            let (r, w, h, _downsampled) = downsample_to_fit(rgba, dec_w, dec_h, Some(box_wh))?;
+        if let Some(box_wh) = target_box {
+            let (r, w, h, downsampled) = downsample_to_fit(rgba, dec_w, dec_h, Some(box_wh))?;
             rgba = r;
             final_w = w;
             final_h = h;
+            is_downsampled |= downsampled;
         }
 
         // ICC transform runs on the reduced buffer, so it is proportionally cheaper.
@@ -543,6 +542,8 @@ impl ImageLoader {
         path: &Path,
         max_w: Option<u32>,
         max_h: Option<u32>,
+        exif: &crate::image::metadata::ExifMeta,
+        opts: LoadOptions,
     ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         let file = std::fs::File::open(path)?;
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
@@ -585,8 +586,9 @@ impl ImageLoader {
         };
 
         let file_size = std::fs::metadata(path)?.len();
+        let target_box = orient_box(decode_box(max_w, max_h), exif.orientation);
         let (rgba, width, height, is_downsampled) =
-            downsample_to_fit(rgba, src_w, src_h, decode_box(max_w, max_h))?;
+            downsample_to_fit(rgba, src_w, src_h, target_box)?;
 
         let mut rgba = rgba;
         if let Some(icc) = icc
@@ -594,6 +596,11 @@ impl ImageLoader {
         {
             tracing::warn!("Failed to apply WebP color profile: {e:?}");
         }
+
+        let (rgba, width, height, orientation_deg) = match exif.orientation {
+            Some(o) => apply_orientation(rgba, width, height, o, opts.bake_orientation),
+            None => (rgba, width, height, 0),
+        };
 
         Ok((
             vec![ImageData {
@@ -608,9 +615,9 @@ impl ImageLoader {
                 exif_loaded: false,
                 histogram: None,
                 is_downsampled,
-                orientation_deg: 0,
-                gps_coords: None,
-                color_space: None,
+                orientation_deg,
+                gps_coords: exif.gps_coords,
+                color_space: exif.color_space,
             }],
             ImageFormatType::WebP,
         ))
@@ -634,6 +641,8 @@ impl ImageLoader {
         let size = rtree.size();
         let mut width = size.width() as u32;
         let mut height = size.height() as u32;
+        let orig_w = width;
+        let orig_h = height;
 
         // Rasterize directly at the requested size instead of rendering at
         // intrinsic resolution and resizing on the CPU afterwards.
@@ -649,6 +658,8 @@ impl ImageLoader {
             height = ((height as f32 * scale).round() as u32).max(1);
             transform = tiny_skia::Transform::from_scale(scale, scale);
         }
+
+        let is_downsampled = width != orig_w || height != orig_h;
 
         let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or_else(|| {
             eyre!(
@@ -674,7 +685,7 @@ impl ImageLoader {
                 exif_info: None,
                 exif_loaded: true,
                 histogram: None,
-                is_downsampled: false,
+                is_downsampled,
                 orientation_deg: 0,
                 gps_coords: None,
                 color_space: None,
@@ -687,6 +698,8 @@ impl ImageLoader {
         path: &Path,
         max_w: Option<u32>,
         max_h: Option<u32>,
+        exif: &crate::image::metadata::ExifMeta,
+        opts: LoadOptions,
     ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         use tiff::decoder::{Decoder, DecodingResult};
         let file = std::fs::File::open(path)?;
@@ -727,8 +740,14 @@ impl ImageLoader {
         };
 
         let file_size = std::fs::metadata(path)?.len();
+        let target_box = orient_box(decode_box(max_w, max_h), exif.orientation);
         let (rgba_data, width, height, is_downsampled) =
-            downsample_to_fit(rgba_data, width, height, decode_box(max_w, max_h))?;
+            downsample_to_fit(rgba_data, width, height, target_box)?;
+
+        let (rgba_data, width, height, orientation_deg) = match exif.orientation {
+            Some(o) => apply_orientation(rgba_data, width, height, o, opts.bake_orientation),
+            None => (rgba_data, width, height, 0),
+        };
 
         Ok((
             vec![ImageData {
@@ -740,12 +759,12 @@ impl ImageLoader {
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
                 exif_info: None,
-                exif_loaded: true,
+                exif_loaded: false,
                 histogram: None,
                 is_downsampled,
-                orientation_deg: 0,
-                gps_coords: None,
-                color_space: None,
+                orientation_deg,
+                gps_coords: exif.gps_coords,
+                color_space: exif.color_space,
             }],
             ImageFormatType::Tiff,
         ))
@@ -761,6 +780,8 @@ impl ImageLoader {
         max_w: Option<u32>,
         max_h: Option<u32>,
         format_type: ImageFormatType,
+        exif: &crate::image::metadata::ExifMeta,
+        opts: LoadOptions,
     ) -> Result<(Vec<ImageData>, ImageFormatType)> {
         let file = std::fs::File::open(path)?;
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
@@ -780,8 +801,14 @@ impl ImageLoader {
         }
 
         let file_size = std::fs::metadata(path)?.len();
+        let target_box = orient_box(decode_box(max_w, max_h), exif.orientation);
         let (rgba, width, height, is_downsampled) =
-            downsample_to_fit(rgba, width, height, decode_box(max_w, max_h))?;
+            downsample_to_fit(rgba, width, height, target_box)?;
+
+        let (rgba, width, height, orientation_deg) = match exif.orientation {
+            Some(o) => apply_orientation(rgba, width, height, o, opts.bake_orientation),
+            None => (rgba, width, height, 0),
+        };
 
         Ok((
             vec![ImageData {
@@ -793,12 +820,12 @@ impl ImageLoader {
                 file_size_bytes: file_size,
                 frame_delay_ms: 0,
                 exif_info: None,
-                exif_loaded: true,
+                exif_loaded: false,
                 histogram: None,
                 is_downsampled,
-                orientation_deg: 0,
-                gps_coords: None,
-                color_space: None,
+                orientation_deg,
+                gps_coords: exif.gps_coords,
+                color_space: exif.color_space,
             }],
             format_type,
         ))

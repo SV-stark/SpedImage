@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-10-13
+
+### Fixed
+* **JPEG Downsampling**: Fixed issue where JPEG decode skipped CPU downsampling when the scale ratio was less than 2.0 (scale denominator equal to 1).
+* **SVG Downsampled Flag**: Corrected `is_downsampled` metadata flag for rasterized SVGs when rendered to a constrained bounding box.
+* **EXIF and Orientation**: WebP, TIFF, and HEIC loaders now correctly honour EXIF orientation, bounding box calculation, and propagate color space and GPS coordinates.
+
+### Added
+* **Checkerboard Background Toggle**: Connected user setting to dynamically toggle transparent background rendering between subtle checkerboard canvas and solid dark background in the WGPU shader.
+
+### Optimized
+* **Lazy SIMD Resizer**: Resizer instance is now initialized lazily on-demand only when image resizing is actually performed.
+
 ## [0.11.0] - 2026-10-07
 
 ### Added

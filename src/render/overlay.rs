@@ -1120,6 +1120,7 @@ impl Renderer {
             self.encode_image(
                 params.adjustments,
                 params.transition_factor,
+                params.config.checkerboard_enabled(),
                 &view,
                 &mut encoder,
             );
