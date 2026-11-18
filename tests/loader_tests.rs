@@ -776,7 +776,10 @@ fn jpeg_downsamples_when_scale_denom_is_one() {
     let img = &frames[0];
 
     assert_eq!((img.width, img.height), (400, 400));
-    assert!(img.is_downsampled, "is_downsampled must be true when resized");
+    assert!(
+        img.is_downsampled,
+        "is_downsampled must be true when resized"
+    );
     assert_eq!(img.rgba_data.len(), 400 * 400 * 4);
     assert!(img.width < w && img.height < h);
 }
@@ -811,5 +814,3 @@ fn webp_downsample_box_and_flag() {
     assert!(img.width <= 32 && img.height <= 24);
     assert!(img.is_downsampled);
 }
-
-

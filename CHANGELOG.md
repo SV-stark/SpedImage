@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.2] - 2026-11-18
+
+### Added
+* **Interactive Drag-to-Crop Handles**: Upgraded crop mode with 4 corner grips, 4 edge midpoint grips, rule-of-thirds guides, hover cursor feedback, and 1:1 cursor-tracking against the full displayed image.
+* **Persistent Thumbnail Disk Cache**: Generated thumbnails are cached on disk under the user's cache directory (keyed by path, file size, mtime, and thumbnail size) for instant folder reopening.
+* **Keyboard Shortcut Cheat Sheet (`?` / `F1`)**: Added `?` alongside `F1` to toggle a categorized shortcut reference modal.
+* **Independent File Browser (`F`) and Adjustments (`E`) Panels**: Split the sidebar and adjustments into separate toggles with independent close buttons, quick-open controls, and `Escape` handling.
+* **Configurable JPEG Save Quality**: Added a `JPEG Quality` slider (`50–100`, default `92`) in Preferences & Export and wired it through `save_edited_with_quality`.
+* **EXIF & ICC Metadata Preservation on Save**: Re-encoded JPEG, PNG, and WebP saves now preserve source EXIF and ICC chunks via `img-parts`, with IFD0 `Orientation` normalized to `1` when pixel orientation is baked.
+* **Clickable Navigation Arrows**: The `◀` and `▶` overlay arrows now trigger previous/next image navigation on click.
+
+### Changed
+* **Fast Embedded JPEG Preview for RAW Files**: Preview and thumbnail loads for camera RAW files extract and decode the largest embedded JPEG preview via `libjpeg-turbo-rs`, deferring full Bayer demosaicing until progressive zoom refinement or saving.
+* **Downsampled RGB Histogram**: `compute_rgb_histogram` samples ~500k evenly spaced pixels on images larger than 1 MP instead of scanning every pixel on the CPU.
+* **Oversized GPU Texture Handling & ROI Upload**: Images exceeding `max_texture_dim` are automatically downsampled to fit the GPU texture limit instead of erroring, with `load_image_roi` added for 1:1 region-of-interest tile uploads.
+* **Module Split**: Split `src/render/overlay.rs` into `src/render/overlay/` (`mod.rs`, `crop.rs`, `osd.rs`, `help.rs`, `sidebar.rs`, `adjustments.rs`, `histogram.rs`) and `src/image/loader.rs` into `src/image/loader/` (`mod.rs` and `codecs/`).
+* **Workspace Hygiene**: Added local tooling/investigation artifacts to `.gitignore`.
+
+### Fixed
+* **Crop Overlay vs. Shader Zoom**: Kept the underlying image uncropped while `is_cropping` is active so dragging crop handles does not zoom/shift the image underneath.
+* **Histogram & EXIF Refresh**: Navigating between images or enabling `Show Info / EXIF` / `Show RGB Histogram` in Preferences now triggers EXIF loading and asynchronous histogram calculation.
+* **RAW EXIF Inspection After Full Demosaic**: Stopped marking `exif_loaded: true` with empty metadata on the full `rawloader` demosaic path so `I` still displays EXIF metadata after progressive refinement.
+* **`Escape` Panel Closing**: Fixed `Escape` to explicitly close `show_sidebar` / `show_adjustments` instead of toggling them if `ui_state` and `config` differed.
+* **HiDPI Overlay Alignment**: Scaled the crop overlay in logical points (`pixels_per_point`), added a vertical `ScrollArea` to Adjustments, and prevented panel overlap with the OSD pill and thumbnail strip.
+
 ## [0.11.1] - 2026-10-13
 
 ### Fixed

@@ -26,6 +26,26 @@ impl SpedImageApp {
                     self.dirty = true;
                 } else if self.is_comparing() {
                     self.toggle_compare();
+                } else if self.ui_state.show_sidebar || self.config.show_sidebar {
+                    self.ui_state.show_sidebar = false;
+                    self.config.show_sidebar = false;
+                    self.config.save();
+                    self.dirty = true;
+                } else if self.ui_state.show_adjustments || self.config.show_adjustments {
+                    self.ui_state.show_adjustments = false;
+                    self.config.show_adjustments = false;
+                    self.config.save();
+                    self.dirty = true;
+                } else if self.ui_state.show_info || self.config.show_info {
+                    self.ui_state.toggle_info();
+                    self.config.show_info = self.ui_state.show_info;
+                    self.config.save();
+                    self.dirty = true;
+                } else if self.ui_state.show_histogram || self.config.show_histogram {
+                    self.ui_state.show_histogram = false;
+                    self.config.show_histogram = false;
+                    self.config.save();
+                    self.dirty = true;
                 } else {
                     self.save_config_on_exit();
                     event_loop.exit();
@@ -147,6 +167,11 @@ impl SpedImageApp {
                 "r" | "R" => self.rotate_image(),
                 "o" | "O" => self.open_file_dialog(),
                 "f" | "F" if !ctrl => self.toggle_sidebar(),
+                "e" | "E" if !ctrl => self.toggle_adjustments(),
+                "?" if !ctrl => {
+                    self.ui_state.show_help = !self.ui_state.show_help;
+                    self.dirty = true;
+                }
                 "f" | "F" if ctrl => {
                     self.ui_state.show_search = !self.ui_state.show_search;
                     if self.ui_state.show_search {
@@ -171,36 +196,8 @@ impl SpedImageApp {
                         self.ui_state.show_histogram = !self.ui_state.show_histogram;
                         self.config.show_histogram = self.ui_state.show_histogram;
                         self.config.save();
-                        if self.ui_state.show_histogram
-                            && let Some(ref img) = self.current_image
-                            && img.histogram.is_none()
-                        {
-                            let path = img.path.clone();
-                            let rgba = img.rgba_data.clone();
-                            let tx = self.event_tx.clone();
-                            let proxy = self.event_proxy.clone();
-                            // Off the critical path: use the low-priority pool.
-                            self.thumbnail_pool().spawn(move || {
-                                let mut r_hist = [0u32; 256];
-                                let mut g_hist = [0u32; 256];
-                                let mut b_hist = [0u32; 256];
-                                crate::image::ImageData::compute_rgb_histogram(
-                                    &rgba,
-                                    &mut r_hist,
-                                    &mut g_hist,
-                                    &mut b_hist,
-                                );
-                                if let Some(ref p) = proxy {
-                                    send_event(
-                                        &tx,
-                                        p,
-                                        AppEvent::HistogramComputed(
-                                            path,
-                                            Box::new((r_hist, g_hist, b_hist)),
-                                        ),
-                                    );
-                                }
-                            });
+                        if self.ui_state.show_histogram {
+                            self.ensure_histogram_async();
                         }
                         self.dirty = true;
                     } else {
@@ -550,15 +547,20 @@ impl SpedImageApp {
         self.ui_state.set_status("Saving...");
         self.dirty = true;
         let adjustments = self.ui_state.adjustments;
+        let jpeg_quality = self.config.jpeg_quality();
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         self.thread_pool().spawn(move || {
-            let event =
-                match crate::image::save_edited(&source, &output, &adjustments, displayed.as_ref())
-                {
-                    Ok(outcome) => AppEvent::SaveComplete(outcome),
-                    Err(e) => AppEvent::SaveError(e.to_string()),
-                };
+            let event = match crate::image::save_edited_with_quality(
+                &source,
+                &output,
+                &adjustments,
+                displayed.as_ref(),
+                jpeg_quality,
+            ) {
+                Ok(outcome) => AppEvent::SaveComplete(outcome),
+                Err(e) => AppEvent::SaveError(e.to_string()),
+            };
             if let Some(ref p) = proxy {
                 send_event(&tx, p, event);
             }
@@ -585,6 +587,7 @@ impl SpedImageApp {
         formats.sort_by_key(|f| *f != default_format);
 
         let adjustments = self.ui_state.adjustments;
+        let jpeg_quality = self.config.jpeg_quality();
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
         // The dialog blocks, so it runs on the pool rather than the UI thread.
@@ -601,11 +604,16 @@ impl SpedImageApp {
             let Some(output) = dialog.save_file() else {
                 return;
             };
-            let event =
-                match crate::image::save_edited(&source, &output, &adjustments, Some(&displayed)) {
-                    Ok(outcome) => AppEvent::SaveComplete(outcome),
-                    Err(e) => AppEvent::SaveError(e.to_string()),
-                };
+            let event = match crate::image::save_edited_with_quality(
+                &source,
+                &output,
+                &adjustments,
+                Some(&displayed),
+                jpeg_quality,
+            ) {
+                Ok(outcome) => AppEvent::SaveComplete(outcome),
+                Err(e) => AppEvent::SaveError(e.to_string()),
+            };
             if let Some(ref p) = proxy {
                 send_event(&tx, p, event);
             }
@@ -641,6 +649,7 @@ impl SpedImageApp {
         }
 
         let adjustments = self.ui_state.adjustments;
+        let jpeg_quality = self.config.jpeg_quality();
         let tx = self.event_tx.clone();
         let proxy = self.event_proxy.clone();
 
@@ -654,7 +663,13 @@ impl SpedImageApp {
             let mut failed_paths = Vec::new();
             for path in &selected {
                 let output = crate::image::edited_output_path(path);
-                match crate::image::save_edited(path, &output, &adjustments, None) {
+                match crate::image::save_edited_with_quality(
+                    path,
+                    &output,
+                    &adjustments,
+                    None,
+                    jpeg_quality,
+                ) {
                     Ok(outcome) => {
                         saved_count += 1;
                         if outcome.lossless {
@@ -839,6 +854,42 @@ impl SpedImageApp {
         self.config.show_sidebar = self.ui_state.show_sidebar;
         self.config.save();
         self.dirty = true;
+    }
+
+    pub(crate) fn toggle_adjustments(&mut self) {
+        self.ui_state.show_adjustments = !self.ui_state.show_adjustments;
+        self.config.show_adjustments = self.ui_state.show_adjustments;
+        self.config.save();
+        self.dirty = true;
+    }
+
+    pub(crate) fn ensure_histogram_async(&self) {
+        if let Some(ref img) = self.current_image
+            && img.histogram.is_none()
+        {
+            let path = img.path.clone();
+            let rgba = img.rgba_data.clone();
+            let tx = self.event_tx.clone();
+            let proxy = self.event_proxy.clone();
+            self.thumbnail_pool().spawn(move || {
+                let mut r_hist = [0u32; 256];
+                let mut g_hist = [0u32; 256];
+                let mut b_hist = [0u32; 256];
+                crate::image::ImageData::compute_rgb_histogram(
+                    &rgba,
+                    &mut r_hist,
+                    &mut g_hist,
+                    &mut b_hist,
+                );
+                if let Some(ref p) = proxy {
+                    send_event(
+                        &tx,
+                        p,
+                        AppEvent::HistogramComputed(path, Box::new((r_hist, g_hist, b_hist))),
+                    );
+                }
+            });
+        }
     }
 
     pub(crate) fn toggle_thumbnail_strip(&mut self) {
@@ -1382,6 +1433,7 @@ impl SpedImageApp {
             config.window_maximized = w.is_maximized();
         }
         config.show_sidebar = self.ui_state.show_sidebar;
+        config.show_adjustments = self.ui_state.show_adjustments;
         config.show_thumbnail_strip = self.ui_state.show_thumbnail_strip;
         config.show_info = self.ui_state.show_info;
         config.show_histogram = self.ui_state.show_histogram;

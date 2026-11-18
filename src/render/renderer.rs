@@ -508,6 +508,72 @@ impl Renderer {
         self.surface.configure(&self.device, &self.config);
     }
 
+    /// Downsample `rgba` if either dimension exceeds `self.max_texture_dim`.
+    /// Keeps the full-resolution `ImageData` intact in CPU memory while
+    /// fitting the GPU texture within hardware limits.
+    fn fit_to_max_texture<'a>(
+        &self,
+        rgba: &'a [u8],
+        width: u32,
+        height: u32,
+    ) -> Result<(std::borrow::Cow<'a, [u8]>, u32, u32)> {
+        if width <= self.max_texture_dim && height <= self.max_texture_dim {
+            return Ok((std::borrow::Cow::Borrowed(rgba), width, height));
+        }
+
+        let ratio = (width as f64 / self.max_texture_dim as f64)
+            .max(height as f64 / self.max_texture_dim as f64);
+        let dst_w = ((width as f64 / ratio).floor() as u32).clamp(1, self.max_texture_dim);
+        let dst_h = ((height as f64 / ratio).floor() as u32).clamp(1, self.max_texture_dim);
+
+        use fast_image_resize as fr;
+        let src_image = fr::images::ImageRef::new(width, height, rgba, fr::PixelType::U8x4)
+            .map_err(|e| color_eyre::eyre::eyre!("Failed to wrap oversized image: {e:?}"))?;
+        let mut dst_image = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
+        crate::image::ImageProcessor::create_simd_resizer()
+            .resize(&src_image, &mut dst_image, None)
+            .map_err(|e| color_eyre::eyre::eyre!("Oversized GPU fit resize failed: {e:?}"))?;
+
+        Ok((std::borrow::Cow::Owned(dst_image.into_vec()), dst_w, dst_h))
+    }
+
+    /// Upload a 1:1 region-of-interest (ROI) tile from an oversized
+    /// `ImageData` whose full dimensions exceed `max_texture_dim`.
+    pub fn load_image_roi(
+        &mut self,
+        image_data: &ImageData,
+        crop_rect: [f32; 4],
+    ) -> Result<(u32, u32)> {
+        let full_w = image_data.width;
+        let full_h = image_data.height;
+        if full_w == 0 || full_h == 0 {
+            return Err(color_eyre::eyre::eyre!("Image has a zero dimension"));
+        }
+
+        let rx = (crop_rect[0].clamp(0.0, 1.0) * full_w as f32).floor() as u32;
+        let ry = (crop_rect[1].clamp(0.0, 1.0) * full_h as f32).floor() as u32;
+        let rw = ((crop_rect[2].clamp(0.01, 1.0) * full_w as f32).ceil() as u32)
+            .min(full_w.saturating_sub(rx))
+            .min(self.max_texture_dim)
+            .max(1);
+        let rh = ((crop_rect[3].clamp(0.01, 1.0) * full_h as f32).ceil() as u32)
+            .min(full_h.saturating_sub(ry))
+            .min(self.max_texture_dim)
+            .max(1);
+
+        let src = image_data.as_rgba();
+        let mut tile = Vec::with_capacity((rw as usize) * (rh as usize) * 4);
+        let src_stride = (full_w as usize) * 4;
+        let row_bytes = (rw as usize) * 4;
+        for row in ry..(ry + rh) {
+            let start = (row as usize) * src_stride + (rx as usize) * 4;
+            tile.extend_from_slice(&src[start..start + row_bytes]);
+        }
+
+        self.upload_rgba_to_main_texture(&tile, rw, rh)?;
+        Ok((rw, rh))
+    }
+
     pub fn load_image(&mut self, image_data: &ImageData) -> Result<()> {
         let width = image_data.width;
         let height = image_data.height;
@@ -515,18 +581,18 @@ impl Renderer {
         if width == 0 || height == 0 {
             return Err(color_eyre::eyre::eyre!("Image has a zero dimension"));
         }
-        if width > self.max_texture_dim || height > self.max_texture_dim {
-            return Err(color_eyre::eyre::eyre!(
-                "Image is {width}x{height}, larger than the {}px GPU texture limit",
-                self.max_texture_dim
-            ));
-        }
         if image_data.rgba_data.len() < (width as usize) * (height as usize) * 4 {
             return Err(color_eyre::eyre::eyre!(
                 "Pixel buffer too small for {width}x{height}"
             ));
         }
 
+        let (upload_rgba, upload_w, upload_h) =
+            self.fit_to_max_texture(image_data.as_rgba(), width, height)?;
+        self.upload_rgba_to_main_texture(&upload_rgba, upload_w, upload_h)
+    }
+
+    fn upload_rgba_to_main_texture(&mut self, rgba: &[u8], width: u32, height: u32) -> Result<()> {
         // Move current to prev for transition
         if let Some(current_tex) = self.image_texture.take()
             && let Some(old_prev) = self.image_texture_prev.replace(current_tex)
@@ -621,7 +687,7 @@ impl Renderer {
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                image_data.as_rgba(),
+                rgba,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(width * 4),
@@ -893,17 +959,12 @@ impl Renderer {
         if width == 0 || height == 0 {
             return Err(color_eyre::eyre::eyre!("Image has a zero dimension"));
         }
-        if width > self.max_texture_dim || height > self.max_texture_dim {
-            return Err(color_eyre::eyre::eyre!(
-                "Image is {width}x{height}, larger than the {}px GPU texture limit",
-                self.max_texture_dim
-            ));
-        }
         if img.rgba_data.len() < (width as usize) * (height as usize) * 4 {
             return Err(color_eyre::eyre::eyre!(
                 "Pixel buffer too small for {width}x{height}"
             ));
         }
+        let (upload_rgba, width, height) = self.fit_to_max_texture(img.as_rgba(), width, height)?;
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Compare Texture"),
             size: wgpu::Extent3d {
@@ -925,7 +986,7 @@ impl Renderer {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            img.as_rgba(),
+            &upload_rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(width * 4),

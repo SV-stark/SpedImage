@@ -169,6 +169,9 @@ impl SpedImageApp {
                     {
                         img.load_exif();
                     }
+                    if self.ui_state.show_histogram {
+                        self.ensure_histogram_async();
+                    }
                     self.dirty = true;
                 }
 
@@ -451,6 +454,12 @@ impl SpedImageApp {
                 AppEvent::DisplayProfileToggled => {
                     self.refresh_display_profile();
                 }
+                AppEvent::PrevImage => {
+                    self.prev_image();
+                }
+                AppEvent::NextImage => {
+                    self.next_image();
+                }
             }
             count += 1;
             if count >= constants::MAX_EVENTS_PER_FRAME {
@@ -504,26 +513,47 @@ impl SpedImageApp {
         }
     }
 
-    /// Decide what a press inside crop mode means: grab the resize handle when
-    /// the cursor is near the bottom-right corner, otherwise move the rect.
+    /// Decide what a press inside crop mode means: grab any corner or edge
+    /// handle when near it, otherwise move the rect.
     fn begin_crop_drag(&mut self, pos: winit::dpi::PhysicalPosition<f64>) {
         let Some(rect) = self.crop_screen_rect() else {
             return;
         };
-        // egui works in f32 points and winit reports f64 physical pixels; the
-        // rect is built from physical pixels, so compare in f64.
         let (px, py) = (pos.x, pos.y);
-        let (rx, ry) = (rect.max.x as f64, rect.max.y as f64);
-        let handle_radius = 12.0f64;
-        let near_handle = (px - rx).abs() <= handle_radius && (py - ry).abs() <= handle_radius;
-        let inside = px >= rect.min.x as f64 && px <= rx && py >= rect.min.y as f64 && py <= ry;
-        // Pressing inside the selection moves it; the handle and the area
-        // outside resize it from the current bottom-right corner.
-        self.crop_drag = Some(if near_handle || !inside {
-            CropDrag::Resize
-        } else {
+        let (min_x, min_y) = (rect.min.x as f64, rect.min.y as f64);
+        let (max_x, max_y) = (rect.max.x as f64, rect.max.y as f64);
+        let handle_radius = 14.0f64;
+
+        let near_left = (px - min_x).abs() <= handle_radius;
+        let near_right = (px - max_x).abs() <= handle_radius;
+        let near_top = (py - min_y).abs() <= handle_radius;
+        let near_bottom = (py - max_y).abs() <= handle_radius;
+        let in_x = px >= min_x - handle_radius && px <= max_x + handle_radius;
+        let in_y = py >= min_y - handle_radius && py <= max_y + handle_radius;
+
+        let mode = if near_left && near_top {
+            CropDrag::TopLeft
+        } else if near_right && near_top {
+            CropDrag::TopRight
+        } else if near_left && near_bottom {
+            CropDrag::BottomLeft
+        } else if near_right && near_bottom {
+            CropDrag::BottomRight
+        } else if near_top && in_x {
+            CropDrag::Top
+        } else if near_bottom && in_x {
+            CropDrag::Bottom
+        } else if near_left && in_y {
+            CropDrag::Left
+        } else if near_right && in_y {
+            CropDrag::Right
+        } else if px >= min_x && px <= max_x && py >= min_y && py <= max_y {
             CropDrag::Move
-        });
+        } else {
+            CropDrag::BottomRight
+        };
+
+        self.crop_drag = Some(mode);
         self.mouse_drag_start = Some(pos);
         // A crop press also resets the double-click timer, otherwise the first
         // crop drag can be swallowed as a double-click zoom/fullscreen toggle.
@@ -532,9 +562,6 @@ impl SpedImageApp {
 
     /// Screen-space rectangle of the current crop, or `None` when there is no
     /// image or the window size is unknown.
-    ///
-    /// Shares its geometry with the drawing pass so the rect the user drags
-    /// and the rect that gets shaded cannot drift apart.
     fn crop_screen_rect(&self) -> Option<egui::Rect> {
         let img = self.current_image.as_ref()?;
         let (win_w, win_h) = self.window.as_ref().map(|w| {
@@ -550,6 +577,23 @@ impl SpedImageApp {
         )
     }
 
+    /// Screen-space rectangle of the full uncropped image (used to convert
+    /// cursor deltas into normalized `[0, 1]` texture coordinates).
+    fn full_image_screen_rect(&self) -> Option<egui::Rect> {
+        let img = self.current_image.as_ref()?;
+        let (win_w, win_h) = self.window.as_ref().map(|w| {
+            let s = w.inner_size();
+            (s.width, s.height)
+        })?;
+        crate::render::crop_overlay_rect(
+            img.width,
+            img.height,
+            (win_w, win_h),
+            [0.0, 0.0, 1.0, 1.0],
+            self.ui_state.adjustments.rotation + self.ui_state.adjustments.pre_rotation,
+        )
+    }
+
     /// Convert a cursor move into a crop-rect update while a crop drag is live.
     fn update_crop_drag(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
         let Some(mode) = self.crop_drag else {
@@ -558,12 +602,10 @@ impl SpedImageApp {
         let Some(start) = self.mouse_drag_start else {
             return;
         };
-        let Some(rect) = self.crop_screen_rect() else {
+        let Some(full_rect) = self.full_image_screen_rect() else {
             return;
         };
-        // Texture-space delta: divide the pixel delta by the displayed size of
-        // the whole image, which is what one unit of crop_rect covers.
-        let (disp_w, disp_h) = (rect.width(), rect.height());
+        let (disp_w, disp_h) = (full_rect.width(), full_rect.height());
         if disp_w <= 0.0 || disp_h <= 0.0 {
             return;
         }
@@ -572,23 +614,43 @@ impl SpedImageApp {
 
         let adj = &mut self.ui_state.adjustments;
         const MIN_SIZE: f32 = 0.02;
+        let mut x0 = adj.crop_rect_target[0];
+        let mut y0 = adj.crop_rect_target[1];
+        let mut x1 = x0 + adj.crop_rect_target[2];
+        let mut y1 = y0 + adj.crop_rect_target[3];
+
         match mode {
-            CropDrag::Resize => {
-                let w = (adj.crop_rect_target[2] + dx).clamp(MIN_SIZE, 1.0);
-                let h = (adj.crop_rect_target[3] + dy).clamp(MIN_SIZE, 1.0);
-                // Keep the rect inside the image as it grows.
-                adj.crop_rect_target[0] = adj.crop_rect_target[0].clamp(0.0, 1.0 - w);
-                adj.crop_rect_target[1] = adj.crop_rect_target[1].clamp(0.0, 1.0 - h);
-                adj.crop_rect_target[2] = w;
-                adj.crop_rect_target[3] = h;
-            }
             CropDrag::Move => {
-                let (x, y) = (adj.crop_rect_target[0] + dx, adj.crop_rect_target[1] + dy);
-                let (w, h) = (adj.crop_rect_target[2], adj.crop_rect_target[3]);
-                adj.crop_rect_target[0] = x.clamp(0.0, (1.0 - w).max(0.0));
-                adj.crop_rect_target[1] = y.clamp(0.0, (1.0 - h).max(0.0));
+                let w = x1 - x0;
+                let h = y1 - y0;
+                x0 = (x0 + dx).clamp(0.0, (1.0 - w).max(0.0));
+                y0 = (y0 + dy).clamp(0.0, (1.0 - h).max(0.0));
+                x1 = x0 + w;
+                y1 = y0 + h;
+            }
+            CropDrag::Left => x0 = (x0 + dx).clamp(0.0, x1 - MIN_SIZE),
+            CropDrag::Right => x1 = (x1 + dx).clamp(x0 + MIN_SIZE, 1.0),
+            CropDrag::Top => y0 = (y0 + dy).clamp(0.0, y1 - MIN_SIZE),
+            CropDrag::Bottom => y1 = (y1 + dy).clamp(y0 + MIN_SIZE, 1.0),
+            CropDrag::TopLeft => {
+                x0 = (x0 + dx).clamp(0.0, x1 - MIN_SIZE);
+                y0 = (y0 + dy).clamp(0.0, y1 - MIN_SIZE);
+            }
+            CropDrag::TopRight => {
+                x1 = (x1 + dx).clamp(x0 + MIN_SIZE, 1.0);
+                y0 = (y0 + dy).clamp(0.0, y1 - MIN_SIZE);
+            }
+            CropDrag::BottomLeft => {
+                x0 = (x0 + dx).clamp(0.0, x1 - MIN_SIZE);
+                y1 = (y1 + dy).clamp(y0 + MIN_SIZE, 1.0);
+            }
+            CropDrag::BottomRight => {
+                x1 = (x1 + dx).clamp(x0 + MIN_SIZE, 1.0);
+                y1 = (y1 + dy).clamp(y0 + MIN_SIZE, 1.0);
             }
         }
+
+        adj.crop_rect_target = [x0, y0, (x1 - x0).max(MIN_SIZE), (y1 - y0).max(MIN_SIZE)];
         // Commit directly: crop should track the cursor, not lerp behind it.
         adj.crop_rect = adj.crop_rect_target;
         self.mouse_drag_start = Some(position);
@@ -801,6 +863,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         // Apply config to UI state immediately so the first frame is correct
         // even before the GPU is ready.
         self.ui_state.show_sidebar = config.show_sidebar;
+        self.ui_state.show_adjustments = config.show_adjustments;
         self.ui_state.show_thumbnail_strip = config.show_thumbnail_strip;
         self.ui_state.show_info = config.show_info;
         self.ui_state.show_histogram = config.show_histogram;
@@ -1071,6 +1134,22 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                             r.resize(win.inner_size());
                         }
                     } else if has_image {
+                        let was_info = self.ui_state.show_info;
+                        let was_hist = self.ui_state.show_histogram;
+                        self.ui_state.show_sidebar = self.config.show_sidebar;
+                        self.ui_state.show_adjustments = self.config.show_adjustments;
+                        self.ui_state.show_thumbnail_strip = self.config.show_thumbnail_strip;
+                        self.ui_state.show_info = self.config.show_info;
+                        self.ui_state.show_histogram = self.config.show_histogram;
+                        if !was_info
+                            && self.ui_state.show_info
+                            && let Some(ref mut img) = self.current_image
+                        {
+                            img.load_exif();
+                        }
+                        if !was_hist && self.ui_state.show_histogram {
+                            self.ensure_histogram_async();
+                        }
                         // The number users actually feel: the picture is on
                         // screen, not just a titled window.
                         static FIRST_IMAGE: std::sync::Once = std::sync::Once::new();

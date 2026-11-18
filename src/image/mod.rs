@@ -13,8 +13,8 @@ pub use metadata::{
 };
 pub use processing::ImageProcessor;
 pub use save::{
-    JPEG_QUALITY, SaveFormat, SaveOutcome, edited_output_path, encode, reset_exif_orientation,
-    save_edited,
+    JPEG_QUALITY, SaveFormat, SaveOutcome, edited_output_path, encode, encode_with_quality,
+    reset_exif_orientation, save_edited, save_edited_with_quality,
 };
 pub use types::{ImageData, ImageError, ImageFormatType};
 

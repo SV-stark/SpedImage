@@ -20,8 +20,14 @@ use winit::window::Window;
 pub(crate) enum CropDrag {
     /// Dragging inside the crop rect moves it.
     Move,
-    /// Dragging the bottom-right handle resizes it.
-    Resize,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+    Top,
+    Bottom,
+    Left,
+    Right,
 }
 
 pub struct NavigationState {

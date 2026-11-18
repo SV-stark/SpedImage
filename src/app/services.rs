@@ -163,22 +163,20 @@ impl SpedImageApp {
 
         // Prioritize work closest to currently viewed image
         let center = self.ui_state.current_file_index.unwrap_or(0);
-        let mut work_order: Vec<(PathBuf, usize)> = files
+        let mut work_order: Vec<(PathBuf, u64, Option<i64>, usize)> = self
+            .ui_state
+            .files
             .iter()
             .enumerate()
-            .filter(|(_, p)| !existing.contains(p))
-            .map(|(i, p)| (p.clone(), i))
+            .filter(|(_, f)| !existing.contains(&f.path))
+            .map(|(i, f)| (f.path.clone(), f.size, f.modified, i))
             .collect();
-        work_order.sort_by_key(|(_, i)| (*i as isize - center as isize).abs());
+        work_order.sort_by_key(|(_, _, _, i)| (*i as isize - center as isize).abs());
 
-        // Work queue of (path, order) pairs that still need a texture.
-        // The queue is ordered by distance from the current image and drained
-        // by the workers continuously: truncating it to MAX_THUMBNAILS meant
-        // that in a folder with more files than the cap, everything past the
-        // cap *never* got a thumbnail, no matter how far you scrolled.
+        // Work queue of (path, size, modified, order) tuples that still need a texture.
         let (tx_work, rx_work) = crossbeam_channel::unbounded();
-        for (path, order) in work_order {
-            tx_work.send((path, order)).ok();
+        for item in work_order {
+            tx_work.send(item).ok();
         }
         drop(tx_work); // Close producer so workers exit when queue is empty
 
@@ -190,10 +188,30 @@ impl SpedImageApp {
             let gen_check = current_gen.clone();
 
             pool.spawn(move || {
-                while let Ok((path_clone, order)) = rx.recv() {
+                while let Ok((path_clone, file_size, modified, order)) = rx.recv() {
                     // Early exit check
                     if gen_check.load(Ordering::Relaxed) != generation {
                         break;
+                    }
+
+                    // Fast path: check persistent on-disk thumbnail cache first.
+                    if let Some((rgba, w, h)) = crate::app::thumb_cache::load(
+                        &path_clone,
+                        file_size,
+                        modified,
+                        THUMB_LOAD_SIZE,
+                    ) {
+                        if let Some(ref p) = proxy {
+                            if gen_check.load(Ordering::Relaxed) != generation {
+                                break;
+                            }
+                            send_event(
+                                &tx,
+                                p,
+                                AppEvent::ThumbnailLoaded(path_clone, rgba, w, h, order),
+                            );
+                        }
+                        continue;
                     }
 
                     if let Ok(frames) = ImageBackend::load_and_downsample_with(
@@ -205,24 +223,34 @@ impl SpedImageApp {
                             bake_orientation: true,
                         },
                     ) && let Some(frame) = frames.first()
-                        && let Some(ref p) = proxy
                     {
-                        // Check again after expensive load
-                        if gen_check.load(Ordering::Relaxed) != generation {
-                            break;
-                        }
-
-                        send_event(
-                            &tx,
-                            p,
-                            AppEvent::ThumbnailLoaded(
-                                path_clone,
-                                frame.rgba_data.clone(),
-                                frame.width,
-                                frame.height,
-                                order,
-                            ),
+                        crate::app::thumb_cache::store(
+                            &path_clone,
+                            file_size,
+                            modified,
+                            THUMB_LOAD_SIZE,
+                            frame.width,
+                            frame.height,
+                            &frame.rgba_data,
                         );
+                        if let Some(ref p) = proxy {
+                            // Check again after expensive load
+                            if gen_check.load(Ordering::Relaxed) != generation {
+                                break;
+                            }
+
+                            send_event(
+                                &tx,
+                                p,
+                                AppEvent::ThumbnailLoaded(
+                                    path_clone,
+                                    frame.rgba_data.clone(),
+                                    frame.width,
+                                    frame.height,
+                                    order,
+                                ),
+                            );
+                        }
                     }
                 }
             });

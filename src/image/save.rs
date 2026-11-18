@@ -99,8 +99,19 @@ pub fn edited_output_path(source: &Path) -> PathBuf {
     source.with_file_name(format!("{stem}_edited.{ext}"))
 }
 
-/// Encode an RGBA8 buffer into `format`.
+/// Encode an RGBA8 buffer into `format` using the default JPEG quality.
 pub fn encode(format: SaveFormat, rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
+    encode_with_quality(format, rgba, width, height, JPEG_QUALITY)
+}
+
+/// Encode an RGBA8 buffer into `format` with an explicit JPEG quality (`1..=100`).
+pub fn encode_with_quality(
+    format: SaveFormat,
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    jpeg_quality: u8,
+) -> Result<Vec<u8>> {
     let expected = width as usize * height as usize * 4;
     if width == 0 || height == 0 {
         return Err(eyre!("Cannot save an image with a zero dimension"));
@@ -135,7 +146,7 @@ pub fn encode(format: SaveFormat, rgba: &[u8], width: u32, height: u32) -> Resul
                 height as usize,
                 libjpeg_turbo_rs::PixelFormat::Rgb,
             )
-            .quality(JPEG_QUALITY)
+            .quality(jpeg_quality.clamp(1, 100))
             .encode()
             .map_err(|e| eyre!("JPEG encode failed: {e:?}"))
         }
@@ -233,6 +244,18 @@ pub fn save_edited(
     adjustments: &ImageAdjustments,
     displayed: Option<&ImageData>,
 ) -> Result<SaveOutcome> {
+    save_edited_with_quality(source, output, adjustments, displayed, JPEG_QUALITY)
+}
+
+/// Save `source` with `adjustments` applied to `output` using `jpeg_quality`,
+/// preserving EXIF (with orientation reset to 1) and ICC metadata where supported.
+pub fn save_edited_with_quality(
+    source: &Path,
+    output: &Path,
+    adjustments: &ImageAdjustments,
+    displayed: Option<&ImageData>,
+    jpeg_quality: u8,
+) -> Result<SaveOutcome> {
     let format = format_for_output(output)?;
 
     if format == SaveFormat::Jpeg && lossless_eligible(source, adjustments) {
@@ -253,12 +276,173 @@ pub fn save_edited(
 
     let (rgba, width, height) = full_resolution_pixels(source, displayed)?;
     let (edited, w, h) = ImageProcessor::apply_adjustments_cpu(&rgba, width, height, adjustments);
-    let bytes = encode(format, &edited, w, h)?;
+    let encoded = encode_with_quality(format, &edited, w, h, jpeg_quality)?;
+    let (mut exif, icc) = extract_source_metadata(source);
+    if let Some(ref mut exif_bytes) = exif {
+        normalize_exif_orientation(exif_bytes);
+    }
+    let bytes = embed_metadata(format, encoded, exif, icc);
     write_atomically(output, &bytes)?;
     Ok(SaveOutcome {
         path: output.to_path_buf(),
         lossless: false,
     })
+}
+
+/// Extract raw EXIF and ICC profile bytes from a JPEG, PNG, or WebP source file.
+fn extract_source_metadata(source: &Path) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+    use img_parts::{ImageEXIF, ImageICC};
+
+    if !source.is_file() {
+        return (None, None);
+    }
+    let Ok(data) = std::fs::read(source) else {
+        return (None, None);
+    };
+    let ext = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    match ext.as_deref() {
+        Some("jpg" | "jpeg") => {
+            let Ok(jpeg) = img_parts::jpeg::Jpeg::from_bytes(data.into()) else {
+                return (None, None);
+            };
+            (
+                jpeg.exif().map(|b| b.to_vec()),
+                jpeg.icc_profile().map(|b| b.to_vec()),
+            )
+        }
+        Some("png") => {
+            let Ok(png) = img_parts::png::Png::from_bytes(data.into()) else {
+                return (None, None);
+            };
+            (
+                png.exif().map(|b| b.to_vec()),
+                png.icc_profile().map(|b| b.to_vec()),
+            )
+        }
+        Some("webp") => {
+            let Ok(webp) = img_parts::webp::WebP::from_bytes(data.into()) else {
+                return (None, None);
+            };
+            (
+                webp.exif().map(|b| b.to_vec()),
+                webp.icc_profile().map(|b| b.to_vec()),
+            )
+        }
+        _ => (None, None),
+    }
+}
+
+/// Reset the TIFF IFD0 Orientation tag (0x0112) to 1 (normal) in a raw EXIF
+/// payload because `save_edited_with_quality` already bakes orientation into
+/// the saved pixel buffer.
+fn normalize_exif_orientation(exif: &mut [u8]) {
+    let tiff = if exif.starts_with(b"Exif\0\0") {
+        &mut exif[6..]
+    } else {
+        exif
+    };
+    if tiff.len() < 8 {
+        return;
+    }
+    let little_endian = match &tiff[0..2] {
+        b"II" => true,
+        b"MM" => false,
+        _ => return,
+    };
+    let read_u16 = |b: &[u8]| -> u16 {
+        if little_endian {
+            u16::from_le_bytes([b[0], b[1]])
+        } else {
+            u16::from_be_bytes([b[0], b[1]])
+        }
+    };
+    let read_u32 = |b: &[u8]| -> u32 {
+        if little_endian {
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        } else {
+            u32::from_be_bytes([b[0], b[1], b[2], b[3]])
+        }
+    };
+    let ifd0_offset = read_u32(&tiff[4..8]) as usize;
+    if ifd0_offset + 2 > tiff.len() {
+        return;
+    }
+    let count = read_u16(&tiff[ifd0_offset..ifd0_offset + 2]) as usize;
+    for i in 0..count {
+        let entry = ifd0_offset + 2 + i * 12;
+        if entry + 12 > tiff.len() {
+            break;
+        }
+        let tag = read_u16(&tiff[entry..entry + 2]);
+        let typ = read_u16(&tiff[entry + 2..entry + 4]);
+        let cnt = read_u32(&tiff[entry + 4..entry + 8]);
+        if tag == 0x0112 && typ == 3 && cnt == 1 {
+            let bytes = if little_endian {
+                1u16.to_le_bytes()
+            } else {
+                1u16.to_be_bytes()
+            };
+            tiff[entry + 8] = bytes[0];
+            tiff[entry + 9] = bytes[1];
+            tiff[entry + 10] = 0;
+            tiff[entry + 11] = 0;
+            break;
+        }
+    }
+}
+
+/// Embed EXIF and ICC chunks into an encoded JPEG, PNG, or WebP buffer.
+/// Falls back to `encoded` unchanged if `img_parts` cannot parse it.
+fn embed_metadata(
+    format: SaveFormat,
+    encoded: Vec<u8>,
+    exif: Option<Vec<u8>>,
+    icc: Option<Vec<u8>>,
+) -> Vec<u8> {
+    use img_parts::{ImageEXIF, ImageICC};
+
+    if exif.is_none() && icc.is_none() {
+        return encoded;
+    }
+    match format {
+        SaveFormat::Jpeg => {
+            if let Ok(mut jpeg) = img_parts::jpeg::Jpeg::from_bytes(encoded.clone().into()) {
+                if let Some(e) = exif {
+                    jpeg.set_exif(Some(e.into()));
+                }
+                if let Some(i) = icc {
+                    jpeg.set_icc_profile(Some(i.into()));
+                }
+                return jpeg.encoder().bytes().to_vec();
+            }
+        }
+        SaveFormat::Png => {
+            if let Ok(mut png) = img_parts::png::Png::from_bytes(encoded.clone().into()) {
+                if let Some(e) = exif {
+                    png.set_exif(Some(e.into()));
+                }
+                if let Some(i) = icc {
+                    png.set_icc_profile(Some(i.into()));
+                }
+                return png.encoder().bytes().to_vec();
+            }
+        }
+        SaveFormat::WebP => {
+            if let Ok(mut webp) = img_parts::webp::WebP::from_bytes(encoded.clone().into()) {
+                if let Some(e) = exif {
+                    webp.set_exif(Some(e.into()));
+                }
+                if let Some(i) = icc {
+                    webp.set_icc_profile(Some(i.into()));
+                }
+                return webp.encoder().bytes().to_vec();
+            }
+        }
+    }
+    encoded
 }
 
 fn is_jpeg_path(path: &Path) -> bool {

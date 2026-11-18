@@ -168,6 +168,15 @@ impl ImageData {
     ) {
         use rayon::prelude::*;
 
+        let total_pixels = rgba.len() / 4;
+        // For huge images (> 1 MP), sample ~500k evenly-spaced pixels instead
+        // of scanning 50M+ pixels on the CPU.
+        let stride = if total_pixels > 1_000_000 {
+            (total_pixels / 500_000).max(2)
+        } else {
+            1
+        };
+
         // Process in parallel using chunk sizes of 4096 pixels (16KB)
         let chunk_size = 4096 * 4;
         let (r, g, b) = rgba
@@ -177,7 +186,7 @@ impl ImageData {
                 let mut local_g = [0u32; 256];
                 let mut local_b = [0u32; 256];
 
-                for pixel in chunk.as_chunks::<4>().0 {
+                for pixel in chunk.as_chunks::<4>().0.iter().step_by(stride) {
                     local_r[pixel[0] as usize] += 1;
                     local_g[pixel[1] as usize] += 1;
                     local_b[pixel[2] as usize] += 1;
@@ -202,7 +211,7 @@ impl ImageData {
         let mut final_r = r;
         let mut final_g = g;
         let mut final_b = b;
-        for pixel in remainder.as_chunks::<4>().0 {
+        for pixel in remainder.as_chunks::<4>().0.iter().step_by(stride) {
             final_r[pixel[0] as usize] += 1;
             final_g[pixel[1] as usize] += 1;
             final_b[pixel[2] as usize] += 1;

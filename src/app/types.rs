@@ -53,6 +53,9 @@ pub enum AppEvent {
     SortChanged,
     /// The "match monitor colour profile" preference was toggled.
     DisplayProfileToggled,
+    /// Navigate to the previous or next image in the folder.
+    PrevImage,
+    NextImage,
 }
 
 /// Helper: send an AppEvent through the data channel, then wake the event loop.

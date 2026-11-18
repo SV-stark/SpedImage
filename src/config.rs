@@ -53,10 +53,12 @@ pub struct AppConfig {
     pub window_x: Option<i32>,
     pub window_y: Option<i32>,
     pub show_sidebar: bool,
+    pub show_adjustments: bool,
     pub show_thumbnail_strip: bool,
     pub show_info: bool,
     pub show_histogram: bool,
     pub show_osd: Option<bool>,
+    pub jpeg_quality: Option<u8>,
     pub last_open_dir: Option<String>,
     pub max_preview_dimension: Option<u32>, // None = auto from window
     pub scroll_to_zoom: Option<bool>,
@@ -104,6 +106,10 @@ impl AppConfig {
 
     pub fn display_profile_enabled(&self) -> bool {
         self.match_display_profile.unwrap_or(true)
+    }
+
+    pub fn jpeg_quality(&self) -> u8 {
+        self.jpeg_quality.unwrap_or(92).clamp(1, 100)
     }
 }
 

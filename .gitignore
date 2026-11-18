@@ -29,3 +29,13 @@ help.txt
 error.log
 project_context.md
 .gemtest
+
+# Local tooling & investigation artifacts
+attachments/
+capture/
+checks/
+inbox/
+investigation.cany/
+craft.json
+feed.json
+usage.json

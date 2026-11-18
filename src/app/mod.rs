@@ -4,6 +4,7 @@ pub mod constants;
 pub mod events;
 pub mod services;
 pub mod state;
+pub mod thumb_cache;
 pub mod types;
 pub mod view;
 
