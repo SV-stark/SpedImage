@@ -61,6 +61,77 @@ impl FileEntry {
     }
 }
 
+/// Bounded undo/redo stack for non-destructive [`ImageAdjustments`].
+///
+/// Each snapshot is ~100 bytes (`Copy`), so a 64-entry history costs ~6 KB of
+/// RAM with zero heap fragmentation beyond two small `Vec`s.
+#[derive(Debug, Default, Clone)]
+pub struct AdjustmentHistory {
+    undo_stack: Vec<ImageAdjustments>,
+    redo_stack: Vec<ImageAdjustments>,
+}
+
+impl AdjustmentHistory {
+    pub const MAX_ENTRIES: usize = 64;
+
+    /// Record the state *before* a modification. Identical consecutive
+    /// snapshots are ignored; recording a new edit clears the redo stack.
+    pub fn record(&mut self, before: ImageAdjustments) {
+        if self.undo_stack.last() == Some(&before) {
+            return;
+        }
+        if self.undo_stack.len() >= Self::MAX_ENTRIES {
+            self.undo_stack.remove(0);
+        }
+        self.undo_stack.push(before);
+        self.redo_stack.clear();
+    }
+
+    /// Step backward one edit, returning `true` if `current` was restored.
+    /// Source-intrinsic fields (`pre_rotation`, `color_space`) are preserved.
+    pub fn undo(&mut self, current: &mut ImageAdjustments) -> bool {
+        let Some(mut prev) = self.undo_stack.pop() else {
+            return false;
+        };
+        if self.redo_stack.len() >= Self::MAX_ENTRIES {
+            self.redo_stack.remove(0);
+        }
+        self.redo_stack.push(*current);
+        prev.pre_rotation = current.pre_rotation;
+        prev.color_space = current.color_space;
+        *current = prev;
+        true
+    }
+
+    /// Step forward one edit, returning `true` if `current` was restored.
+    pub fn redo(&mut self, current: &mut ImageAdjustments) -> bool {
+        let Some(mut next) = self.redo_stack.pop() else {
+            return false;
+        };
+        if self.undo_stack.len() >= Self::MAX_ENTRIES {
+            self.undo_stack.remove(0);
+        }
+        self.undo_stack.push(*current);
+        next.pre_rotation = current.pre_rotation;
+        next.color_space = current.color_space;
+        *current = next;
+        true
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+    }
+}
+
 pub struct UiState {
     pub files: Vec<FileEntry>,
     pub current_file_index: Option<usize>,
@@ -70,6 +141,9 @@ pub struct UiState {
     /// the listing they were made against.
     pub thumbnail_paths: Vec<PathBuf>,
     pub adjustments: ImageAdjustments,
+    pub history: AdjustmentHistory,
+    /// Copied tonal/colour edits for cross-image paste (`Ctrl+Alt+C` / `Ctrl+Alt+V`).
+    pub copied_adjustments: Option<ImageAdjustments>,
     pub is_cropping: bool,
     pub show_help: bool,
     pub show_sidebar: bool,
@@ -78,6 +152,7 @@ pub struct UiState {
     pub show_info: bool,
     pub show_histogram: bool,
     pub show_osd: bool,
+    pub show_color_picker: bool,
     pub selected_indices: rustc_hash::FxHashSet<usize>,
     pub status_message: Option<(String, std::time::Instant)>,
     pub sidebar_text: Option<String>,
@@ -96,6 +171,8 @@ impl Default for UiState {
             current_dir: None,
             thumbnail_paths: Vec::new(),
             adjustments: ImageAdjustments::default(),
+            history: AdjustmentHistory::default(),
+            copied_adjustments: None,
             is_cropping: false,
             show_help: false,
             show_sidebar: false,
@@ -104,6 +181,7 @@ impl Default for UiState {
             show_info: false,
             show_histogram: false,
             show_osd: true,
+            show_color_picker: false,
             selected_indices: rustc_hash::FxHashSet::default(),
             status_message: None,
             sidebar_text: None,
@@ -181,7 +259,7 @@ impl UiState {
     }
 
     pub fn reset_adjustments(&mut self) {
-        self.adjustments = ImageAdjustments::default();
+        self.adjustments.reset_user_edits();
     }
 }
 
@@ -436,5 +514,66 @@ mod tests {
         assert!(ui.selected_indices.contains(&2));
         assert!(!ui.selected_indices.contains(&1));
         assert_eq!(ui.selected_indices.len(), 2);
+    }
+
+    #[test]
+    fn test_reset_adjustments_preserves_exif_orientation_and_color_space() {
+        let mut ui = UiState::default();
+        ui.adjustments.pre_rotation = std::f32::consts::FRAC_PI_2;
+        ui.adjustments.color_space = Some(2);
+        ui.adjustments.brightness = 1.6;
+        ui.adjustments.flip_horizontal = true;
+
+        ui.reset_adjustments();
+        assert_eq!(ui.adjustments.brightness, 1.0);
+        assert!(!ui.adjustments.flip_horizontal);
+        assert!((ui.adjustments.pre_rotation - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        assert_eq!(ui.adjustments.color_space, Some(2));
+    }
+
+    #[test]
+    fn test_adjustment_history_undo_redo_and_branching() {
+        let mut history = AdjustmentHistory::default();
+        let mut adj = ImageAdjustments {
+            pre_rotation: std::f32::consts::FRAC_PI_2,
+            color_space: Some(2),
+            ..ImageAdjustments::default()
+        };
+
+        assert!(!history.can_undo());
+        assert!(!history.can_redo());
+
+        history.record(adj);
+        adj.brightness = 1.5;
+        history.record(adj);
+        adj.contrast = 1.4;
+
+        assert!(history.can_undo());
+        assert!(history.undo(&mut adj));
+        assert_eq!(adj.brightness, 1.5);
+        assert_eq!(adj.contrast, 1.0);
+        assert_eq!(adj.color_space, Some(2));
+        assert!(history.can_redo());
+
+        // Redo restores contrast
+        assert!(history.redo(&mut adj));
+        assert_eq!(adj.contrast, 1.4);
+
+        // Undo then record a new edit clears redo
+        assert!(history.undo(&mut adj));
+        history.record(adj);
+        adj.saturation = 0.5;
+        assert!(!history.can_redo());
+
+        // Bounded capacity
+        for i in 0..(AdjustmentHistory::MAX_ENTRIES + 20) {
+            history.record(adj);
+            adj.brightness = 1.0 + (i as f32) * 0.01;
+        }
+        let mut steps = 0;
+        while history.undo(&mut adj) {
+            steps += 1;
+        }
+        assert_eq!(steps, AdjustmentHistory::MAX_ENTRIES);
     }
 }

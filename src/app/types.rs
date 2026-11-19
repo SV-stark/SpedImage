@@ -56,6 +56,28 @@ pub enum AppEvent {
     /// Navigate to the previous or next image in the folder.
     PrevImage,
     NextImage,
+    /// Undo / Redo non-destructive image edits.
+    UndoEdit,
+    RedoEdit,
+    /// Snapshot captured before a UI-driven edit (e.g., slider drag start).
+    RecordEditSnapshot(Box<crate::render::ImageAdjustments>),
+    /// Run one-click histogram-driven Auto Enhance.
+    AutoEnhance,
+    /// Toggle live pixel eyedropper / colour inspector.
+    ToggleColorPicker,
+    /// Pause/resume or step animated GIF / WebP / multi-page TIFF playback.
+    ToggleAnimationPause,
+    StepAnimationFrame,
+    StepAnimationFramePrev,
+    /// Copy / Paste non-destructive edits across images.
+    CopyAdjustments,
+    PasteAdjustments,
+    /// Cycle WGSL Channel / Clipping Inspector mode.
+    CycleInspectMode,
+    /// Pan viewport center to normalized image coordinates (from Zoom Mini-Map).
+    PanToNormalized(f32, f32),
+    /// Async EXIF load completed for the given image path.
+    ExifLoaded(PathBuf, Option<String>, Option<(f64, f64)>),
 }
 
 /// Helper: send an AppEvent through the data channel, then wake the event loop.

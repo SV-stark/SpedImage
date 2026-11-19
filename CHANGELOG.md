@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-11-19
+
+### Added
+* **Non-Destructive Undo / Redo Stack (`Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z`)**: Added a bounded 64-step `AdjustmentHistory` (~6 KB max RAM) tracking transforms, crops, Auto-Enhance, resets, and slider drags, with `↶ Undo` and `↷ Redo` buttons in the Adjustments panel.
+* **Live Pixel Color Picker / Eyedropper (`P` or `💧 Pick` in OSD)**: Added pure-Rust inverse-shader coordinate mapping (`screen_to_image_pixel`) and a floating loupe HUD displaying pixel coordinates, swatch preview, `#RRGGBB`/`#RRGGBBAA` hex, `rgb()`, and `hsl()` values; left-clicking copies the hex code directly to the clipboard.
+* **One-Click Histogram-Driven Auto-Enhance (`U` or `✨ Auto`)**: Added `ImageProcessor::compute_auto_enhance` (1st/99th percentile auto-levels and gentle Gray-World white balance, subsampled for `< 1 ms` latency on high-res photos) writing directly into live GPU adjustment sliders.
+* **Copy / Paste Adjustments (`Ctrl+Alt+C` / `Ctrl+Alt+V`) & Named Presets**: Copy tonal/color edits across images and apply 4 built-in presets (*Vivid*, *Warm Film*, *B&W Classic*, *Crisp Detail*) or save/delete custom presets in `config.json`.
+* **WGSL Channel & Clipping Inspector (`Shift+C`)**: Pure-WGSL inspection modes for individual **Red / Green / Blue / Alpha** channels and a **Highlight/Shadow Clipping Zebra** overlay, packed into unused uniform padding lanes (0 extra GPU buffer bytes).
+* **Light Canvas Background Mode**: Optional light neutral canvas & checkerboard in Preferences & Export for inspecting dark transparent icons and PNGs.
+* **Zoom Navigator Mini-Map**: Interactive bottom-right navigator box shown when zoomed past 100%, with a cyan viewport rectangle supporting click-and-drag panning.
+* **Privacy Metadata Stripping & SIMD Export Resize**: Added `SaveOptions` (`strip_metadata_on_save` and `export_max_dimension`) to strip EXIF/GPS/ICC chunks (including on lossless JPEG saves via `img-parts`) and optionally downscale exports using SIMD `fast_image_resize`.
+* **Animated WebP & Multi-Page TIFF Playback / Stepping (`Shift+Space`, `,` / `.`)**: Added multi-frame WebP decoding (`image-webp`) and multi-page TIFF decoding (`tiff`), plus pause/resume and prev/next frame/page stepping controls in the OSD.
+* **Expanded Transform Shortcuts**: Added `Shift+R` (rotate 90° counter-clockwise), `X` (flip horizontal), and `Y` (flip vertical) — all undoable and compatible with lossless JPEG saving.
+* **Pure-Rust QOI & 32-bit BMP Export**: Extended `SaveFormat` with lossless `.qoi` (reusing the already-linked `qoi` crate) and uncompressed 32-bit BGRA `.bmp` (hand-rolled pure-Rust encoder) with zero new dependencies.
+
+### Changed
+* **Zero-Alloc Render Loop & Uniform Dirty Tracking**: Eliminated per-frame `String` allocations for OSD/compare labels in `RedrawRequested` and skipped `queue.write_buffer` when GPU uniforms are byte-identical.
+* **Async EXIF Loading**: Moved EXIF parsing off the UI thread onto `thread_pool` (`ensure_exif_async`) to prevent stutters on network drives or large RAW/TIFF files.
+* **Smart Prefetching & Ephemeral IPC Port**: Skipped spawning new prefetch jobs while actively dragging/panning, and replaced the hardcoded single-instance loopback port with an ephemeral port published via `ipc.port` (with fallback).
+* **CPU Adjustment Pipeline Optimization**: Hoisted per-adjustment constants (`INV_255`, white-balance offsets, shadow/highlight/clarity scalars, and brightness/contrast offsets) out of the parallel per-pixel loop in `ImageProcessor::apply_adjustments_cpu`.
+* **Modular `app/actions` Split**: Split `src/app/actions.rs` into focused submodules (`mod.rs`, `navigation.rs`, `editing.rs`, `file_ops.rs`).
+* **In-App Cheat Sheet & README**: Documented all new editing, color-picker, inspector, animation, and export features.
+
+### Fixed
+* **Resetting Adjustments Preserves EXIF Orientation & Color Space**: Added `ImageAdjustments::reset_user_edits` so pressing `1` or clicking *Reset All Adjustments* no longer wipes deferred EXIF `pre_rotation` or `color_space` tags.
+* **Duplicate Shortcut Arm Cleanup**: Removed a duplicate unreachable `"?"` keybinding arm.
+
 ## [0.11.2] - 2026-11-18
 
 ### Added

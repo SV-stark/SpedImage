@@ -30,10 +30,18 @@ pub enum SaveFormat {
     Png,
     Jpeg,
     WebP,
+    Qoi,
+    Bmp,
 }
 
 impl SaveFormat {
-    pub const ALL: [SaveFormat; 3] = [SaveFormat::Png, SaveFormat::Jpeg, SaveFormat::WebP];
+    pub const ALL: [SaveFormat; 5] = [
+        SaveFormat::Png,
+        SaveFormat::Jpeg,
+        SaveFormat::WebP,
+        SaveFormat::Qoi,
+        SaveFormat::Bmp,
+    ];
 
     pub fn from_extension(ext: &str) -> Option<Self> {
         if ext.eq_ignore_ascii_case("png") {
@@ -42,6 +50,10 @@ impl SaveFormat {
             Some(Self::Jpeg)
         } else if ext.eq_ignore_ascii_case("webp") {
             Some(Self::WebP)
+        } else if ext.eq_ignore_ascii_case("qoi") {
+            Some(Self::Qoi)
+        } else if ext.eq_ignore_ascii_case("bmp") {
+            Some(Self::Bmp)
         } else {
             None
         }
@@ -59,6 +71,8 @@ impl SaveFormat {
             Self::Png => "png",
             Self::Jpeg => "jpg",
             Self::WebP => "webp",
+            Self::Qoi => "qoi",
+            Self::Bmp => "bmp",
         }
     }
 
@@ -68,6 +82,8 @@ impl SaveFormat {
             Self::Png => &["png"],
             Self::Jpeg => &["jpg", "jpeg"],
             Self::WebP => &["webp"],
+            Self::Qoi => &["qoi"],
+            Self::Bmp => &["bmp"],
         }
     }
 
@@ -76,6 +92,8 @@ impl SaveFormat {
             Self::Png => "PNG Image",
             Self::Jpeg => "JPEG Image",
             Self::WebP => "WebP Image (lossless)",
+            Self::Qoi => "QOI Image (lossless)",
+            Self::Bmp => "BMP Image (uncompressed)",
         }
     }
 }
@@ -165,7 +183,51 @@ pub fn encode_with_quality(
             .map_err(|e| eyre!("WebP encode failed: {e:?}"))?;
             Ok(out)
         }
+        SaveFormat::Qoi => {
+            qoi::encode_to_vec(rgba, width, height).map_err(|e| eyre!("QOI encode failed: {e}"))
+        }
+        SaveFormat::Bmp => encode_bmp_bgra(rgba, width, height),
     }
+}
+
+/// Pure-Rust 32-bit BGRA BMP encoder (standard 14-byte file header + 40-byte
+/// BITMAPINFOHEADER, bottom-up scanlines). Zero dependencies, lossless, fast.
+fn encode_bmp_bgra(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
+    let pixel_bytes = (width as u64)
+        .checked_mul(height as u64)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or_else(|| eyre!("BMP dimensions overflow"))?;
+    let file_size = 54u64
+        .checked_add(pixel_bytes)
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| eyre!("BMP exceeds 4 GiB format limit"))?;
+
+    let mut out = Vec::with_capacity(file_size as usize);
+    // BITMAPFILEHEADER (14 bytes)
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&file_size.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // reserved
+    out.extend_from_slice(&54u32.to_le_bytes()); // pixel data offset
+    // BITMAPINFOHEADER (40 bytes)
+    out.extend_from_slice(&40u32.to_le_bytes()); // header size
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(height as i32).to_le_bytes()); // positive = bottom-up
+    out.extend_from_slice(&1u16.to_le_bytes()); // planes
+    out.extend_from_slice(&32u16.to_le_bytes()); // bpp
+    out.extend_from_slice(&0u32.to_le_bytes()); // BI_RGB (uncompressed)
+    out.extend_from_slice(&(pixel_bytes as u32).to_le_bytes());
+    out.extend_from_slice(&2835i32.to_le_bytes()); // ~72 DPI X
+    out.extend_from_slice(&2835i32.to_le_bytes()); // ~72 DPI Y
+    out.extend_from_slice(&0u32.to_le_bytes()); // colors used
+    out.extend_from_slice(&0u32.to_le_bytes()); // important colors
+
+    let row_stride = width as usize * 4;
+    for row in rgba.chunks_exact(row_stride).rev() {
+        for px in row.as_chunks::<4>().0 {
+            out.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
+        }
+    }
+    Ok(out)
 }
 
 /// Composite straight-alpha RGBA onto white, producing packed RGB.
@@ -198,7 +260,7 @@ fn format_for_output(path: &Path) -> Result<SaveFormat> {
             .extension()
             .map(|e| format!(".{}", e.to_string_lossy()))
             .unwrap_or_else(|| "a file with no extension".to_string());
-        eyre!("Cannot save as {ext}: use a .png, .jpg or .webp file name")
+        eyre!("Cannot save as {ext}: use a .png, .jpg, .webp, .qoi or .bmp file name")
     })
 }
 
@@ -247,6 +309,26 @@ pub fn save_edited(
     save_edited_with_quality(source, output, adjustments, displayed, JPEG_QUALITY)
 }
 
+/// Export parameters for [`save_edited_with_options`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SaveOptions {
+    pub jpeg_quality: u8,
+    /// Strip EXIF, GPS, and ICC chunks on save (privacy export).
+    pub strip_metadata: bool,
+    /// Optional longest-edge cap in pixels; `None` keeps full resolution.
+    pub max_dimension: Option<u32>,
+}
+
+impl Default for SaveOptions {
+    fn default() -> Self {
+        Self {
+            jpeg_quality: JPEG_QUALITY,
+            strip_metadata: false,
+            max_dimension: None,
+        }
+    }
+}
+
 /// Save `source` with `adjustments` applied to `output` using `jpeg_quality`,
 /// preserving EXIF (with orientation reset to 1) and ICC metadata where supported.
 pub fn save_edited_with_quality(
@@ -256,11 +338,36 @@ pub fn save_edited_with_quality(
     displayed: Option<&ImageData>,
     jpeg_quality: u8,
 ) -> Result<SaveOutcome> {
-    let format = format_for_output(output)?;
+    save_edited_with_options(
+        source,
+        output,
+        adjustments,
+        displayed,
+        SaveOptions {
+            jpeg_quality,
+            ..SaveOptions::default()
+        },
+    )
+}
 
-    if format == SaveFormat::Jpeg && lossless_eligible(source, adjustments) {
+/// Save `source` with `adjustments` applied to `output` according to `options`
+/// (JPEG quality, optional metadata stripping, optional SIMD longest-edge resize).
+pub fn save_edited_with_options(
+    source: &Path,
+    output: &Path,
+    adjustments: &ImageAdjustments,
+    displayed: Option<&ImageData>,
+    options: SaveOptions,
+) -> Result<SaveOutcome> {
+    let format = format_for_output(output)?;
+    let max_dim = options.max_dimension.filter(|&d| d > 0);
+
+    if format == SaveFormat::Jpeg && max_dim.is_none() && lossless_eligible(source, adjustments) {
         match lossless_jpeg(source, adjustments) {
-            Ok(Some(bytes)) => {
+            Ok(Some(mut bytes)) => {
+                if options.strip_metadata {
+                    bytes = strip_jpeg_metadata(bytes);
+                }
                 write_atomically(output, &bytes)?;
                 return Ok(SaveOutcome {
                     path: output.to_path_buf(),
@@ -275,18 +382,72 @@ pub fn save_edited_with_quality(
     }
 
     let (rgba, width, height) = full_resolution_pixels(source, displayed)?;
-    let (edited, w, h) = ImageProcessor::apply_adjustments_cpu(&rgba, width, height, adjustments);
-    let encoded = encode_with_quality(format, &edited, w, h, jpeg_quality)?;
-    let (mut exif, icc) = extract_source_metadata(source);
-    if let Some(ref mut exif_bytes) = exif {
-        normalize_exif_orientation(exif_bytes);
+    let (mut edited, mut w, mut h) =
+        ImageProcessor::apply_adjustments_cpu(&rgba, width, height, adjustments);
+
+    if let Some(cap) = max_dim
+        && (w > cap || h > cap)
+    {
+        let (resized, rw, rh) = resize_rgba_to_fit(&edited, w, h, cap)?;
+        edited = resized;
+        w = rw;
+        h = rh;
     }
-    let bytes = embed_metadata(format, encoded, exif, icc);
+
+    let encoded = encode_with_quality(format, &edited, w, h, options.jpeg_quality)?;
+    let bytes = if options.strip_metadata {
+        encoded
+    } else {
+        let (mut exif, icc) = extract_source_metadata(source);
+        if let Some(ref mut exif_bytes) = exif {
+            normalize_exif_orientation(exif_bytes);
+        }
+        embed_metadata(format, encoded, exif, icc)
+    };
     write_atomically(output, &bytes)?;
     Ok(SaveOutcome {
         path: output.to_path_buf(),
         lossless: false,
     })
+}
+
+/// Strip EXIF and ICC chunks from an already-encoded JPEG without touching DCT coefficients.
+fn strip_jpeg_metadata(encoded: Vec<u8>) -> Vec<u8> {
+    use img_parts::{ImageEXIF, ImageICC};
+    if let Ok(mut jpeg) = img_parts::jpeg::Jpeg::from_bytes(encoded.clone().into()) {
+        jpeg.set_exif(None);
+        jpeg.set_icc_profile(None);
+        return jpeg.encoder().bytes().to_vec();
+    }
+    encoded
+}
+
+/// Downscale an RGBA8 buffer so its longest edge is at most `max_dim`,
+/// preserving aspect ratio with SIMD `fast_image_resize`.
+fn resize_rgba_to_fit(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    max_dim: u32,
+) -> Result<(Vec<u8>, u32, u32)> {
+    use fast_image_resize as fr;
+    let max_dim = max_dim.max(1);
+    let longest = width.max(height);
+    if longest <= max_dim {
+        return Ok((rgba.to_vec(), width, height));
+    }
+    let scale = max_dim as f64 / longest as f64;
+    let dst_w = ((width as f64 * scale).round() as u32).max(1);
+    let dst_h = ((height as f64 * scale).round() as u32).max(1);
+
+    let src = fr::images::ImageRef::new(width, height, rgba, fr::PixelType::U8x4)
+        .map_err(|e| eyre!("Export resize src failed: {e:?}"))?;
+    let mut dst = fr::images::Image::new(dst_w, dst_h, fr::PixelType::U8x4);
+    let mut resizer = ImageProcessor::create_simd_resizer();
+    resizer
+        .resize(&src, &mut dst, None)
+        .map_err(|e| eyre!("Export resize failed: {e:?}"))?;
+    Ok((dst.into_vec(), dst_w, dst_h))
 }
 
 /// Extract raw EXIF and ICC profile bytes from a JPEG, PNG, or WebP source file.
@@ -441,6 +602,7 @@ fn embed_metadata(
                 return webp.encoder().bytes().to_vec();
             }
         }
+        SaveFormat::Qoi | SaveFormat::Bmp => {}
     }
     encoded
 }

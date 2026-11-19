@@ -32,7 +32,109 @@ pub fn restore_position(
     on_screen.then(|| PhysicalPosition::new(x as i32, y as i32))
 }
 
+/// Map a cursor position inside the image viewport (physical pixels) back to
+/// the exact `(x, y)` pixel in `image_size`, inverting the vertex shader's
+/// aspect fit, rotation, flip, and zoom/crop transforms.
+///
+/// Returns `None` when the cursor lies outside the rendered image bounds.
+pub fn screen_to_image_pixel(
+    cursor_view_px: (f32, f32),
+    view_size_px: (f32, f32),
+    image_size: (u32, u32),
+    adjustments: &crate::render::ImageAdjustments,
+) -> Option<(u32, u32)> {
+    let (vw, vh) = view_size_px;
+    let (iw, ih) = image_size;
+    if vw <= 0.0 || vh <= 0.0 || iw == 0 || ih == 0 {
+        return None;
+    }
+
+    let total_rotation = adjustments.rotation + adjustments.pre_rotation;
+    let rot_deg = (total_rotation.to_degrees() % 360.0).round().abs();
+    let is_sideways = (rot_deg - 90.0).abs() < 1.0 || (rot_deg - 270.0).abs() < 1.0;
+    let raw_aspect = iw as f32 / ih as f32;
+    let aspect_ratio = if is_sideways {
+        1.0 / raw_aspect
+    } else {
+        raw_aspect
+    };
+    let window_aspect = vw / vh;
+    let ratio = aspect_ratio / window_aspect;
+
+    // Physical viewport pixel -> NDC [-1, 1] (Y points up in NDC).
+    let ndc_x = (cursor_view_px.0 / vw) * 2.0 - 1.0;
+    let ndc_y = 1.0 - (cursor_view_px.1 / vh) * 2.0;
+
+    // Invert aspect-ratio fit from `vertex_main`.
+    let (rot_x, rot_y) = if ratio > 1.0 {
+        (ndc_x, ndc_y * ratio)
+    } else {
+        (ndc_x / ratio, ndc_y)
+    };
+
+    // Invert 2D rotation by `-total_rotation`.
+    let c = total_rotation.cos();
+    let s = total_rotation.sin();
+    let px = rot_x * c + rot_y * s;
+    let py = -rot_x * s + rot_y * c;
+
+    if !(-1.0..=1.0).contains(&px) || !(-1.0..=1.0).contains(&py) {
+        return None;
+    }
+
+    // Quad NDC -> base tex_coords [0, 1].
+    let mut tc_x = (px + 1.0) * 0.5;
+    let mut tc_y = (1.0 - py) * 0.5;
+    if adjustments.flip_horizontal {
+        tc_x = 1.0 - tc_x;
+    }
+    if adjustments.flip_vertical {
+        tc_y = 1.0 - tc_y;
+    }
+
+    // Apply zoom/crop rect.
+    let u = adjustments.crop_rect[0] + tc_x * adjustments.crop_rect[2];
+    let v = adjustments.crop_rect[1] + tc_y * adjustments.crop_rect[3];
+    if !(0.0..=1.0).contains(&u) || !(0.0..=1.0).contains(&v) {
+        return None;
+    }
+
+    let x = ((u * iw as f32).floor() as u32).min(iw - 1);
+    let y = ((v * ih as f32).floor() as u32).min(ih - 1);
+    Some((x, y))
+}
+
 impl SpedImageApp {
+    /// Sample the RGBA pixel currently under the cursor, if the eyedropper is
+    /// enabled and the cursor is over the image.
+    pub(crate) fn sample_pixel_at_cursor(&self) -> Option<crate::render::ColorSample> {
+        if !self.ui_state.show_color_picker {
+            return None;
+        }
+        let img = self.current_image.as_ref()?;
+        let view_pos = self.to_image_view(self.last_cursor_pos);
+        let view_size = self.image_view_size();
+        let (x, y) = screen_to_image_pixel(
+            (view_pos.x as f32, view_pos.y as f32),
+            view_size,
+            (img.width, img.height),
+            &self.ui_state.adjustments,
+        )?;
+        let idx = ((y as usize) * (img.width as usize) + (x as usize)) * 4;
+        if idx + 4 > img.rgba_data.len() {
+            return None;
+        }
+        Some(crate::render::ColorSample {
+            x,
+            y,
+            r: img.rgba_data[idx],
+            g: img.rgba_data[idx + 1],
+            b: img.rgba_data[idx + 2],
+            a: img.rgba_data[idx + 3],
+            cursor_px: (self.last_cursor_pos.x as f32, self.last_cursor_pos.y as f32),
+        })
+    }
+
     /// Re-read the monitor's ICC profile and push the resulting matrix to the
     /// renderer (or clear it when the preference is off or there is none).
     pub(crate) fn refresh_display_profile(&mut self) {
@@ -226,5 +328,57 @@ mod tests {
         let size = PhysicalSize::new(1200, 800);
         assert_eq!(restore_position((None, Some(10)), size, &monitors()), None);
         assert_eq!(restore_position((Some(10), Some(10)), size, &[]), None);
+    }
+
+    #[test]
+    fn screen_to_image_pixel_maps_fit_flip_zoom_and_rotation() {
+        use crate::render::{ColorSample, ImageAdjustments};
+
+        let mut adj = ImageAdjustments::default();
+        // 100x100 image inside 200x100 viewport -> pillarboxed to x in [50, 150].
+        assert_eq!(
+            screen_to_image_pixel((10.0, 50.0), (200.0, 100.0), (100, 100), &adj),
+            None,
+            "left pillarbox margin is outside image"
+        );
+        assert_eq!(
+            screen_to_image_pixel((100.0, 50.0), (200.0, 100.0), (100, 100), &adj),
+            Some((50, 50))
+        );
+        assert_eq!(
+            screen_to_image_pixel((50.5, 0.5), (200.0, 100.0), (100, 100), &adj),
+            Some((0, 0))
+        );
+
+        // Horizontal flip mirrors X.
+        adj.flip_horizontal = true;
+        assert_eq!(
+            screen_to_image_pixel((50.5, 0.5), (200.0, 100.0), (100, 100), &adj),
+            Some((99, 0))
+        );
+        adj.flip_horizontal = false;
+
+        // Zoomed to bottom-right quadrant [0.5, 0.5, 0.5, 0.5].
+        adj.crop_rect = [0.5, 0.5, 0.5, 0.5];
+        assert_eq!(
+            screen_to_image_pixel((50.5, 0.5), (200.0, 100.0), (100, 100), &adj),
+            Some((50, 50))
+        );
+
+        // ColorSample formatting and HSL conversion.
+        let red = ColorSample {
+            x: 1,
+            y: 2,
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 255,
+            cursor_px: (0.0, 0.0),
+        };
+        assert_eq!(red.hex_string(), "#FF0000");
+        assert_eq!(red.hsl(), (0, 100, 50));
+
+        let semi = ColorSample { a: 128, ..red };
+        assert_eq!(semi.hex_string(), "#FF000080");
     }
 }

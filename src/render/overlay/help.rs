@@ -88,6 +88,7 @@ pub(super) fn draw_help_modal(ctx: &egui::Context, logical_h: f32) {
                             ("T", "Toggle Thumbnail Strip"),
                             ("I", "Toggle EXIF Metadata Info"),
                             ("Shift + H", "Toggle RGB Histogram"),
+                            ("P", "Toggle Pixel Color Picker (click to copy hex)"),
                             ("Tab", "Toggle OSD Info Bar"),
                             ("Ctrl + F", "Find File in folder"),
                             ("? / F1", "Toggle this Cheat Sheet"),
@@ -95,12 +96,28 @@ pub(super) fn draw_help_modal(ctx: &egui::Context, logical_h: f32) {
                     );
                     section(
                         ui,
-                        "Editing & File Operations",
+                        "Editing, Animation & File Operations",
                         &[
-                            ("R", "Rotate 90° clockwise"),
+                            ("R / Shift + R", "Rotate 90° clockwise / counter-clockwise"),
+                            ("X / Y", "Flip horizontal / Flip vertical"),
+                            ("U", "Auto-Enhance levels & white balance"),
+                            (
+                                "Ctrl + Z / Ctrl + Y",
+                                "Undo / Redo edit (also Ctrl+Shift+Z)",
+                            ),
+                            (
+                                "Ctrl + Alt + C / V",
+                                "Copy / Paste adjustments across images",
+                            ),
+                            (
+                                "Shift + C",
+                                "Cycle Channel / Clipping Inspector (R/G/B/A/Zebra)",
+                            ),
                             ("C", "Toggle Crop mode (drag corners/edges)"),
                             ("H", "Toggle HDR Toning"),
                             ("1", "Reset all adjustments"),
+                            ("Shift + Space", "Pause / Resume animated GIF or WebP"),
+                            (", / .", "Step previous / next animation frame or TIFF page"),
                             ("O", "Open file dialog"),
                             ("Ctrl + S", "Save edited copy"),
                             ("Ctrl + Shift + S", "Save As / Batch save selected"),

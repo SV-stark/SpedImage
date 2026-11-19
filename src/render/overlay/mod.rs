@@ -186,7 +186,7 @@ impl Renderer {
             );
             for (id, text, dx) in [
                 ("compare_left", format!("📌 {pinned}"), -half / 2.0),
-                ("compare_right", current.clone(), half / 2.0),
+                ("compare_right", (*current).to_string(), half / 2.0),
             ] {
                 egui::Area::new(egui::Id::new(id))
                     .anchor(egui::Align2::CENTER_TOP, egui::vec2(dx, 84.0))
@@ -332,6 +332,7 @@ impl Renderer {
                 &display_adj,
                 params.transition_factor,
                 params.config.checkerboard_enabled(),
+                params.config.light_canvas_enabled(),
                 &view,
                 &mut encoder,
             );

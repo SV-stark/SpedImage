@@ -39,6 +39,119 @@ impl SortKey {
     }
 }
 
+/// A named set of non-destructive tonal & colour adjustments that can be
+/// applied in one click or persisted in `config.json`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(default)]
+pub struct AdjustmentPreset {
+    pub name: String,
+    pub brightness: f32,
+    pub contrast: f32,
+    pub saturation: f32,
+    pub highlights: f32,
+    pub shadows: f32,
+    pub clarity: f32,
+    pub temperature: f32,
+    pub tint: f32,
+    pub sharpen: f32,
+    pub hdr_toning: bool,
+}
+
+impl Default for AdjustmentPreset {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            brightness: 1.0,
+            contrast: 1.0,
+            saturation: 1.0,
+            highlights: 0.0,
+            shadows: 0.0,
+            clarity: 0.0,
+            temperature: 0.0,
+            tint: 0.0,
+            sharpen: 0.0,
+            hdr_toning: false,
+        }
+    }
+}
+
+impl AdjustmentPreset {
+    pub fn from_adjustments(
+        name: impl Into<String>,
+        adj: &crate::render::ImageAdjustments,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            brightness: adj.brightness,
+            contrast: adj.contrast,
+            saturation: adj.saturation,
+            highlights: adj.highlights,
+            shadows: adj.shadows,
+            clarity: adj.clarity,
+            temperature: adj.temperature,
+            tint: adj.tint,
+            sharpen: adj.sharpen,
+            hdr_toning: adj.hdr_toning,
+        }
+    }
+
+    pub fn apply_to(&self, adj: &mut crate::render::ImageAdjustments) {
+        adj.brightness = self.brightness;
+        adj.contrast = self.contrast;
+        adj.saturation = self.saturation;
+        adj.highlights = self.highlights;
+        adj.shadows = self.shadows;
+        adj.clarity = self.clarity;
+        adj.temperature = self.temperature;
+        adj.tint = self.tint;
+        adj.sharpen = self.sharpen;
+        adj.hdr_toning = self.hdr_toning;
+    }
+
+    /// Four zero-config built-in presets available out of the box.
+    pub fn built_ins() -> [Self; 4] {
+        [
+            Self {
+                name: "Vivid".to_string(),
+                brightness: 1.03,
+                contrast: 1.12,
+                saturation: 1.25,
+                clarity: 0.15,
+                ..Self::default()
+            },
+            Self {
+                name: "Warm Film".to_string(),
+                brightness: 1.02,
+                contrast: 1.08,
+                saturation: 0.92,
+                shadows: 0.12,
+                temperature: 0.18,
+                tint: 0.04,
+                ..Self::default()
+            },
+            Self {
+                name: "B&W Classic".to_string(),
+                brightness: 1.0,
+                contrast: 1.22,
+                saturation: 0.0,
+                clarity: 0.20,
+                highlights: -0.10,
+                shadows: 0.08,
+                ..Self::default()
+            },
+            Self {
+                name: "Crisp Detail".to_string(),
+                brightness: 1.0,
+                contrast: 1.10,
+                saturation: 1.05,
+                clarity: 0.28,
+                sharpen: 0.55,
+                ..Self::default()
+            },
+        ]
+    }
+}
+
 // `default` at the container level: a field missing from an older or
 // hand-edited file falls back to its default instead of failing the whole
 // parse (which used to reset every preference at once).
@@ -73,6 +186,14 @@ pub struct AppConfig {
     /// Convert from sRGB to the monitor's ICC profile when one is installed.
     /// Defaults to true.
     pub match_display_profile: Option<bool>,
+    /// Strip EXIF, GPS, and ICC metadata when saving images (privacy export).
+    pub strip_metadata_on_save: Option<bool>,
+    /// Optional longest-edge resize cap (in pixels) when saving; `None` or `0` keeps original.
+    pub export_max_dimension: Option<u32>,
+    /// Use a light neutral canvas behind the image (helpful for dark transparent icons/PNGs).
+    pub light_canvas: Option<bool>,
+    /// User-saved named adjustment presets.
+    pub custom_presets: Vec<AdjustmentPreset>,
 }
 
 impl AppConfig {
@@ -110,6 +231,18 @@ impl AppConfig {
 
     pub fn jpeg_quality(&self) -> u8 {
         self.jpeg_quality.unwrap_or(92).clamp(1, 100)
+    }
+
+    pub fn strip_metadata_enabled(&self) -> bool {
+        self.strip_metadata_on_save.unwrap_or(false)
+    }
+
+    pub fn export_max_dim(&self) -> Option<u32> {
+        self.export_max_dimension.filter(|&d| d > 0)
+    }
+
+    pub fn light_canvas_enabled(&self) -> bool {
+        self.light_canvas.unwrap_or(false)
     }
 }
 
@@ -309,5 +442,28 @@ mod tests {
                 serde_json::from_str(&serde_json::to_string(&key).unwrap()).unwrap();
             assert_eq!(back, key);
         }
+    }
+
+    #[test]
+    fn presets_and_export_options_round_trip() {
+        let mut adj = crate::render::ImageAdjustments::default();
+        let bw = &AdjustmentPreset::built_ins()[2];
+        bw.apply_to(&mut adj);
+        assert_eq!(adj.saturation, 0.0);
+
+        let cfg = AppConfig {
+            strip_metadata_on_save: Some(true),
+            export_max_dimension: Some(1920),
+            light_canvas: Some(true),
+            custom_presets: vec![AdjustmentPreset::from_adjustments("Mine", &adj)],
+            ..Default::default()
+        };
+        let parsed = AppConfig::parse_lenient(&serde_json::to_string(&cfg).unwrap());
+        assert!(parsed.is_clean());
+        assert!(parsed.config.strip_metadata_enabled());
+        assert_eq!(parsed.config.export_max_dim(), Some(1920));
+        assert!(parsed.config.light_canvas_enabled());
+        assert_eq!(parsed.config.custom_presets.len(), 1);
+        assert_eq!(parsed.config.custom_presets[0].name, "Mine");
     }
 }

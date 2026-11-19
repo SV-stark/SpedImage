@@ -217,16 +217,40 @@ fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // 8. Monitor colour profile
     color = to_display(color);
 
-    // 9. Transparency Handling with Subtle Checkerboard Canvas
+    // 8b. Channel / Clipping Inspector (packed into display_col1.w)
+    let inspect = i32(round(uniforms.display_col1.w));
+    if (inspect == 1) {
+        color = vec4<f32>(color.r, color.r, color.r, color.a);
+    } else if (inspect == 2) {
+        color = vec4<f32>(color.g, color.g, color.g, color.a);
+    } else if (inspect == 3) {
+        color = vec4<f32>(color.b, color.b, color.b, color.a);
+    } else if (inspect == 4) {
+        return vec4<f32>(color.a, color.a, color.a, 1.0);
+    } else if (inspect == 5) {
+        let hi = max(max(color.r, color.g), color.b) >= 0.992;
+        let lo = min(min(color.r, color.g), color.b) <= 0.008;
+        let stripe = ((floor((in.position.x + in.position.y) / 6.0)) % 2.0) > 0.5;
+        if (hi && stripe) {
+            return vec4<f32>(1.0, 0.15, 0.15, 1.0);
+        } else if (lo && stripe) {
+            return vec4<f32>(0.15, 0.45, 1.0, 1.0);
+        }
+    }
+
+    // 9. Transparency Handling with Subtle Checkerboard Canvas (dark or light)
+    let light_canvas = uniforms.display_col2.w > 0.5;
     if (color.a < 0.999) {
         if (uniforms.checkerboard > 0.5) {
             let checker_size = 16.0;
             let check_val = (floor(in.position.x / checker_size) + floor(in.position.y / checker_size)) % 2.0;
-            let check_bg = select(vec3<f32>(0.14, 0.15, 0.19), vec3<f32>(0.20, 0.22, 0.27), check_val > 0.5);
+            let c_a = select(vec3<f32>(0.14, 0.15, 0.19), vec3<f32>(0.82, 0.84, 0.87), light_canvas);
+            let c_b = select(vec3<f32>(0.20, 0.22, 0.27), vec3<f32>(0.92, 0.93, 0.95), light_canvas);
+            let check_bg = select(c_a, c_b, check_val > 0.5);
             color = vec4<f32>(mix(check_bg, color.rgb, color.a), 1.0);
         } else {
-            let dark_bg = vec3<f32>(0.12, 0.12, 0.12);
-            color = vec4<f32>(mix(dark_bg, color.rgb, color.a), 1.0);
+            let bg = select(vec3<f32>(0.12, 0.12, 0.12), vec3<f32>(0.90, 0.91, 0.93), light_canvas);
+            color = vec4<f32>(mix(bg, color.rgb, color.a), 1.0);
         }
     }
     

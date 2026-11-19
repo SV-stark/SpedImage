@@ -51,6 +51,9 @@ pub struct Renderer {
     /// Uniforms for the compare draw. A second buffer, because both halves
     /// are drawn in one pass and a buffer write cannot change between draws.
     pub(crate) compare_uniform_buffer: wgpu::Buffer,
+    /// Last bytes uploaded to `uniform_buffer`, so unchanged frames skip
+    /// `queue.write_buffer`.
+    pub(crate) last_uniforms_bytes: Option<[u8; std::mem::size_of::<Uniforms>()]>,
 }
 
 /// GPU state for the pinned image in compare mode.
@@ -221,6 +224,7 @@ impl Renderer {
             display_matrix: None,
             compare: None,
             compare_uniform_buffer,
+            last_uniforms_bytes: None,
         })
     }
 }
@@ -1024,6 +1028,7 @@ impl Renderer {
         adjustments: &ImageAdjustments,
         transition_factor: f32,
         checkerboard: bool,
+        light_canvas: bool,
         image_size: Option<(u32, u32)>,
         viewport_aspect: f32,
     ) -> Uniforms {
@@ -1053,7 +1058,7 @@ impl Renderer {
             )
         };
 
-        Uniforms {
+        let mut u = Uniforms {
             rotation: total_rotation,
             aspect_ratio,
             window_aspect_ratio: viewport_aspect,
@@ -1089,14 +1094,20 @@ impl Renderer {
             color_matrix_col2: col2,
             ..Uniforms::identity()
         }
-        .with_display_matrix(self.display_matrix.as_ref())
+        .with_display_matrix(self.display_matrix.as_ref());
+        // Pack inspect_mode and light_canvas into the two unused `.w` padding
+        // lanes of `display_col1` and `display_col2` (zero extra buffer bytes).
+        u.display_col1[3] = adjustments.inspect_mode.as_f32();
+        u.display_col2[3] = if light_canvas { 1.0 } else { 0.0 };
+        u
     }
 
     pub(crate) fn encode_image(
-        &self,
+        &mut self,
         adjustments: &ImageAdjustments,
         transition_factor: f32,
         checkerboard: bool,
+        light_canvas: bool,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -1111,11 +1122,15 @@ impl Renderer {
             adjustments,
             transition_factor,
             checkerboard,
+            light_canvas,
             self.image_size,
             right_w as f32 / win_h as f32,
         );
-        self.queue
-            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        let bytes: [u8; std::mem::size_of::<Uniforms>()] = bytemuck::cast(uniforms);
+        if self.last_uniforms_bytes.as_ref() != Some(&bytes) {
+            self.queue.write_buffer(&self.uniform_buffer, 0, &bytes);
+            self.last_uniforms_bytes = Some(bytes);
+        }
 
         if let Some(c) = &self.compare {
             // The pinned side shares zoom/pan so both show the same region,
@@ -1130,6 +1145,7 @@ impl Renderer {
                 &pinned,
                 1.0,
                 checkerboard,
+                light_canvas,
                 Some((c.width, c.height)),
                 left_w.max(1) as f32 / win_h as f32,
             );
@@ -1137,13 +1153,24 @@ impl Renderer {
                 .write_buffer(&self.compare_uniform_buffer, 0, bytemuck::bytes_of(&u));
         }
 
+        let clear_color = if light_canvas {
+            wgpu::Color {
+                r: 0.88,
+                g: 0.89,
+                b: 0.91,
+                a: 1.0,
+            }
+        } else {
+            wgpu::Color::BLACK
+        };
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    load: wgpu::LoadOp::Clear(clear_color),
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,

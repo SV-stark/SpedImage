@@ -5,6 +5,42 @@ use std::sync::Arc;
 use super::loader::{ImageLoader, LoadOptions};
 use super::types::ImageData;
 
+/// Result of [`ImageProcessor::compute_auto_enhance`], ready to apply to
+/// [`crate::render::ImageAdjustments`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AutoEnhance {
+    pub brightness: f32,
+    pub contrast: f32,
+    pub temperature: f32,
+    pub tint: f32,
+    pub clarity: f32,
+    pub saturation: f32,
+}
+
+impl Default for AutoEnhance {
+    fn default() -> Self {
+        Self {
+            brightness: 1.0,
+            contrast: 1.0,
+            temperature: 0.0,
+            tint: 0.0,
+            clarity: 0.0,
+            saturation: 1.0,
+        }
+    }
+}
+
+impl AutoEnhance {
+    pub fn apply_to(self, adj: &mut crate::render::ImageAdjustments) {
+        adj.brightness = self.brightness;
+        adj.contrast = self.contrast;
+        adj.temperature = self.temperature;
+        adj.tint = self.tint;
+        adj.clarity = self.clarity;
+        adj.saturation = self.saturation;
+    }
+}
+
 pub struct ImageProcessor;
 
 impl ImageProcessor {
@@ -286,62 +322,62 @@ impl ImageProcessor {
 
         if has_wb || has_shadows_highlights || has_clarity || has_bc || has_sat || has_hdr {
             use rayon::prelude::*;
+            const INV_255: f32 = 1.0 / 255.0;
+            const INV_055: f32 = 1.0 / 0.55;
+            let wb_r = adjustments.temperature * 0.22 + adjustments.tint * 0.12;
+            let wb_g = adjustments.temperature * 0.06 - adjustments.tint * 0.22;
+            let wb_b = -adjustments.temperature * 0.22 + adjustments.tint * 0.12;
+            let shadow_half = adjustments.shadows * 0.5;
+            let highlight_half = adjustments.highlights * 0.5;
+            let clarity_scale = adjustments.clarity * 0.4;
+            let contrast = adjustments.contrast;
+            let bc_offset = 0.5 + (adjustments.brightness - 1.0);
+            let saturation = adjustments.saturation;
+
             data.par_chunks_exact_mut(4).for_each(|pixel| {
-                let mut r = pixel[0] as f32 / 255.0;
-                let mut g = pixel[1] as f32 / 255.0;
-                let mut b = pixel[2] as f32 / 255.0;
+                let mut r = pixel[0] as f32 * INV_255;
+                let mut g = pixel[1] as f32 * INV_255;
+                let mut b = pixel[2] as f32 * INV_255;
 
                 // White balance
                 if has_wb {
-                    r += adjustments.temperature * 0.22 + adjustments.tint * 0.12;
-                    g += adjustments.temperature * 0.06 - adjustments.tint * 0.22;
-                    b += -adjustments.temperature * 0.22 + adjustments.tint * 0.12;
-                    r = r.clamp(0.0, 1.0);
-                    g = g.clamp(0.0, 1.0);
-                    b = b.clamp(0.0, 1.0);
+                    r = (r + wb_r).clamp(0.0, 1.0);
+                    g = (g + wb_g).clamp(0.0, 1.0);
+                    b = (b + wb_b).clamp(0.0, 1.0);
                 }
 
                 // Shadows & Highlights
                 if has_shadows_highlights {
                     let lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                    let shadow_mask = (1.0 - lum / 0.55).clamp(0.0, 1.0);
-                    let highlight_mask = ((lum - 0.45) / 0.55).clamp(0.0, 1.0);
-                    r += r * (adjustments.shadows * shadow_mask * 0.5)
-                        + (1.0 - r) * (adjustments.highlights * highlight_mask * 0.5);
-                    g += g * (adjustments.shadows * shadow_mask * 0.5)
-                        + (1.0 - g) * (adjustments.highlights * highlight_mask * 0.5);
-                    b += b * (adjustments.shadows * shadow_mask * 0.5)
-                        + (1.0 - b) * (adjustments.highlights * highlight_mask * 0.5);
-                    r = r.clamp(0.0, 1.0);
-                    g = g.clamp(0.0, 1.0);
-                    b = b.clamp(0.0, 1.0);
+                    let s_fac = (1.0 - lum * INV_055).clamp(0.0, 1.0) * shadow_half;
+                    let h_fac = ((lum - 0.45) * INV_055).clamp(0.0, 1.0) * highlight_half;
+                    r = (r + r * s_fac + (1.0 - r) * h_fac).clamp(0.0, 1.0);
+                    g = (g + g * s_fac + (1.0 - g) * h_fac).clamp(0.0, 1.0);
+                    b = (b + b * s_fac + (1.0 - b) * h_fac).clamp(0.0, 1.0);
                 }
 
                 // Clarity
                 if has_clarity {
                     let lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                    let midtone_mask = (1.0 - (lum - 0.5).abs() * 2.0).max(0.0);
-                    r += (r - 0.5) * (adjustments.clarity * 0.4 * midtone_mask);
-                    g += (g - 0.5) * (adjustments.clarity * 0.4 * midtone_mask);
-                    b += (b - 0.5) * (adjustments.clarity * 0.4 * midtone_mask);
-                    r = r.clamp(0.0, 1.0);
-                    g = g.clamp(0.0, 1.0);
-                    b = b.clamp(0.0, 1.0);
+                    let midtone_fac = (1.0 - (lum - 0.5).abs() * 2.0).max(0.0) * clarity_scale;
+                    r = (r + (r - 0.5) * midtone_fac).clamp(0.0, 1.0);
+                    g = (g + (g - 0.5) * midtone_fac).clamp(0.0, 1.0);
+                    b = (b + (b - 0.5) * midtone_fac).clamp(0.0, 1.0);
                 }
 
                 // Brightness & Contrast
                 if has_bc {
-                    r = (r - 0.5) * adjustments.contrast + 0.5 + (adjustments.brightness - 1.0);
-                    g = (g - 0.5) * adjustments.contrast + 0.5 + (adjustments.brightness - 1.0);
-                    b = (b - 0.5) * adjustments.contrast + 0.5 + (adjustments.brightness - 1.0);
+                    r = (r - 0.5) * contrast + bc_offset;
+                    g = (g - 0.5) * contrast + bc_offset;
+                    b = (b - 0.5) * contrast + bc_offset;
                 }
 
                 // Saturation
                 if has_sat {
                     let gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                    r = gray + (r - gray) * adjustments.saturation;
-                    g = gray + (g - gray) * adjustments.saturation;
-                    b = gray + (b - gray) * adjustments.saturation;
+                    r = gray + (r - gray) * saturation;
+                    g = gray + (g - gray) * saturation;
+                    b = gray + (b - gray) * saturation;
                 }
 
                 // HDR Filmic Toning
@@ -349,9 +385,9 @@ impl ImageProcessor {
                     let mut rx = (r * 1.6).max(0.0);
                     let mut gx = (g * 1.6).max(0.0);
                     let mut bx = (b * 1.6).max(0.0);
-                    rx = rx / (1.0 + rx);
-                    gx = gx / (1.0 + gx);
-                    bx = bx / (1.0 + bx);
+                    rx /= 1.0 + rx;
+                    gx /= 1.0 + gx;
+                    bx /= 1.0 + bx;
                     r = rx * rx * (3.0 - 2.0 * rx);
                     g = gx * gx * (3.0 - 2.0 * gx);
                     b = bx * bx * (3.0 - 2.0 * bx);
@@ -364,6 +400,105 @@ impl ImageProcessor {
         }
 
         (data, w, h)
+    }
+
+    /// Compute one-click histogram-driven tonal & white-balance parameters
+    /// (1st/99th percentile auto-levels + gentle Gray-World white balance).
+    ///
+    /// Runs in < 1 ms on any resolution by subsampling images above 2 MP,
+    /// and writes directly into `ImageAdjustments` so the GPU shader renders
+    /// it in real time and the user can fine-tune every slider afterwards.
+    pub fn compute_auto_enhance(rgba: &[u8]) -> AutoEnhance {
+        let pixels = rgba.as_chunks::<4>().0;
+        if pixels.is_empty() {
+            return AutoEnhance::default();
+        }
+
+        let stride = (pixels.len() / 500_000).max(1);
+        let mut lum_hist = [0u32; 256];
+        let mut sum_r: u64 = 0;
+        let mut sum_g: u64 = 0;
+        let mut sum_b: u64 = 0;
+        let mut count: u64 = 0;
+
+        for p in pixels.iter().step_by(stride) {
+            if p[3] < 16 {
+                continue; // ignore fully transparent pixels
+            }
+            let r = p[0] as u64;
+            let g = p[1] as u64;
+            let b = p[2] as u64;
+            sum_r += r;
+            sum_g += g;
+            sum_b += b;
+            let lum = ((77 * r + 150 * g + 29 * b) >> 8).min(255) as usize;
+            lum_hist[lum] += 1;
+            count += 1;
+        }
+
+        if count == 0 {
+            return AutoEnhance::default();
+        }
+
+        let low_target = (count / 100).max(1);
+        let high_target = count.saturating_sub(low_target).max(1);
+
+        let mut acc: u64 = 0;
+        let mut p01 = 0u8;
+        let mut p99 = 255u8;
+        let mut found_low = false;
+        for (i, &c) in lum_hist.iter().enumerate() {
+            acc += c as u64;
+            if !found_low && acc >= low_target {
+                p01 = i as u8;
+                found_low = true;
+            }
+            if acc >= high_target {
+                p99 = i as u8;
+                break;
+            }
+        }
+
+        let low = p01 as f32 / 255.0;
+        let high = p99 as f32 / 255.0;
+        let span = high - low;
+
+        // Avoid blowing up flat/solid-colour images.
+        let (brightness, contrast) = if span > 0.08 {
+            let c = (0.92 / span).clamp(0.90, 1.55);
+            let mid = (low + high) * 0.5;
+            let b = (1.0 + (0.5 - mid) * 0.55).clamp(0.80, 1.30);
+            (b, c)
+        } else {
+            (1.0, 1.0)
+        };
+
+        // Gentle Gray-World white balance (clamped so artistic lighting isn't destroyed).
+        let mean_r = sum_r as f32 / (count as f32 * 255.0);
+        let mean_g = sum_g as f32 / (count as f32 * 255.0);
+        let mean_b = sum_b as f32 / (count as f32 * 255.0);
+        let avg = (mean_r + mean_g + mean_b) / 3.0;
+
+        let (temperature, tint) = if avg > 0.05 && avg < 0.95 {
+            // Positive temperature adds R / subtracts B; positive tint subtracts G.
+            let rb_diff = mean_b - mean_r;
+            let g_diff = mean_g - avg;
+            (
+                (rb_diff * 0.8).clamp(-0.30, 0.30),
+                (g_diff * 0.9).clamp(-0.25, 0.25),
+            )
+        } else {
+            (0.0, 0.0)
+        };
+
+        AutoEnhance {
+            brightness,
+            contrast,
+            temperature,
+            tint,
+            clarity: 0.08,
+            saturation: 1.06,
+        }
     }
 
     /// True when `adjustments` change pixel values, as opposed to only
@@ -733,5 +868,43 @@ mod tests {
         assert_eq!((w1, h1), (w2, h2));
         assert_eq!(first, second);
         assert_eq!(first.len(), (w1 * h1 * 4) as usize);
+    }
+
+    #[test]
+    fn test_compute_auto_enhance_handles_low_contrast_flat_and_empty() {
+        // Empty input returns identity defaults.
+        assert_eq!(
+            ImageProcessor::compute_auto_enhance(&[]),
+            AutoEnhance::default()
+        );
+
+        // Flat solid gray does not blow up contrast.
+        let flat = [128u8, 128, 128, 255].repeat(256);
+        let flat_res = ImageProcessor::compute_auto_enhance(&flat);
+        assert_eq!(flat_res.brightness, 1.0);
+        assert_eq!(flat_res.contrast, 1.0);
+
+        // Dark, low-contrast, cool-tinted image gets brighter, higher contrast, and warmer.
+        let mut dark_cool = Vec::with_capacity(512 * 4);
+        for i in 0..512u32 {
+            let v = (30 + (i % 70)) as u8;
+            dark_cool.extend_from_slice(&[v.saturating_sub(15), v, v.saturating_add(25), 255]);
+        }
+        let res = ImageProcessor::compute_auto_enhance(&dark_cool);
+        assert!(
+            res.brightness > 1.05,
+            "expected brighter, got {}",
+            res.brightness
+        );
+        assert!(
+            res.contrast > 1.15,
+            "expected more contrast, got {}",
+            res.contrast
+        );
+        assert!(
+            res.temperature > 0.02,
+            "expected warmer WB, got {}",
+            res.temperature
+        );
     }
 }

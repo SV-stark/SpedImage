@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Version-0.11.2-blue" alt="Version: 0.11.2"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-0.12.0-blue" alt="Version: 0.12.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-1.94+-orange" alt="Rust: 1.94+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
@@ -46,8 +46,10 @@
 
 ### 🎨 GPU-Accelerated Editing & Modern UI
 All adjustments are processed dynamically in WGSL fragment shaders.
-- **Instant Adjustments**: Brightness, Contrast, and Saturation applied directly in real-time.
-- **Saving**: PNG, JPEG and lossless WebP. Rotating/flipping a JPEG and saving it as JPEG is lossless (DCT-domain, like `jpegtran`) and keeps EXIF and ICC data.
+- **Instant Adjustments**: Brightness, Contrast, Saturation, Highlights, Shadows, Clarity, Temperature, Tint, and Sharpen applied directly in real-time, with **64-step Undo/Redo** (`Ctrl+Z` / `Ctrl+Y`) and one-click histogram-driven **Auto-Enhance** (`U`).
+- **Saving**: PNG, JPEG, lossless WebP, lossless **QOI**, and uncompressed **BMP**. Rotating/flipping a JPEG and saving it as JPEG is lossless (DCT-domain, like `jpegtran`) and keeps EXIF and ICC data.
+- **Live Pixel Color Picker** (`P`): Real-time floating loupe showing pixel coordinates, `#RRGGBB` hex, `rgb()`, and `hsl()` values — click anywhere to copy the hex code.
+- **Animated GIF Controls**: Pause/resume (`Shift+Space`) and single-frame stepping (`.`) with a live frame counter in the OSD.
 - **Monitor Colour Matching** (Windows): converts sRGB to the monitor's ICC profile on wide-gamut screens.
 - **Side-by-Side Compare** (`K`) and **sorting** by name, date modified, date taken, size or type.
 - **Perceptual Oklab Color Science**: Integrated `palette` and `fast-srgb8` for sub-nanosecond gamma transformations and perceptual Oklab color calculations.
@@ -280,7 +282,15 @@ spedimage /path/to/image.jpg
 | `Right` / `Left` Arrow | Next / Previous image |
 | `Space` | Toggle Slideshow |
 | `[` / `]` | Decrease / Increase slideshow interval |
-| `R` | Rotate 90° |
+| `R` / `Shift+R` | Rotate 90° clockwise / counter-clockwise |
+| `X` / `Y` | Flip horizontal / Flip vertical |
+| `U` | Auto-Enhance (levels & white balance) |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo edit (also `Ctrl+Shift+Z`) |
+| `Ctrl+Alt+C` / `Ctrl+Alt+V` | Copy / Paste adjustments across images |
+| `Shift+C` | Cycle Channel / Clipping Inspector (R/G/B/A/Zebra) |
+| `P` | Toggle Live Pixel Color Picker (click to copy hex) |
+| `Shift+Space` | Pause/resume animated GIF or WebP |
+| `,` / `.` | Step previous / next animation frame or TIFF page |
 | `H` | Toggle HDR Toning |
 | `Shift+H` | Toggle RGB Histogram curve overlay |
 | `Z` | Toggle Pixel-Perfect (Nearest-Neighbor / Bilinear filter) |

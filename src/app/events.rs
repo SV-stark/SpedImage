@@ -111,6 +111,8 @@ impl SpedImageApp {
                     self.loading = false;
                     self.animation.transition_start = Some(std::time::Instant::now());
                     self.animation.transition_factor = 0.0;
+                    self.animation.paused = false;
+                    self.ui_state.history.clear();
                     self.highres_in_flight = false;
 
                     if let Some(first) = frames.first() {
@@ -144,6 +146,8 @@ impl SpedImageApp {
                         if first.format == crate::image::ImageFormatType::Gif {
                             // Streaming playback: show frame 0, decode the rest
                             // in the background with bounded look-ahead.
+                            self.animation.frames.clear();
+                            self.animation.is_animated = true;
                             self.animation.frame_delays =
                                 vec![first.frame_delay_ms.max(constants::GIF_DEFAULT_FRAME_MS)];
                             self.animation.frame_idx = 0;
@@ -154,7 +158,40 @@ impl SpedImageApp {
                                     ),
                             );
                             self.start_gif_stream(path0);
+                        } else if frames.len() > 1 {
+                            // In-memory multi-frame image (animated WebP or multi-page TIFF).
+                            self.gif_rx = None;
+                            self.animation.pending.clear();
+                            if let Some(ref mut renderer) = self.renderer {
+                                renderer.clear_gif_ring();
+                            }
+                            let is_animated = frames.iter().any(|f| f.frame_delay_ms > 0);
+                            self.animation.is_animated = is_animated;
+                            self.animation.frame_delays = frames
+                                .iter()
+                                .map(|f| {
+                                    if is_animated {
+                                        f.frame_delay_ms.max(constants::GIF_DEFAULT_FRAME_MS)
+                                    } else {
+                                        0
+                                    }
+                                })
+                                .collect();
+                            self.animation.frame_idx = 0;
+                            self.animation.next_frame_time = if is_animated {
+                                Some(
+                                    std::time::Instant::now()
+                                        + std::time::Duration::from_millis(
+                                            self.animation.frame_delays[0] as u64,
+                                        ),
+                                )
+                            } else {
+                                None
+                            };
+                            self.animation.frames = frames.clone();
                         } else {
+                            self.animation.frames.clear();
+                            self.animation.is_animated = false;
                             self.animation.frame_delays.clear();
                             self.animation.next_frame_time = None;
                             self.animation.pending.clear();
@@ -164,10 +201,8 @@ impl SpedImageApp {
                         }
                     }
                     self.current_image = frames.into_iter().next();
-                    if let Some(ref mut img) = self.current_image
-                        && self.ui_state.show_info
-                    {
-                        img.load_exif();
+                    if self.ui_state.show_info {
+                        self.ensure_exif_async();
                     }
                     if self.ui_state.show_histogram {
                         self.ensure_histogram_async();
@@ -460,6 +495,54 @@ impl SpedImageApp {
                 AppEvent::NextImage => {
                     self.next_image();
                 }
+                AppEvent::UndoEdit => {
+                    self.undo_edit();
+                }
+                AppEvent::RedoEdit => {
+                    self.redo_edit();
+                }
+                AppEvent::RecordEditSnapshot(snapshot) => {
+                    self.ui_state.history.record(*snapshot);
+                }
+                AppEvent::AutoEnhance => {
+                    self.auto_enhance();
+                }
+                AppEvent::ToggleColorPicker => {
+                    self.toggle_color_picker();
+                }
+                AppEvent::ToggleAnimationPause => {
+                    self.toggle_animation_pause();
+                }
+                AppEvent::StepAnimationFrame => {
+                    self.step_animation_frame();
+                }
+                AppEvent::StepAnimationFramePrev => {
+                    self.step_animation_frame_prev();
+                }
+                AppEvent::CopyAdjustments => {
+                    self.copy_adjustments();
+                }
+                AppEvent::PasteAdjustments => {
+                    self.paste_adjustments();
+                }
+                AppEvent::CycleInspectMode => {
+                    self.cycle_inspect_mode();
+                }
+                AppEvent::PanToNormalized(u, v) => {
+                    self.pan_to_normalized(u, v);
+                }
+                AppEvent::ExifLoaded(path, summary, gps) => {
+                    if let Some(ref mut img) = self.current_image
+                        && img.path == path
+                    {
+                        img.exif_info = summary;
+                        if img.gps_coords.is_none() {
+                            img.gps_coords = gps;
+                        }
+                        img.exif_loaded = true;
+                        self.dirty = true;
+                    }
+                }
             }
             count += 1;
             if count >= constants::MAX_EVENTS_PER_FRAME {
@@ -503,6 +586,22 @@ impl SpedImageApp {
             if let Some(idx) = self.ui_state.files.iter().position(|f| f.path == path) {
                 self.handle_thumbnail_click(idx);
             }
+            return;
+        }
+
+        if self.ui_state.show_color_picker
+            && let Some(sample) = self.sample_pixel_at_cursor()
+        {
+            let hex = sample.hex_string();
+            match crate::app::clipboard::set_text(&hex) {
+                Ok(()) => self
+                    .ui_state
+                    .set_status(format!("Copied {hex} to clipboard")),
+                Err(e) => self
+                    .ui_state
+                    .set_status(format!("Failed to copy {hex}: {e}")),
+            }
+            self.dirty = true;
             return;
         }
 
@@ -785,10 +884,16 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         return;
                     }
                 };
+                let ipc_port_file = dirs::cache_dir().map(|d| d.join("spedimage").join("ipc.port"));
                 if !lock.is_single() {
                     if let Some(p) = initial_for_ipc.as_ref() {
                         use std::io::Write as _;
-                        if let Ok(mut stream) = std::net::TcpStream::connect("127.0.0.1:49512") {
+                        let port = ipc_port_file
+                            .as_ref()
+                            .and_then(|f| std::fs::read_to_string(f).ok())
+                            .and_then(|s| s.trim().parse::<u16>().ok())
+                            .unwrap_or(49512);
+                        if let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) {
                             let abs = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
                             let _ = stream.write_all(abs.to_string_lossy().as_bytes());
                         }
@@ -798,13 +903,20 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 }
                 crate::startup::log("bg primary, holding lock");
                 std::mem::forget(lock);
-                // Listener for future secondaries.
-                let listener = match std::net::TcpListener::bind("127.0.0.1:49512")
-                    .or_else(|_| std::net::TcpListener::bind("127.0.0.1:0"))
+                // Bind an ephemeral loopback port and publish it atomically so
+                // port collisions never break single-instance forwarding.
+                let listener = match std::net::TcpListener::bind("127.0.0.1:0")
+                    .or_else(|_| std::net::TcpListener::bind("127.0.0.1:49512"))
                 {
                     Ok(l) => l,
                     Err(_) => return,
                 };
+                if let (Some(port_file), Ok(addr)) = (ipc_port_file, listener.local_addr()) {
+                    if let Some(parent) = port_file.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let _ = std::fs::write(&port_file, addr.port().to_string());
+                }
                 crate::startup::log("bg TcpListener bound");
                 while let Ok((mut stream, _)) = listener.accept() {
                     use std::io::Read;
@@ -997,6 +1109,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     self.ui_state.adjustments.pre_rotation = 0.0;
                 }
 
+                let color_sample = self.sample_pixel_at_cursor();
+
                 if let Some(r) = &mut self.renderer {
                     // Lazy mipmaps: when the image is displayed minified well
                     // below 50%, build a mip chain once so trilinear sampling
@@ -1042,8 +1156,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         let name = img
                             .path
                             .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "Image".to_string());
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("Image");
                         let zoom_pct = if self.ui_state.adjustments.crop_rect[2] > 0.0 {
                             (1.0 / self.ui_state.adjustments.crop_rect[2]) * 100.0
                         } else {
@@ -1052,13 +1166,10 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         (name, img.width, img.height, img.file_size_bytes, zoom_pct)
                     });
 
-                    // Borrow just the status field, and skip the per-frame
-                    // `String` allocation the old `to_string()` did.
-                    let file_label = |p: &std::path::Path| {
-                        p.file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default()
-                    };
+                    // Borrow file names directly without per-frame String allocations.
+                    fn file_label(p: &std::path::Path) -> &str {
+                        p.file_name().and_then(|n| n.to_str()).unwrap_or("")
+                    }
                     let compare_labels = match (&self.compare_pinned, &self.current_image) {
                         (Some(pinned), Some(img)) => {
                             Some((file_label(pinned), file_label(&img.path)))
@@ -1089,6 +1200,21 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         } else {
                             Some(1.0)
                         }
+                    } else {
+                        None
+                    };
+
+                    let can_undo = self.ui_state.history.can_undo();
+                    let can_redo = self.ui_state.history.can_redo();
+                    let has_copied_edits = self.ui_state.copied_adjustments.is_some();
+                    let show_color_picker = self.ui_state.show_color_picker;
+                    let animation_info = if self.animation.frame_delays.len() > 1 {
+                        Some((
+                            self.animation.frame_idx,
+                            self.animation.frame_delays.len(),
+                            self.animation.paused,
+                            self.animation.is_animated,
+                        ))
                     } else {
                         None
                     };
@@ -1127,6 +1253,12 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                             is_refining,
                             compare_labels,
                             notice: &mut self.ui_state.notice,
+                            can_undo,
+                            can_redo,
+                            has_copied_edits,
+                            show_color_picker,
+                            color_sample,
+                            animation_info,
                         })
                     {
                         tracing::warn!("render frame error: {e}");
@@ -1141,11 +1273,8 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                         self.ui_state.show_thumbnail_strip = self.config.show_thumbnail_strip;
                         self.ui_state.show_info = self.config.show_info;
                         self.ui_state.show_histogram = self.config.show_histogram;
-                        if !was_info
-                            && self.ui_state.show_info
-                            && let Some(ref mut img) = self.current_image
-                        {
-                            img.load_exif();
+                        if !was_info && self.ui_state.show_info {
+                            self.ensure_exif_async();
                         }
                         if !was_hist && self.ui_state.show_histogram {
                             self.ensure_histogram_async();
@@ -1202,6 +1331,9 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.last_cursor_pos = position;
+                if self.ui_state.show_color_picker {
+                    self.dirty = true;
+                }
                 if self.crop_drag.is_some() {
                     self.update_crop_drag(position);
                 } else if let Some(start) = self.mouse_drag_start
@@ -1367,15 +1499,31 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
             needs_redraw = true;
         }
 
-        if !self.animation.frame_delays.is_empty()
+        if self.animation.is_animated
+            && !self.animation.paused
+            && !self.animation.frame_delays.is_empty()
             && let Some(next) = self.animation.next_frame_time
         {
             if std::time::Instant::now() >= next {
                 let n = self.animation.frame_delays.len();
                 let candidate = (self.animation.frame_idx + 1) % n;
-                // Advance only when the frame has been decoded and uploaded;
-                // otherwise hold the current frame and retry shortly.
-                if let Some(pos) = self
+                if let Some(frame) = self.animation.frames.get(candidate).cloned() {
+                    // In-memory animated WebP playback
+                    if let Some(ref mut r) = self.renderer
+                        && let Err(e) = r.load_image(&frame)
+                    {
+                        tracing::warn!("Animated frame upload failed: {e}");
+                    }
+                    self.current_image = Some(frame);
+                    self.animation.frame_idx = candidate;
+                    let next_time = std::time::Instant::now()
+                        + std::time::Duration::from_millis(
+                            self.animation.frame_delays[candidate] as u64,
+                        );
+                    self.animation.next_frame_time = Some(next_time);
+                    needs_redraw = true;
+                    update_wakeup(next_time);
+                } else if let Some(pos) = self
                     .animation
                     .pending
                     .iter()

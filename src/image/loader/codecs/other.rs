@@ -120,47 +120,43 @@ pub(crate) fn load_webp(
     let buffer_size = decoder
         .output_buffer_size()
         .ok_or_else(|| eyre!("Could not determine the WebP buffer size"))?;
-    let mut decoded = vec![0u8; buffer_size];
-    decoder
-        .read_image(&mut decoded)
-        .map_err(|e| eyre!("WebP decode failed: {e:?}"))?;
-
-    let pixels = src_w as usize * src_h as usize;
-    let rgba = if has_alpha {
-        decoded
-    } else {
-        let mut out = Vec::with_capacity(pixels * 4);
-        for px in decoded.as_chunks::<3>().0 {
-            out.extend_from_slice(&[px[0], px[1], px[2], 255]);
-        }
-        out
-    };
-
     let file_size = std::fs::metadata(path)?.len();
     let target_box = orient_box(decode_box(max_w, max_h), exif.orientation);
-    let (rgba, width, height, is_downsampled) = downsample_to_fit(rgba, src_w, src_h, target_box)?;
 
-    let mut rgba = rgba;
-    if let Some(icc) = icc
-        && let Err(e) = apply_color_profile(&mut rgba, &icc)
-    {
-        tracing::warn!("Failed to apply WebP color profile: {e:?}");
-    }
+    let widen_and_finish = |decoded: Vec<u8>, delay_ms: u32| -> Result<ImageData> {
+        let pixels = src_w as usize * src_h as usize;
+        let rgba = if has_alpha {
+            decoded
+        } else {
+            let mut out = Vec::with_capacity(pixels * 4);
+            for px in decoded.as_chunks::<3>().0 {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        };
 
-    let (rgba, width, height, orientation_deg) = match exif.orientation {
-        Some(o) => apply_orientation(rgba, width, height, o, opts.bake_orientation),
-        None => (rgba, width, height, 0),
-    };
+        let (mut rgba, width, height, is_downsampled) =
+            downsample_to_fit(rgba, src_w, src_h, target_box)?;
 
-    Ok((
-        vec![ImageData {
+        if let Some(ref icc_bytes) = icc
+            && let Err(e) = apply_color_profile(&mut rgba, icc_bytes)
+        {
+            tracing::warn!("Failed to apply WebP color profile: {e:?}");
+        }
+
+        let (rgba, width, height, orientation_deg) = match exif.orientation {
+            Some(o) => apply_orientation(rgba, width, height, o, opts.bake_orientation),
+            None => (rgba, width, height, 0),
+        };
+
+        Ok(ImageData {
             path: path.to_path_buf(),
             rgba_data: Arc::new(rgba),
             width,
             height,
             format: ImageFormatType::WebP,
             file_size_bytes: file_size,
-            frame_delay_ms: 0,
+            frame_delay_ms: delay_ms,
             exif_info: None,
             exif_loaded: false,
             histogram: None,
@@ -168,9 +164,29 @@ pub(crate) fn load_webp(
             orientation_deg,
             gps_coords: exif.gps_coords,
             color_space: exif.color_space,
-        }],
-        ImageFormatType::WebP,
-    ))
+        })
+    };
+
+    if decoder.is_animated() && opts.frames == FrameLimit::All {
+        let total = (decoder.num_frames() as usize).clamp(1, 120);
+        let mut frames = Vec::with_capacity(total);
+        for _ in 0..total {
+            let mut buf = vec![0u8; buffer_size];
+            match decoder.read_frame(&mut buf) {
+                Ok(delay_ms) => frames.push(widen_and_finish(buf, delay_ms.max(20))?),
+                Err(_) if !frames.is_empty() => break,
+                Err(e) => return Err(eyre!("Animated WebP decode failed: {e:?}")),
+            }
+        }
+        return Ok((frames, ImageFormatType::WebP));
+    }
+
+    let mut decoded = vec![0u8; buffer_size];
+    decoder
+        .read_image(&mut decoded)
+        .map_err(|e| eyre!("WebP decode failed: {e:?}"))?;
+
+    Ok((vec![widen_and_finish(decoded, 0)?], ImageFormatType::WebP))
 }
 
 pub(crate) fn load_svg(

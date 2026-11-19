@@ -8,8 +8,8 @@
 
 use libjpeg_turbo_rs::{PixelFormat, Subsampling};
 use spedimage_lib::image::{
-    ImageData, ImageFormatType, ImageLoader, ImageProcessor, SaveFormat, edited_output_path,
-    read_exif_meta, save_edited,
+    ImageData, ImageFormatType, ImageLoader, ImageProcessor, SaveFormat, SaveOptions,
+    edited_output_path, read_exif_meta, save_edited, save_edited_with_options,
 };
 use spedimage_lib::render::ImageAdjustments;
 use std::path::{Path, PathBuf};
@@ -82,7 +82,9 @@ fn every_offered_format_saves_and_decodes_back() {
     let (w, h) = (40u32, 24u32);
     let rgba = gradient_rgba(w, h, |_, _| 255);
 
-    for name in ["out.png", "out.jpg", "out.jpeg", "out.JPG", "out.webp"] {
+    for name in [
+        "out.png", "out.jpg", "out.jpeg", "out.JPG", "out.webp", "out.qoi", "out.bmp",
+    ] {
         let path = dir.join(name);
         spedimage_lib::image::ImageBackend::save(&path, &rgba, w, h)
             .unwrap_or_else(|e| panic!("saving {name} failed: {e}"));
@@ -93,10 +95,28 @@ fn every_offered_format_saves_and_decodes_back() {
         if SaveFormat::from_path(&path) == Some(SaveFormat::Jpeg) {
             assert!(mean < 3.0, "{name}: JPEG drifted too far, mean diff {mean}");
         } else {
-            // PNG and VP8L WebP are lossless.
+            // PNG, VP8L WebP, QOI and 32-bit BMP are lossless.
             assert_eq!(img.rgba_data.as_slice(), rgba.as_slice(), "{name}");
         }
     }
+
+    // Export resize via SIMD fast_image_resize caps longest edge while preserving aspect.
+    let src_png = dir.join("out.png");
+    let resized_png = dir.join("out_small.png");
+    save_edited_with_options(
+        &src_png,
+        &resized_png,
+        &ImageAdjustments::default(),
+        None,
+        SaveOptions {
+            max_dimension: Some(20),
+            strip_metadata: true,
+            ..SaveOptions::default()
+        },
+    )
+    .expect("resized export");
+    let small = load_full(&resized_png);
+    assert_eq!((small.width, small.height), (20, 12));
 }
 
 #[test]

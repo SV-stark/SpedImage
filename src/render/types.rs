@@ -113,7 +113,57 @@ impl Uniforms {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+/// Pure-WGSL inspection view mode (packed into `Uniforms.display_col1.w`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum InspectMode {
+    #[default]
+    Normal = 0,
+    Red = 1,
+    Green = 2,
+    Blue = 3,
+    Alpha = 4,
+    ClippingZebra = 5,
+}
+
+impl InspectMode {
+    pub const ALL: [InspectMode; 6] = [
+        Self::Normal,
+        Self::Red,
+        Self::Green,
+        Self::Blue,
+        Self::Alpha,
+        Self::ClippingZebra,
+    ];
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Normal => Self::Red,
+            Self::Red => Self::Green,
+            Self::Green => Self::Blue,
+            Self::Blue => Self::Alpha,
+            Self::Alpha => Self::ClippingZebra,
+            Self::ClippingZebra => Self::Normal,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Normal => "RGB",
+            Self::Red => "Red",
+            Self::Green => "Green",
+            Self::Blue => "Blue",
+            Self::Alpha => "Alpha",
+            Self::ClippingZebra => "Zebra",
+        }
+    }
+
+    pub fn as_f32(self) -> f32 {
+        (self as u8) as f32
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ImageAdjustments {
     pub brightness: f32,
     pub contrast: f32,
@@ -137,6 +187,73 @@ pub struct ImageAdjustments {
     pub shadows: f32,
     pub split_compare: bool,
     pub split_position: f32,
+    pub inspect_mode: InspectMode,
+}
+
+impl ImageAdjustments {
+    /// Reset all user-controlled edits while preserving source-intrinsic
+    /// metadata (`pre_rotation` from EXIF orientation and `color_space`).
+    pub fn reset_user_edits(&mut self) {
+        let pre_rotation = self.pre_rotation;
+        let color_space = self.color_space;
+        *self = Self {
+            pre_rotation,
+            color_space,
+            ..Self::default()
+        };
+    }
+}
+
+/// Pixel colour sampled under the cursor for the live eyedropper HUD.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ColorSample {
+    pub x: u32,
+    pub y: u32,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+    /// Cursor position in physical pixels, used to anchor the floating loupe.
+    pub cursor_px: (f32, f32),
+}
+
+impl ColorSample {
+    /// `#RRGGBB` when opaque, `#RRGGBBAA` when semi-transparent.
+    pub fn hex_string(self) -> String {
+        if self.a == 255 {
+            format!("#{:02X}{:02X}{:02X}", self.r, self.g, self.b)
+        } else {
+            format!("#{:02X}{:02X}{:02X}{:02X}", self.r, self.g, self.b, self.a)
+        }
+    }
+
+    /// Convert RGB8 to `(hue_deg 0..360, sat_pct 0..=100, light_pct 0..=100)`.
+    pub fn hsl(self) -> (u16, u8, u8) {
+        let r = self.r as f32 / 255.0;
+        let g = self.g as f32 / 255.0;
+        let b = self.b as f32 / 255.0;
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let delta = max - min;
+        let l = (max + min) * 0.5;
+        if delta < 1e-6 {
+            return (0, 0, (l * 100.0).round() as u8);
+        }
+        let s = delta / (1.0 - (2.0 * l - 1.0).abs());
+        let h_raw = if (max - r).abs() < 1e-6 {
+            ((g - b) / delta).rem_euclid(6.0)
+        } else if (max - g).abs() < 1e-6 {
+            (b - r) / delta + 2.0
+        } else {
+            (r - g) / delta + 4.0
+        };
+        let h = ((h_raw * 60.0).round() as i32).rem_euclid(360) as u16;
+        (
+            h,
+            (s * 100.0).round().clamp(0.0, 100.0) as u8,
+            (l * 100.0).round().clamp(0.0, 100.0) as u8,
+        )
+    }
 }
 
 impl Default for ImageAdjustments {
@@ -163,6 +280,7 @@ impl Default for ImageAdjustments {
             shadows: 0.0,
             split_compare: false,
             split_position: 0.5,
+            inspect_mode: InspectMode::Normal,
         }
     }
 }
@@ -218,13 +336,23 @@ pub struct RenderParams<'a> {
     pub show_search: &'a mut bool,
     pub search_query: &'a mut String,
     pub gps_coords: Option<(f64, f64)>,
-    pub current_image_info: Option<(String, u32, u32, u64, f32)>,
+    pub current_image_info: Option<(&'a str, u32, u32, u64, f32)>,
     pub show_osd: bool,
     /// A full-resolution re-decode is running for the zoomed-in image.
     pub is_refining: bool,
     /// File names of the pinned (left) and current (right) image while the
     /// side-by-side compare view is open.
-    pub compare_labels: Option<(String, String)>,
+    pub compare_labels: Option<(&'a str, &'a str)>,
     /// Persistent message with an OK button; cleared when dismissed.
     pub notice: &'a mut Option<String>,
+    /// Undo/Redo availability for the adjustments panel.
+    pub can_undo: bool,
+    pub can_redo: bool,
+    /// Whether copied tonal adjustments are available to paste.
+    pub has_copied_edits: bool,
+    /// Live pixel eyedropper state and current cursor sample.
+    pub show_color_picker: bool,
+    pub color_sample: Option<ColorSample>,
+    /// Animated / multi-page image status: `(current_index, total_count, paused, is_animated)`.
+    pub animation_info: Option<(usize, usize, bool, bool)>,
 }

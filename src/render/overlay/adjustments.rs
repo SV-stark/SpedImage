@@ -1,4 +1,4 @@
-use super::super::types::{ImageAdjustments, RenderParams};
+use super::super::types::RenderParams;
 use super::crop::apply_aspect_preset;
 
 pub(super) fn draw_adjustments(
@@ -66,7 +66,105 @@ pub(super) fn draw_adjustments(
             egui::ScrollArea::vertical()
                 .max_height(max_scroll_h)
                 .show(ui, |ui| {
+                    let before = *params.adjustments;
                     let mut changed = false;
+                    let mut record_undo = false;
+
+                    // Quick-action bar: Undo / Redo / Auto-Enhance
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(params.can_undo, egui::Button::new("↶ Undo"))
+                            .on_hover_text("Undo last edit (Ctrl+Z)")
+                            .clicked()
+                        {
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::UndoEdit,
+                            );
+                        }
+                        if ui
+                            .add_enabled(params.can_redo, egui::Button::new("↷ Redo"))
+                            .on_hover_text("Redo edit (Ctrl+Y / Ctrl+Shift+Z)")
+                            .clicked()
+                        {
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::RedoEdit,
+                            );
+                        }
+                        if ui
+                            .button("✨ Auto")
+                            .on_hover_text("Auto-Enhance levels & white balance (U)")
+                            .clicked()
+                        {
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::AutoEnhance,
+                            );
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if ui
+                            .small_button("📋 Copy Edits")
+                            .on_hover_text("Copy adjustments to apply on another image (Ctrl+Alt+C)")
+                            .clicked()
+                        {
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::CopyAdjustments,
+                            );
+                        }
+                        if ui
+                            .add_enabled(
+                                params.has_copied_edits,
+                                egui::Button::new("📥 Paste Edits").small(),
+                            )
+                            .on_hover_text("Paste copied adjustments (Ctrl+Alt+V)")
+                            .clicked()
+                        {
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::PasteAdjustments,
+                            );
+                        }
+                    });
+                    ui.add_space(4.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    // Group: Channel & Clipping Inspector (Pure WGSL)
+                    ui.label(
+                        egui::RichText::new("Channel Inspector (Shift+C)")
+                            .size(10.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(180, 200, 220)),
+                    );
+                    ui.horizontal_wrapped(|ui| {
+                        for mode in crate::render::InspectMode::ALL {
+                            let selected = params.adjustments.inspect_mode == mode;
+                            if ui.selectable_label(selected, mode.label()).clicked() && !selected {
+                                params.adjustments.inspect_mode = mode;
+                                changed = true;
+                            }
+                        }
+                    });
+                    ui.add_space(4.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    let mut track_slider = |resp: egui::Response| {
+                        if resp.drag_started() {
+                            record_undo = true;
+                        }
+                        if resp.changed() {
+                            changed = true;
+                        }
+                    };
 
                     // Group: Exposure & Toning
                     ui.label(
@@ -75,30 +173,22 @@ pub(super) fn draw_adjustments(
                             .strong()
                             .color(egui::Color32::from_rgb(180, 200, 220)),
                     );
-                    if ui
-                        .add(egui::Slider::new(&mut params.adjustments.brightness, 0.1..=3.0).text("Brightness"))
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                    if ui
-                        .add(egui::Slider::new(&mut params.adjustments.contrast, 0.1..=3.0).text("Contrast"))
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                    if ui
-                        .add(egui::Slider::new(&mut params.adjustments.highlights, -1.0..=1.0).text("Highlights"))
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                    if ui
-                        .add(egui::Slider::new(&mut params.adjustments.shadows, -1.0..=1.0).text("Shadows"))
-                        .changed()
-                    {
-                        changed = true;
-                    }
+                    track_slider(ui.add(
+                        egui::Slider::new(&mut params.adjustments.brightness, 0.1..=3.0)
+                            .text("Brightness"),
+                    ));
+                    track_slider(ui.add(
+                        egui::Slider::new(&mut params.adjustments.contrast, 0.1..=3.0)
+                            .text("Contrast"),
+                    ));
+                    track_slider(ui.add(
+                        egui::Slider::new(&mut params.adjustments.highlights, -1.0..=1.0)
+                            .text("Highlights"),
+                    ));
+                    track_slider(ui.add(
+                        egui::Slider::new(&mut params.adjustments.shadows, -1.0..=1.0)
+                            .text("Shadows"),
+                    ));
 
                     ui.add_space(4.0);
                     // Group: Color & White Balance
@@ -108,24 +198,17 @@ pub(super) fn draw_adjustments(
                             .strong()
                             .color(egui::Color32::from_rgb(180, 200, 220)),
                     );
-                    if ui
-                        .add(egui::Slider::new(&mut params.adjustments.saturation, 0.0..=3.0).text("Saturation"))
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                    if ui
-                        .add(egui::Slider::new(&mut params.adjustments.temperature, -1.0..=1.0).text("Temperature"))
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                    if ui
-                        .add(egui::Slider::new(&mut params.adjustments.tint, -1.0..=1.0).text("Tint"))
-                        .changed()
-                    {
-                        changed = true;
-                    }
+                    track_slider(ui.add(
+                        egui::Slider::new(&mut params.adjustments.saturation, 0.0..=3.0)
+                            .text("Saturation"),
+                    ));
+                    track_slider(ui.add(
+                        egui::Slider::new(&mut params.adjustments.temperature, -1.0..=1.0)
+                            .text("Temperature"),
+                    ));
+                    track_slider(ui.add(
+                        egui::Slider::new(&mut params.adjustments.tint, -1.0..=1.0).text("Tint"),
+                    ));
 
                     ui.add_space(4.0);
                     // Group: Detail & Clarity
@@ -135,18 +218,14 @@ pub(super) fn draw_adjustments(
                             .strong()
                             .color(egui::Color32::from_rgb(180, 200, 220)),
                     );
-                    if ui
-                        .add(egui::Slider::new(&mut params.adjustments.sharpen, 0.0..=2.0).text("Sharpen"))
-                        .changed()
-                    {
-                        changed = true;
-                    }
-                    if ui
-                        .add(egui::Slider::new(&mut params.adjustments.clarity, -1.0..=1.0).text("Clarity"))
-                        .changed()
-                    {
-                        changed = true;
-                    }
+                    track_slider(ui.add(
+                        egui::Slider::new(&mut params.adjustments.sharpen, 0.0..=2.0)
+                            .text("Sharpen"),
+                    ));
+                    track_slider(ui.add(
+                        egui::Slider::new(&mut params.adjustments.clarity, -1.0..=1.0)
+                            .text("Clarity"),
+                    ));
 
                     ui.add_space(4.0);
                     // Group: Comparison
@@ -157,14 +236,20 @@ pub(super) fn draw_adjustments(
                             .color(egui::Color32::from_rgb(180, 200, 220)),
                     );
                     if ui
-                        .checkbox(&mut params.adjustments.split_compare, "Split View (Before/After)")
+                        .checkbox(
+                            &mut params.adjustments.split_compare,
+                            "Split View (Before/After)",
+                        )
                         .changed()
                     {
                         changed = true;
                     }
                     if params.adjustments.split_compare
                         && ui
-                            .add(egui::Slider::new(&mut params.adjustments.split_position, 0.0..=1.0).text("Split Line"))
+                            .add(
+                                egui::Slider::new(&mut params.adjustments.split_position, 0.0..=1.0)
+                                    .text("Split Line"),
+                            )
                             .changed()
                     {
                         changed = true;
@@ -179,10 +264,13 @@ pub(super) fn draw_adjustments(
                             .color(egui::Color32::from_rgb(180, 200, 220)),
                     );
                     let mut rot_deg = params.adjustments.rotation.to_degrees().round();
-                    if ui
-                        .add(egui::Slider::new(&mut rot_deg, 0.0..=360.0).text("Rotation (°)"))
-                        .changed()
-                    {
+                    let rot_resp = ui.add(
+                        egui::Slider::new(&mut rot_deg, 0.0..=360.0).text("Rotation (°)"),
+                    );
+                    if rot_resp.drag_started() {
+                        record_undo = true;
+                    }
+                    if rot_resp.changed() {
                         params.adjustments.rotation = rot_deg.to_radians();
                         changed = true;
                     }
@@ -192,12 +280,14 @@ pub(super) fn draw_adjustments(
                             .checkbox(&mut params.adjustments.flip_horizontal, "Flip H")
                             .changed()
                         {
+                            record_undo = true;
                             changed = true;
                         }
                         if ui
                             .checkbox(&mut params.adjustments.flip_vertical, "Flip V")
                             .changed()
                         {
+                            record_undo = true;
                             changed = true;
                         }
                     });
@@ -231,6 +321,7 @@ pub(super) fn draw_adjustments(
                         ];
                         for (label, want) in presets {
                             if ui.button(label).clicked() {
+                                record_undo = true;
                                 apply_aspect_preset(params.adjustments, img_aspect, want);
                                 changed = true;
                             }
@@ -239,6 +330,7 @@ pub(super) fn draw_adjustments(
 
                     ui.horizontal(|ui| {
                         if ui.button("✂ Crop to View").clicked() {
+                            record_undo = true;
                             params.adjustments.crop_rect_actual = Some(params.adjustments.crop_rect);
                             crate::app::types::send_event(
                                 params.event_tx,
@@ -251,6 +343,7 @@ pub(super) fn draw_adjustments(
                         if params.adjustments.crop_rect_actual.is_some()
                             && ui.button("↩ Reset Crop").clicked()
                         {
+                            record_undo = true;
                             params.adjustments.crop_rect_actual = None;
                             params.adjustments.crop_rect = [0.0, 0.0, 1.0, 1.0];
                             params.adjustments.crop_rect_target = [0.0, 0.0, 1.0, 1.0];
@@ -264,16 +357,101 @@ pub(super) fn draw_adjustments(
 
                     ui.separator();
                     if ui.button("↺ Reset All Adjustments").clicked() {
-                        *params.adjustments = ImageAdjustments::default();
+                        record_undo = true;
+                        params.adjustments.reset_user_edits();
                         changed = true;
                     }
 
+                    if record_undo {
+                        crate::app::types::send_event(
+                            params.event_tx,
+                            params.event_proxy,
+                            crate::app::types::AppEvent::RecordEditSnapshot(Box::new(before)),
+                        );
+                    }
                     if changed {
                         let _ = params.event_proxy.send_event(crate::app::types::WakeUp);
                     }
 
+                    // Collapsible Named Presets (Built-in + User Saved)
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.collapsing("Presets", |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            for preset in crate::config::AdjustmentPreset::built_ins() {
+                                if ui.small_button(&preset.name).clicked() {
+                                    crate::app::types::send_event(
+                                        params.event_tx,
+                                        params.event_proxy,
+                                        crate::app::types::AppEvent::RecordEditSnapshot(Box::new(
+                                            *params.adjustments,
+                                        )),
+                                    );
+                                    preset.apply_to(params.adjustments);
+                                    let _ =
+                                        params.event_proxy.send_event(crate::app::types::WakeUp);
+                                }
+                            }
+                        });
+                        if !params.config.custom_presets.is_empty() {
+                            ui.add_space(4.0);
+                            let mut remove_idx: Option<usize> = None;
+                            for (i, preset) in params.config.custom_presets.iter().enumerate() {
+                                ui.horizontal(|ui| {
+                                    if ui.small_button(&preset.name).clicked() {
+                                        crate::app::types::send_event(
+                                            params.event_tx,
+                                            params.event_proxy,
+                                            crate::app::types::AppEvent::RecordEditSnapshot(
+                                                Box::new(*params.adjustments),
+                                            ),
+                                        );
+                                        preset.apply_to(params.adjustments);
+                                        let _ = params
+                                            .event_proxy
+                                            .send_event(crate::app::types::WakeUp);
+                                    }
+                                    if ui
+                                        .small_button("✕")
+                                        .on_hover_text("Delete preset")
+                                        .clicked()
+                                    {
+                                        remove_idx = Some(i);
+                                    }
+                                });
+                            }
+                            if let Some(i) = remove_idx {
+                                params.config.custom_presets.remove(i);
+                                params.config.save();
+                            }
+                        }
+                        ui.add_space(4.0);
+                        if ui
+                            .small_button("＋ Save Current as Preset")
+                            .on_hover_text("Save current sliders to config.json")
+                            .clicked()
+                        {
+                            let idx = params.config.custom_presets.len() + 1;
+                            let name = format!("Custom {idx}");
+                            params.config.custom_presets.push(
+                                crate::config::AdjustmentPreset::from_adjustments(
+                                    &name,
+                                    params.adjustments,
+                                ),
+                            );
+                            params.config.save();
+                            crate::app::types::send_event(
+                                params.event_tx,
+                                params.event_proxy,
+                                crate::app::types::AppEvent::SetStatus(format!(
+                                    "Saved preset '{name}'"
+                                )),
+                            );
+                        }
+                    });
+
                     // Collapsible Slideshow Controls
-                    ui.add_space(10.0);
+                    ui.add_space(6.0);
                     ui.separator();
                     ui.collapsing("Slideshow Controls", |ui| {
                         ui.horizontal(|ui| {
@@ -356,6 +534,34 @@ pub(super) fn draw_adjustments(
                             pref_changed = true;
                         }
 
+                        let mut strip_meta = params.config.strip_metadata_enabled();
+                        if ui
+                            .checkbox(&mut strip_meta, "Strip EXIF & GPS on Save (Privacy)")
+                            .on_hover_text("Remove camera EXIF, GPS location, and ICC chunks when saving (works even with lossless JPEG rotation)")
+                            .changed()
+                        {
+                            params.config.strip_metadata_on_save = Some(strip_meta);
+                            pref_changed = true;
+                        }
+
+                        ui.horizontal(|ui| {
+                            ui.label("Export Max Dim (px):");
+                            let mut max_d = params.config.export_max_dimension.unwrap_or(0);
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut max_d)
+                                        .range(0..=16384)
+                                        .speed(64.0)
+                                        .suffix(" px"),
+                                )
+                                .on_hover_text("Downscale longest edge on save via SIMD fast_image_resize (0 = keep original size)")
+                                .changed()
+                            {
+                                params.config.export_max_dimension = (max_d > 0).then_some(max_d);
+                                pref_changed = true;
+                            }
+                        });
+
                         ui.separator();
 
                         if ui
@@ -401,6 +607,16 @@ pub(super) fn draw_adjustments(
                             .changed()
                         {
                             params.config.transparency_checkerboard = Some(checkerboard);
+                            pref_changed = true;
+                        }
+
+                        let mut light_canvas = params.config.light_canvas_enabled();
+                        if ui
+                            .checkbox(&mut light_canvas, "Light Canvas Background")
+                            .on_hover_text("Use a light neutral canvas behind images (useful for inspecting dark transparent icons/PNGs)")
+                            .changed()
+                        {
+                            params.config.light_canvas = Some(light_canvas);
                             pref_changed = true;
                         }
 

@@ -9,5 +9,6 @@ mod types;
 pub(crate) use overlay::crop_overlay_rect;
 pub use renderer::{GpuSurface, Renderer};
 pub use types::{
-    ImageAdjustments, RenderParams, STRIP_HEIGHT_PX, THUMB_SIZE, THUMB_SLOT_W, ThumbnailEntry,
+    ColorSample, ImageAdjustments, InspectMode, RenderParams, STRIP_HEIGHT_PX, THUMB_SIZE,
+    THUMB_SLOT_W, ThumbnailEntry,
 };

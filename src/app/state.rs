@@ -48,6 +48,11 @@ pub struct AnimationState {
     pub(crate) next_frame_time: Option<std::time::Instant>,
     pub(crate) transition_start: Option<std::time::Instant>,
     pub(crate) transition_factor: f32,
+    pub(crate) paused: bool,
+    /// True for animated GIF/WebP (auto-advances); false for multi-page TIFF (manual stepping).
+    pub(crate) is_animated: bool,
+    /// In-memory frames for animated WebP and multi-page TIFF.
+    pub(crate) frames: Vec<ImageData>,
     /// Streamed GIF frames awaiting playback, ordered by index.
     pub(crate) pending: std::collections::VecDeque<crate::image::GifFrameMsg>,
 }
@@ -134,6 +139,9 @@ impl SpedImageApp {
                 next_frame_time: None,
                 transition_start: None,
                 transition_factor: 1.0,
+                paused: false,
+                is_animated: false,
+                frames: Vec::new(),
                 pending: std::collections::VecDeque::new(),
             },
             slideshow: SlideshowState {
