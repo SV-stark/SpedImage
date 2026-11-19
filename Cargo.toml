@@ -17,7 +17,7 @@ clipboard-image = ["arboard/image-data"]
 [dependencies]
 # Performance and Features Integrations
 fast_image_resize = "6.0"
-jxl-oxide = "0.11"
+jxl-oxide = "0.12.6"
 memmap2 = "0.9"
 qcms = "0.3"
 
