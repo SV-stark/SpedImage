@@ -291,15 +291,11 @@ impl SpedImageApp {
         };
 
         if do_zoom {
+            // Exponential zoom factor ensures scrolling in then out by the same
+            // amount returns to the exact original scale without drift or sign flip.
             let factor = match delta {
-                MouseScrollDelta::LineDelta(_, y_lines) => {
-                    // Standard scroll wheel: zoom in steps of ~12% per line tick
-                    1.0 - y_lines * 0.12
-                }
-                MouseScrollDelta::PixelDelta(pixel_pos) => {
-                    // High-resolution trackpad: zoom proportionally to scroll pixel distance
-                    1.0 - (pixel_pos.y as f32 * 0.002)
-                }
+                MouseScrollDelta::LineDelta(_, y_lines) => 0.85_f32.powf(y_lines),
+                MouseScrollDelta::PixelDelta(pixel_pos) => (-(pixel_pos.y as f32) * 0.0025).exp(),
             };
             let factor = factor.clamp(0.5, 2.0);
             self.zoom_by(factor, Some(cursor_pos));

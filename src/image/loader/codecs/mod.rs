@@ -1,3 +1,4 @@
+pub(super) mod extra;
 pub(super) mod heic;
 pub(super) mod jpeg;
 pub(super) mod other;

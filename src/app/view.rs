@@ -32,6 +32,125 @@ pub fn restore_position(
     on_screen.then(|| PhysicalPosition::new(x as i32, y as i32))
 }
 
+/// Compute the initial logical window size and maximized flag for the target
+/// monitor so the app always matches the user's screen on first start and never
+/// opens larger than the monitor's usable area (even on HiDPI displays).
+pub fn initial_window_geometry(
+    saved_w: u32,
+    saved_h: u32,
+    saved_maximized: bool,
+    monitor_size: Option<PhysicalSize<u32>>,
+    scale_factor: f64,
+) -> (f64, f64, bool) {
+    let scale = if scale_factor > 0.0 {
+        scale_factor
+    } else {
+        1.0
+    };
+    let Some(screen) = monitor_size else {
+        let w = if saved_w > 0 { saved_w as f64 } else { 1200.0 };
+        let h = if saved_h > 0 { saved_h as f64 } else { 800.0 };
+        return (w, h, saved_maximized);
+    };
+
+    let screen_w = screen.width as f64 / scale;
+    let screen_h = screen.height as f64 / scale;
+    // Leave room for window borders, title bar, and OS taskbar when unmaximized.
+    let max_w = (screen_w - 16.0).max(640.0);
+    let max_h = (screen_h - 80.0).max(480.0);
+
+    if saved_w == 0 || saved_h == 0 {
+        // First launch: match the user's screen cleanly (maximized with a
+        // full-screen-fitted restore size if unmaximized later).
+        (max_w, max_h, true)
+    } else {
+        let w = (saved_w as f64).clamp(400.0, max_w);
+        let h = (saved_h as f64).clamp(300.0, max_h);
+        (w, h, saved_maximized)
+    }
+}
+
+/// Compute the displayed image quad size (in physical pixels) inside a
+/// viewport of `view_size_px`, accounting for total rotation (`rotation + pre_rotation`).
+pub fn displayed_quad_size(
+    view_size_px: (f32, f32),
+    image_size: (u32, u32),
+    total_rotation: f32,
+) -> (f32, f32) {
+    let (vw, vh) = view_size_px;
+    let (iw, ih) = image_size;
+    if vw <= 0.0 || vh <= 0.0 || iw == 0 || ih == 0 {
+        return (vw.max(1.0), vh.max(1.0));
+    }
+    let rot_deg = (total_rotation.to_degrees() % 360.0).round().abs();
+    let is_sideways = (rot_deg - 90.0).abs() < 1.0 || (rot_deg - 270.0).abs() < 1.0;
+    let raw_aspect = iw as f32 / ih as f32;
+    let aspect_ratio = if is_sideways {
+        1.0 / raw_aspect
+    } else {
+        raw_aspect
+    };
+    let window_aspect = vw / vh;
+    let ratio = aspect_ratio / window_aspect;
+    if ratio > 1.0 {
+        (vw, vh / ratio)
+    } else {
+        (vw * ratio, vh)
+    }
+}
+
+/// Map a cursor position inside the image viewport (physical pixels) into
+/// flipped quad texture coordinates `tc` in `[0, 1] x [0, 1]` (clamped to the
+/// quad), inverting aspect fit, total rotation, and flips.
+pub fn screen_to_quad_tc(
+    cursor_view_px: (f32, f32),
+    view_size_px: (f32, f32),
+    image_size: (u32, u32),
+    adjustments: &crate::render::ImageAdjustments,
+) -> (f32, f32) {
+    let (vw, vh) = view_size_px;
+    let (iw, ih) = image_size;
+    if vw <= 0.0 || vh <= 0.0 || iw == 0 || ih == 0 {
+        return (0.5, 0.5);
+    }
+
+    let total_rotation = adjustments.rotation + adjustments.pre_rotation;
+    let rot_deg = (total_rotation.to_degrees() % 360.0).round().abs();
+    let is_sideways = (rot_deg - 90.0).abs() < 1.0 || (rot_deg - 270.0).abs() < 1.0;
+    let raw_aspect = iw as f32 / ih as f32;
+    let aspect_ratio = if is_sideways {
+        1.0 / raw_aspect
+    } else {
+        raw_aspect
+    };
+    let window_aspect = vw / vh;
+    let ratio = aspect_ratio / window_aspect;
+
+    let ndc_x = (cursor_view_px.0 / vw) * 2.0 - 1.0;
+    let ndc_y = 1.0 - (cursor_view_px.1 / vh) * 2.0;
+
+    let (rot_x, rot_y) = if ratio > 1.0 {
+        (ndc_x, ndc_y * ratio)
+    } else {
+        (ndc_x / ratio, ndc_y)
+    };
+
+    let c = total_rotation.cos();
+    let s = total_rotation.sin();
+    let px = (rot_x * c + rot_y * s).clamp(-1.0, 1.0);
+    let py = (-rot_x * s + rot_y * c).clamp(-1.0, 1.0);
+
+    let mut tc_x = (px + 1.0) * 0.5;
+    let mut tc_y = (1.0 - py) * 0.5;
+    if adjustments.flip_horizontal {
+        tc_x = 1.0 - tc_x;
+    }
+    if adjustments.flip_vertical {
+        tc_y = 1.0 - tc_y;
+    }
+    (tc_x, tc_y)
+}
+
 /// Map a cursor position inside the image viewport (physical pixels) back to
 /// the exact `(x, y)` pixel in `image_size`, inverting the vertex shader's
 /// aspect fit, rotation, flip, and zoom/crop transforms.
@@ -380,5 +499,31 @@ mod tests {
 
         let semi = ColorSample { a: 128, ..red };
         assert_eq!(semi.hex_string(), "#FF000080");
+    }
+
+    #[test]
+    fn initial_window_geometry_matches_screen_and_clamps_oversized_configs() {
+        // First launch on 1920x1080 at 150% DPI (1280x720 logical): opens maximized
+        // and fits cleanly inside the logical screen.
+        let (w, h, max) =
+            initial_window_geometry(0, 0, false, Some(PhysicalSize::new(1920, 1080)), 1.5);
+        assert!(max, "first launch should open maximized to match screen");
+        assert!(w <= 1280.0 && h <= 720.0, "got {w}x{h} on 1280x720 logical");
+
+        // Oversized saved config (e.g. from a 4K monitor) moved to a 1366x768 laptop.
+        let (w2, h2, max2) =
+            initial_window_geometry(2560, 1440, false, Some(PhysicalSize::new(1366, 768)), 1.0);
+        assert!(!max2);
+        assert!(
+            w2 <= 1366.0 && h2 <= 768.0,
+            "must clamp to screen, got {w2}x{h2}"
+        );
+
+        // displayed_quad_size preserves aspect ratio across rotation.
+        let (qw, qh) = displayed_quad_size((1920.0, 1080.0), (4000, 3000), 0.0);
+        assert!((qw - 1440.0).abs() < 1e-2 && (qh - 1080.0).abs() < 1e-2);
+        let (qw_rot, qh_rot) =
+            displayed_quad_size((1920.0, 1080.0), (4000, 3000), std::f32::consts::FRAC_PI_2);
+        assert!((qw_rot - 810.0).abs() < 1e-2 && (qh_rot - 1080.0).abs() < 1e-2);
     }
 }

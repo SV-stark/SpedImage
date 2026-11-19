@@ -814,3 +814,101 @@ fn webp_downsample_box_and_flag() {
     assert!(img.width <= 32 && img.height <= 24);
     assert!(img.is_downsampled);
 }
+
+#[test]
+fn tga_uncompressed_and_rle_decode_with_alpha() {
+    // 2x1 top-origin 32-bit BGRA uncompressed TGA: red(alpha=255), blue(alpha=128)
+    let mut tga = vec![0u8; 18];
+    tga[2] = 2; // uncompressed true-color
+    tga[12..14].copy_from_slice(&2u16.to_le_bytes());
+    tga[14..16].copy_from_slice(&1u16.to_le_bytes());
+    tga[16] = 32; // bpp
+    tga[17] = 0x20; // top-left origin
+    tga.extend_from_slice(&[0, 0, 255, 255, 255, 0, 0, 128]);
+
+    let fx = Fixture::new("tga_raw", "tga", &tga);
+    let (frames, fmt) = ImageLoader::load(&fx.path, None, None).expect("decode raw tga");
+    assert_eq!(fmt, ImageFormatType::Tga);
+    assert_eq!((frames[0].width, frames[0].height), (2, 1));
+    assert_eq!(
+        frames[0].rgba_data.as_slice(),
+        &[255, 0, 0, 255, 0, 0, 255, 128]
+    );
+
+    // 4x1 RLE 24-bit BGR TGA: 4 green pixels in one RLE packet (0x83 = run of 4)
+    let mut rle = vec![0u8; 18];
+    rle[2] = 10; // RLE true-color
+    rle[12..14].copy_from_slice(&4u16.to_le_bytes());
+    rle[14..16].copy_from_slice(&1u16.to_le_bytes());
+    rle[16] = 24;
+    rle[17] = 0x20;
+    rle.extend_from_slice(&[0x83, 0, 255, 0]);
+    let fx_rle = Fixture::new("tga_rle", "tga", &rle);
+    let (frames, _) = ImageLoader::load(&fx_rle.path, None, None).expect("decode rle tga");
+    assert_eq!(frames[0].rgba_data.as_slice(), &[0, 255, 0, 255].repeat(4));
+
+    // Truncated TGA returns Err instead of panicking
+    let fx_bad = Fixture::new("tga_trunc", "tga", &tga[..10]);
+    assert!(ImageLoader::load(&fx_bad.path, None, None).is_err());
+}
+
+#[test]
+fn dds_rgba_bc1_and_bc3_decode() {
+    // 4x4 DXT1/BC1 DDS with solid pure red (RGB565 0xF800)
+    let mut dds = vec![0u8; 128];
+    dds[0..4].copy_from_slice(b"DDS ");
+    dds[4..8].copy_from_slice(&124u32.to_le_bytes());
+    dds[12..16].copy_from_slice(&4u32.to_le_bytes()); // height
+    dds[16..20].copy_from_slice(&4u32.to_le_bytes()); // width
+    dds[80..84].copy_from_slice(&0x4u32.to_le_bytes()); // DDPF_FOURCC
+    dds[84..88].copy_from_slice(b"DXT1");
+    // BC1 block: c0=0xF800 (red), c1=0x0000 (black), all indices=0 (c0)
+    dds.extend_from_slice(&0xF800u16.to_le_bytes());
+    dds.extend_from_slice(&0x0000u16.to_le_bytes());
+    dds.extend_from_slice(&0u32.to_le_bytes());
+
+    let fx = Fixture::new("dds_bc1", "dds", &dds);
+    let (frames, fmt) = ImageLoader::load(&fx.path, None, None).expect("decode bc1 dds");
+    assert_eq!(fmt, ImageFormatType::Dds);
+    assert_eq!((frames[0].width, frames[0].height), (4, 4));
+    assert_eq!(&frames[0].rgba_data[0..4], &[255, 0, 0, 255]);
+
+    // 4x4 DXT5/BC3 DDS with alpha=128 (a0=128, a1=128) and pure blue (0x001F)
+    let mut dds5 = dds[..128].to_vec();
+    dds5[84..88].copy_from_slice(b"DXT5");
+    dds5.extend_from_slice(&[128, 128, 0, 0, 0, 0, 0, 0]); // alpha block
+    dds5.extend_from_slice(&0x001Fu16.to_le_bytes());
+    dds5.extend_from_slice(&0x0000u16.to_le_bytes());
+    dds5.extend_from_slice(&0u32.to_le_bytes());
+    let fx5 = Fixture::new("dds_bc3", "dds", &dds5);
+    let (frames5, _) = ImageLoader::load(&fx5.path, None, None).expect("decode bc3 dds");
+    assert_eq!(&frames5[0].rgba_data[0..4], &[0, 0, 255, 128]);
+
+    // Truncated DDS returns Err
+    let fx_bad = Fixture::new("dds_trunc", "dds", b"DDS short");
+    assert!(ImageLoader::load(&fx_bad.path, None, None).is_err());
+}
+
+#[test]
+fn pcx_24bit_rgb_decodes() {
+    // 2x1 uncompressed 24-bit RGB PCX: pixel0=(200,100,50), pixel1=(10,20,30)
+    let mut pcx = vec![0u8; 128];
+    pcx[0] = 0x0A; // ZSoft magic
+    pcx[1] = 5; // version 3.0
+    pcx[2] = 0; // uncompressed
+    pcx[3] = 8; // bpp per plane
+    pcx[8..10].copy_from_slice(&1u16.to_le_bytes()); // x_max = 1 -> width = 2
+    pcx[10..12].copy_from_slice(&0u16.to_le_bytes()); // y_max = 0 -> height = 1
+    pcx[65] = 3; // 3 planes (R, G, B)
+    pcx[66..68].copy_from_slice(&2u16.to_le_bytes()); // bytes_per_line = 2
+    pcx.extend_from_slice(&[200, 10, 100, 20, 50, 30]);
+
+    let fx = Fixture::new("pcx_rgb", "pcx", &pcx);
+    let (frames, fmt) = ImageLoader::load(&fx.path, None, None).expect("decode pcx");
+    assert_eq!(fmt, ImageFormatType::Pcx);
+    assert_eq!((frames[0].width, frames[0].height), (2, 1));
+    assert_eq!(
+        frames[0].rgba_data.as_slice(),
+        &[200, 100, 50, 255, 10, 20, 30, 255]
+    );
+}

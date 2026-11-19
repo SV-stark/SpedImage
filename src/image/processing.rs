@@ -134,7 +134,7 @@ impl ImageProcessor {
     pub const SUPPORTED_EXTENSIONS: &'static [&'static str] = &[
         // Still images with a dedicated loader.
         "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "ico", "cur", "heic", "heif",
-        "jxl", "svg", "qoi", "exr",
+        "jxl", "svg", "svgz", "qoi", "exr", "tga", "dds", "pcx",
         // Reached through zune-image's magic-byte sniffing.
         "psd", "psb", "hdr", "ppm", "pgm", "pbm", "pnm", "pam", "pfm", "ff", "farbfeld",
         // RAW: one entry per family `rawloader` can sniff.
@@ -584,10 +584,12 @@ mod tests {
         }
     }
 
-    /// `tga` used to be listed without a decoder behind it.
     #[test]
-    fn test_tga_is_not_listed_in_the_browser() {
-        assert!(!ImageProcessor::supported_extensions().contains(&"tga"));
+    fn test_tga_dds_pcx_svgz_are_listed_in_the_browser() {
+        let exts = ImageProcessor::supported_extensions();
+        for ext in ["tga", "dds", "pcx", "svgz"] {
+            assert!(exts.contains(&ext), "missing {ext}");
+        }
     }
 
     #[test]

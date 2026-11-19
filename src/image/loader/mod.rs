@@ -228,7 +228,14 @@ impl ImageLoader {
         let format_type = ImageFormatType::from_extension(&ext);
         let is_jpeg = ext == "jpg" || ext == "jpeg";
 
-        let exif = if is_jpeg || ext == "svg" || ext == "gif" {
+        let exif = if is_jpeg
+            || ext == "svg"
+            || ext == "svgz"
+            || ext == "gif"
+            || ext == "tga"
+            || ext == "dds"
+            || ext == "pcx"
+        {
             crate::image::metadata::ExifMeta::default()
         } else {
             crate::image::metadata::read_exif_meta(path)
@@ -239,8 +246,14 @@ impl ImageLoader {
             codecs::other::load_gif(path, max_w, max_h, opts)?
         } else if is_jpeg {
             codecs::jpeg::load_jpeg(path, max_w, max_h, opts)?
-        } else if ext == "svg" {
+        } else if ext == "svg" || ext == "svgz" {
             codecs::other::load_svg(path, max_w, max_h)?
+        } else if ext == "tga" {
+            codecs::extra::load_tga(path, max_w, max_h)?
+        } else if ext == "dds" {
+            codecs::extra::load_dds(path, max_w, max_h)?
+        } else if ext == "pcx" {
+            codecs::extra::load_pcx(path, max_w, max_h)?
         } else if ext == "jxl" {
             codecs::other::load_jxl(path, max_w, max_h)?
         } else if ext == "qoi" {

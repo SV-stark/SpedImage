@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-11-19
+
+### Added
+* **Zero-Dependency Pure-Rust Decoders for TGA, DDS, PCX, and SVGZ**:
+  * **Truevision Targa (`.tga`)**: Uncompressed & RLE true-color (15/16/24/32-bit with alpha), grayscale (8/16-bit), color-mapped palettes, and top/bottom/right origin flags.
+  * **DirectDraw Surface (`.dds`)**: Uncompressed RGBA8/BGRA8/RGB8/BGR8 plus **BC1/DXT1**, **BC2/DXT3**, and **BC3/DXT5** block decompression (including DX10 extended headers).
+  * **ZSoft PCX (`.pcx`)**: Uncompressed & RLE 24-bit RGB, 8-bit 256-color VGA palette, 8-bit grayscale, and 4-bit 16-color EGA palette.
+  * **Compressed SVG (`.svgz`)**: Native gzipped SVG support via `resvg`/`usvg`.
+
+### Fixed
+* **Startup Window Sizing & HiDPI Clamping**: Detected the target monitor and DPI `scale_factor` before window creation (`initial_window_geometry`) so first launch matches the user's screen cleanly and saved sizes are clamped to usable monitor bounds instead of overflowing off-screen.
+* **Pointer-Anchored Zoom**: Fixed stale `last_cursor_pos` when `egui` consumed `CursorMoved`, fixed double-click 100% zoom to anchor on the clicked pointer position, and used exact inverse-shader mapping (`screen_to_quad_tc`) so zooming stays locked on the cursor across rotations, EXIF orientations, and flips.
+* **`zoom_100` Aspect Distortion & `toggle_zoom_100`**: Fixed `zoom_100` to use a uniform `fit_scale` across both axes (preventing non-square stretching) and allowed `toggle_zoom_100` to return to fit from both zoomed-in and zoomed-out states.
+* **1:1 Zoom-Scaled Panning**: Normalized drag deltas by the displayed image quad and scaled by the visible crop fraction so panning tracks the cursor 1:1 at every zoom level.
+* **Inverted High-Res Refinement & Mipmap Scale Formulas**: Fixed `screen_px_per_tex_px` (`quad_w / (shown_frac * img_w)`) so progressive full-resolution refinement actually triggers when zooming in.
+* **Symmetric Exponential Scroll Zoom**: Replaced linear scroll zoom factors with exponential `0.85^y` so zooming in and out by equal ticks returns to the exact same scale without drift.
+* **Security (`jxl-oxide` 0.12.6)**: Upgraded `jxl-oxide` to `0.12.6` (`jxl-grid` `0.6.2`, `jxl-modular` `0.11.3`), resolving all 3 Dependabot / RustSec advisories.
+
 ## [0.12.0] - 2026-11-19
 
 ### Added

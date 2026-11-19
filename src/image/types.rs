@@ -41,6 +41,12 @@ pub enum ImageFormatType {
     /// is identical and only the header's type field and the directory hotspot
     /// differ.
     Ico,
+    /// Truevision Targa (`.tga`), hand-rolled pure-Rust decoder.
+    Tga,
+    /// DirectDraw Surface (`.dds`), hand-rolled pure-Rust decoder (RGBA/BC1/BC2/BC3).
+    Dds,
+    /// ZSoft Paintbrush (`.pcx`), hand-rolled pure-Rust decoder.
+    Pcx,
     Unknown,
 }
 
@@ -58,7 +64,7 @@ impl ImageFormatType {
             // "unknown", but see `is_supported`: there is no AV1 decoder here.
             "avif" | "avis" => Self::Avif,
             "jxl" => Self::Jxl,
-            "svg" => Self::Svg,
+            "svg" | "svgz" => Self::Svg,
             "qoi" => Self::Qoi,
             "exr" => Self::Exr,
             "psd" | "psb" => Self::Psd,
@@ -66,6 +72,9 @@ impl ImageFormatType {
             "ppm" | "pgm" | "pbm" | "pnm" | "pam" | "pfm" => Self::Pnm,
             "ff" | "farbfeld" => Self::Farbfeld,
             "ico" | "cur" => Self::Ico,
+            "tga" => Self::Tga,
+            "dds" => Self::Dds,
+            "pcx" => Self::Pcx,
             // Every extension `rawloader` can sniff. This list was previously
             // seven entries while the README advertised eleven camera families,
             // so `.pef`, `.crw`, `.mrw`, `.rw2` and friends resolved to
@@ -100,7 +109,10 @@ impl ImageFormatType {
             | Self::Hdr
             | Self::Pnm
             | Self::Farbfeld
-            | Self::Ico => true,
+            | Self::Ico
+            | Self::Tga
+            | Self::Dds
+            | Self::Pcx => true,
             // AVIF is HEVC-container HEIF's sibling, not HEIC: it needs an AV1
             // decoder, which this build does not carry. Listing it as
             // supported sent users to a decode error instead of the file

@@ -788,33 +788,57 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         };
         let title_for_log = title.clone();
 
-        let (logical_w, logical_h) = (
-            if config.window_width > 0 {
-                config.window_width as f64
-            } else {
-                1200.0
-            },
-            if config.window_height > 0 {
-                config.window_height as f64
-            } else {
-                800.0
-            },
+        let monitors: Vec<_> = event_loop.available_monitors().collect();
+        let rects: Vec<_> = monitors.iter().map(|m| (m.position(), m.size())).collect();
+
+        // Pick the target monitor before sizing the window so the window always
+        // fits the user's actual screen (including HiDPI scaling) and never opens
+        // larger than the monitor.
+        let target_monitor = config
+            .window_x
+            .zip(config.window_y)
+            .and_then(|(x, y)| {
+                monitors.iter().find(|m| {
+                    let (mp, ms) = (m.position(), m.size());
+                    x >= mp.x
+                        && y >= mp.y
+                        && (x as i64) < mp.x as i64 + ms.width as i64
+                        && (y as i64) < mp.y as i64 + ms.height as i64
+                })
+            })
+            .cloned()
+            .or_else(|| event_loop.primary_monitor())
+            .or_else(|| monitors.first().cloned());
+
+        let (mon_size, mon_scale) = target_monitor
+            .as_ref()
+            .map(|m| (Some(m.size()), m.scale_factor()))
+            .unwrap_or((None, 1.0));
+
+        let (logical_w, logical_h, start_maximized) = crate::app::view::initial_window_geometry(
+            config.window_width,
+            config.window_height,
+            config.window_maximized,
+            mon_size,
+            mon_scale,
         );
+
+        let phys_w = (logical_w * mon_scale).round().max(1.0) as u32;
+        let phys_h = (logical_h * mon_scale).round().max(1.0) as u32;
+        let restored = crate::app::view::restore_position(
+            (config.window_x, config.window_y),
+            winit::dpi::PhysicalSize::new(phys_w, phys_h),
+            &rects,
+        );
+
         let mut attributes = WindowAttributes::default()
             .with_title(title)
             .with_visible(true)
-            .with_maximized(config.window_maximized)
+            .with_maximized(start_maximized)
             .with_inner_size(winit::dpi::LogicalSize::new(logical_w, logical_h));
-        let monitors: Vec<_> = event_loop.available_monitors().collect();
-        let restored = config.window_x.and_then(|_| {
-            let rects: Vec<_> = monitors.iter().map(|m| (m.position(), m.size())).collect();
-            crate::app::view::restore_position(
-                (config.window_x, config.window_y),
-                winit::dpi::PhysicalSize::new(logical_w as u32, logical_h as u32),
-                &rects,
-            )
-        });
-        if let Some(pos) = restored {
+        if let Some(pos) = restored
+            && !start_maximized
+        {
             attributes = attributes.with_position(pos);
         }
 
@@ -824,26 +848,13 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
         // the monitor the window will open on; it only needs to be close,
         // since the decoder never upscales and zooming refines anyway.
         let early_fit = self.initial_path.as_ref().and_then(|_| {
-            let monitor = restored
-                .and_then(|pos| {
-                    monitors.iter().find(|m| {
-                        let (mp, ms) = (m.position(), m.size());
-                        pos.x >= mp.x
-                            && pos.y >= mp.y
-                            && (pos.x as i64) < mp.x as i64 + ms.width as i64
-                            && (pos.y as i64) < mp.y as i64 + ms.height as i64
-                    })
-                })
-                .cloned()
-                .or_else(|| event_loop.primary_monitor())?;
-            let screen = monitor.size();
-            let scale = monitor.scale_factor();
-            Some(if config.window_maximized {
+            let screen = mon_size?;
+            Some(if start_maximized {
                 (screen.width, screen.height)
             } else {
                 (
-                    ((logical_w * scale) as u32).min(screen.width).max(1),
-                    ((logical_h * scale) as u32).min(screen.height).max(1),
+                    phys_w.min(screen.width).max(1),
+                    phys_h.min(screen.height).max(1),
                 )
             })
         });
@@ -1046,6 +1057,13 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        // Always track the latest cursor position even if egui consumes the
+        // event (e.g., while hovering over the OSD/panels), so Ctrl+Scroll
+        // zoom and eyedropper never read a stale `(0, 0)` or old coordinate.
+        if let WindowEvent::CursorMoved { position, .. } = event {
+            self.last_cursor_pos = position;
+        }
+
         // Special case: if Ctrl is held during a scroll, we want to zoom the image,
         // not scroll egui UI elements.
         let is_ctrl_scroll = matches!(event, WindowEvent::MouseWheel { .. }) && self.modifiers.ctrl;
@@ -1117,13 +1135,13 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                     // replaces shimmering point-minification.
                     if !r.image_mipmapped
                         && self.animation.frame_delays.is_empty()
-                        && self.ui_state.adjustments.crop_rect[2] < 0.5
                         && let Some(ref img) = self.current_image
                     {
                         let tex_w = r.image_size.map(|(w, _)| w as f32).unwrap_or(1.0);
-                        let shown_frac = self.ui_state.adjustments.crop_rect[2];
+                        let shown_frac = self.ui_state.adjustments.crop_rect[2].max(0.01);
                         let win_w = r.config.width as f32;
-                        if tex_w > 1.0 && (shown_frac * win_w / tex_w) < 0.5 {
+                        let screen_px_per_tex_px = win_w / (shown_frac * tex_w);
+                        if tex_w > 1.0 && screen_px_per_tex_px < 0.5 {
                             r.ensure_mipmapped(img).ok();
                             self.dirty = true;
                         }
@@ -1339,29 +1357,36 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
                 } else if let Some(start) = self.mouse_drag_start
                     && self.renderer.is_some()
                 {
-                    // Normalise by the image's view, which is half the window
-                    // in compare mode; the full width made panning half speed.
+                    // Normalise by the displayed image quad and scale by the
+                    // visible crop fraction so panning tracks the cursor 1:1
+                    // at every zoom level.
                     let (view_w, view_h) = self.image_view_size();
-                    let dx = (position.x - start.x) as f32 / view_w;
-                    let dy = (position.y - start.y) as f32 / view_h;
-
-                    // Rotate delta by total rotation and flipping so panning tracks cursor intuitively
                     let rot =
                         self.ui_state.adjustments.rotation + self.ui_state.adjustments.pre_rotation;
+                    let img_size = self
+                        .current_image
+                        .as_ref()
+                        .map(|img| (img.width, img.height))
+                        .unwrap_or((1, 1));
+                    let (quad_w, quad_h) =
+                        crate::app::view::displayed_quad_size((view_w, view_h), img_size, rot);
+
+                    let dx = (position.x - start.x) as f32 / quad_w.max(1.0);
+                    let dy = (position.y - start.y) as f32 / quad_h.max(1.0);
+
+                    // Rotate delta into texture space, apply flips, then scale by crop extent.
                     let cos_a = rot.cos();
                     let sin_a = rot.sin();
-
-                    let mut tex_dx = dx;
-                    let mut tex_dy = dy;
+                    let mut r_dx = dx * cos_a - dy * sin_a;
+                    let mut r_dy = dx * sin_a + dy * cos_a;
                     if self.ui_state.adjustments.flip_horizontal {
-                        tex_dx = -tex_dx;
+                        r_dx = -r_dx;
                     }
                     if self.ui_state.adjustments.flip_vertical {
-                        tex_dy = -tex_dy;
+                        r_dy = -r_dy;
                     }
-
-                    let r_dx = tex_dx * cos_a + tex_dy * sin_a;
-                    let r_dy = -tex_dx * sin_a + tex_dy * cos_a;
+                    r_dx *= self.ui_state.adjustments.crop_rect[2];
+                    r_dy *= self.ui_state.adjustments.crop_rect[3];
 
                     let new_x = self.ui_state.adjustments.crop_rect[0] - r_dx;
                     let new_y = self.ui_state.adjustments.crop_rect[1] - r_dy;
@@ -1393,7 +1418,7 @@ impl ApplicationHandler<WakeUp> for SpedImageApp {
 
                         if is_double_click {
                             if self.config.double_click_zoom_enabled() {
-                                self.toggle_zoom_100();
+                                self.toggle_zoom_100_at(Some(self.last_cursor_pos));
                             } else {
                                 self.toggle_fullscreen();
                             }

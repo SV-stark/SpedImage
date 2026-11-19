@@ -291,28 +291,21 @@ impl SpedImageApp {
         let (win_w, win_h) = self.image_view_size();
         let cursor = cursor.map(|p| self.to_image_view(p));
 
-        let img_aspect = self
+        let img_size = self
             .current_image
             .as_ref()
-            .map(|img| img.width as f32 / img.height as f32)
-            .unwrap_or(1.0);
-        let win_aspect = if win_h > 0.0 { win_w / win_h } else { 1.0 };
-        let ratio = img_aspect / win_aspect;
+            .map(|img| (img.width, img.height))
+            .unwrap_or((1, 1));
 
+        // Use the exact inverse-shader mapping so zooming toward the cursor
+        // anchors the exact pixel under the pointer across rotation and flips.
         let (nx, ny) = if let Some(pos) = cursor {
-            let mut x_ratio = pos.x as f32 / win_w;
-            let mut y_ratio = pos.y as f32 / win_h;
-
-            if ratio > 1.0 {
-                let img_h_in_win = 1.0 / ratio;
-                let offset = (1.0 - img_h_in_win) / 2.0;
-                y_ratio = ((y_ratio - offset) * ratio).clamp(0.0, 1.0);
-            } else {
-                let img_w_in_win = ratio;
-                let offset = (1.0 - img_w_in_win) / 2.0;
-                x_ratio = ((x_ratio - offset) / ratio).clamp(0.0, 1.0);
-            }
-            (x_ratio, y_ratio)
+            crate::app::view::screen_to_quad_tc(
+                (pos.x as f32, pos.y as f32),
+                (win_w, win_h),
+                img_size,
+                &self.ui_state.adjustments,
+            )
         } else {
             (0.5, 0.5)
         };
@@ -323,16 +316,19 @@ impl SpedImageApp {
         let cx = nx.mul_add(old_w, self.ui_state.adjustments.crop_rect_target[0]);
         let cy = ny.mul_add(old_h, self.ui_state.adjustments.crop_rect_target[1]);
 
-        let target_x = cx - new_w * nx;
-        let target_y = cy - new_h * ny;
+        let target_x = if new_w >= 1.0 {
+            (1.0 - new_w) * 0.5
+        } else {
+            (cx - new_w * nx).clamp(0.0, 1.0 - new_w)
+        };
+        let target_y = if new_h >= 1.0 {
+            (1.0 - new_h) * 0.5
+        } else {
+            (cy - new_h * ny).clamp(0.0, 1.0 - new_h)
+        };
 
-        let min_x = 0.0f32.min(1.0 - new_w);
-        let max_x = 0.0f32.max(1.0 - new_w);
-        let min_y = 0.0f32.min(1.0 - new_h);
-        let max_y = 0.0f32.max(1.0 - new_h);
-
-        self.ui_state.adjustments.crop_rect_target[0] = target_x.clamp(min_x, max_x);
-        self.ui_state.adjustments.crop_rect_target[1] = target_y.clamp(min_y, max_y);
+        self.ui_state.adjustments.crop_rect_target[0] = target_x;
+        self.ui_state.adjustments.crop_rect_target[1] = target_y;
         self.ui_state.adjustments.crop_rect_target[2] = new_w;
         self.ui_state.adjustments.crop_rect_target[3] = new_h;
         // Arm the progressive high-res refinement timer.
@@ -414,9 +410,13 @@ impl SpedImageApp {
         if self.window.is_none() {
             return;
         }
-        let (win_w, _) = self.image_view_size();
-        let shown_frac = self.ui_state.adjustments.crop_rect_target[2];
-        let screen_px_per_tex_px = shown_frac * win_w / img.width as f32;
+        let (win_w, win_h) = self.image_view_size();
+        let rot = self.ui_state.adjustments.rotation + self.ui_state.adjustments.pre_rotation;
+        let (quad_w, _) =
+            crate::app::view::displayed_quad_size((win_w, win_h), (img.width, img.height), rot);
+        let shown_frac = self.ui_state.adjustments.crop_rect_target[2].max(0.01);
+        // Smaller `shown_frac` means deeper zoom -> more screen pixels per texel.
+        let screen_px_per_tex_px = quad_w / (shown_frac * img.width.max(1) as f32);
         if screen_px_per_tex_px < constants::HIGHRES_TRIGGER_SCALE {
             return;
         }
@@ -449,10 +449,16 @@ impl SpedImageApp {
     }
 
     pub(crate) fn toggle_zoom_100(&mut self) {
-        if self.ui_state.adjustments.crop_rect_target[2] < 0.99 {
+        self.toggle_zoom_100_at(None);
+    }
+
+    pub(crate) fn toggle_zoom_100_at(&mut self, cursor: Option<winit::dpi::PhysicalPosition<f64>>) {
+        let cw = self.ui_state.adjustments.crop_rect_target[2];
+        let ch = self.ui_state.adjustments.crop_rect_target[3];
+        if (cw - 1.0).abs() > 0.01 || (ch - 1.0).abs() > 0.01 {
             self.zoom_fit();
         } else {
-            self.zoom_100(None);
+            self.zoom_100(cursor);
         }
     }
 
@@ -460,8 +466,11 @@ impl SpedImageApp {
         if let Some(ref img) = self.current_image {
             let (win_w, win_h) = self.image_view_size();
 
-            // Sideways EXIF orientation swaps the displayed dimensions.
-            let swapped = matches!(img.orientation_deg, 90 | 270);
+            // Account for both EXIF orientation and user rotation.
+            let total_rot =
+                self.ui_state.adjustments.rotation + self.ui_state.adjustments.pre_rotation;
+            let rot_deg = (total_rot.to_degrees() % 360.0).round().abs();
+            let swapped = (rot_deg - 90.0).abs() < 1.0 || (rot_deg - 270.0).abs() < 1.0;
             let (img_w, img_h) = if swapped {
                 (img.height as f32, img.width as f32)
             } else {
@@ -469,9 +478,10 @@ impl SpedImageApp {
             };
 
             if img_w > 0.0 && img_h > 0.0 {
-                let crop_w = win_w / img_w;
-                let crop_h = win_h / img_h;
-                self.set_crop_target(crop_w, crop_h, cursor);
+                // Uniform scale matching the aspect-fitted quad so 1 image pixel
+                // maps to 1 physical screen pixel on BOTH axes without stretching.
+                let fit_scale = (win_w / img_w).min(win_h / img_h).clamp(0.01, 5.0);
+                self.set_crop_target(fit_scale, fit_scale, cursor);
             }
         }
     }

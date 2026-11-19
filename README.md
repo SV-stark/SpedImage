@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/Version-0.12.0-blue" alt="Version: 0.12.0"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-0.12.1-blue" alt="Version: 0.12.1"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-1.94+-orange" alt="Rust: 1.94+"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-lightgrey" alt="Platform: Windows | Linux | macOS"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
@@ -88,8 +88,11 @@ All adjustments are processed dynamically in WGSL fragment shaders.
 | Farbfeld (`.ff`) | Hand-rolled, ~30 lines | All Platforms |
 | ICO / CUR (Windows icons) | Hand-rolled, ~150 lines | All Platforms |
 | OpenEXR (32-bit HDR `.exr`) | Pure Rust (`exr` crate) | All Platforms |
+| Truevision Targa (`.tga`) | Hand-rolled pure Rust (uncompressed & RLE, alpha) | All Platforms |
+| DirectDraw Surface (`.dds`) | Hand-rolled pure Rust (RGBA/BGRA, BC1/DXT1, BC2/DXT3, BC3/DXT5) | All Platforms |
+| ZSoft PCX (`.pcx`) | Hand-rolled pure Rust (24-bit RGB, 8-bit VGA, 4-bit EGA) | All Platforms |
 | RAW (CR2, NEF, ARW, DNG, etc.)* | Pure Rust (`rawloader` crate) | All Platforms |
-| SVG | `resvg` crate | All Platforms |
+| SVG / SVGZ | `resvg` crate | All Platforms |
 | HEIC / HEIF | Pure Rust (`heic-rs` crate) | All Platforms |
  
 </div>
@@ -100,10 +103,6 @@ All adjustments are processed dynamically in WGSL fragment shaders.
 HEVC, so it needs an AV1 decoder that `heic-rs` deliberately does not ship.
 `.avif` files are filtered out alongside unknown formats. HEVC-in-HEIF, which
 covers the files cameras and phones actually write, is fully supported.
- 
-**Targa (`.tga`) is not supported.** There is no Targa decoder in the tree. It
-used to be listed in the file browser anyway, which meant Targa files showed up
-and then failed to open, so it has been dropped from the accepted extensions.
  
 ### Codec weight
 
